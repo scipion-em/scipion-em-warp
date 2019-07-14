@@ -1,0 +1,29 @@
+# BOXNET integration roadmap
+
+A) Micrograph preprocessing should be done more eficiently in the protocol instead. Steps.
+ 1) Downsampling to 8 A/pixel
+ 2) Min max normalization (0-1 range)
+ 
+
+B) BoxNetPredictor predits masks as a standalone tool. Takes as input a path where micrographs (.mrc) are placed and their
+sampling rate and writes "micrographs" (masks) with 3 channels, one for background probability, one for particle probability
+and one for contamiantion probability (this last channel is obtained only if a mask model is employed, there are also only particles models). 
+Models are placed in this url.
+http://boxnet.warpem.com/models/ donwload and uncompress. The BoxNetPredictor I implemented needs to point to the uncompressed folder
+
+What remains to do for this class is to make effienct batching. Now I am feeding to the gpu tiles (1x256x256x1) 1 by one and it should be 
+changed to (Batch_sizex256x256x1)
+
+
+C) Once masks are obtained, the particles should be detected. To do so, in warp paper they look at the connected components and compute their
+center of mass. I have been told that this should be easy to do using xmipp tools, but if prefered, I know it is easy to do using opencv
+
+
+
+Required python packages.
+
+tensorflow and keras
+numpy
+skimage (or xmipp)
+mrcfile (or xmipp)
+
