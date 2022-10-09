@@ -46,7 +46,7 @@ class ProtWarpDeconv2D(ProtMicrographs):
 
     def __init__(self, **kwargs):
         ProtMicrographs.__init__(self, **kwargs)
-        self.stepsExecutionMode = params.STEPS_PARALLEL
+        #self.stepsExecutionMode = params.STEPS_PARALLEL
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -64,7 +64,7 @@ class ProtWarpDeconv2D(ProtMicrographs):
                       help='Choose a CTF estimation '
                            'related to the input micrographs.')
 
-        form.addParallelSection(threads=1, mpi=1)
+        form.addParallelSection(threads=1, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
@@ -97,8 +97,10 @@ class ProtWarpDeconv2D(ProtMicrographs):
 
                 with mrcfile.new(self._getOutputMic(micName), overwrite=True) as mrcOut:
                     self.info(f"Deconvolving {micName}")
-                    result = tom_deconv(inputData, pix, voltage, cs, defocus)
+                    result = tom_deconv(inputData, pix, voltage, cs, defocus,
+                                        ncpu=self.numberOfThreads.get())
                     mrcOut.set_data(result)
+                    mrcOut.voxel_size = pix
                     mrcOut.update_header_from_data()
             else:
                 self.info(f"No CTF found for mic: {micKey}")

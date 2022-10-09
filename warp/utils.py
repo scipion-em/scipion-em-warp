@@ -26,10 +26,12 @@
 
 import numpy as np
 import math
-from scipy.interpolate import interp1d
+import scipy
 
 
-""" This code is adapted from https://github.com/dtegunov/tom_deconv """
+""" This code is adapted from https://github.com/dtegunov/tom_deconv
+    and https://github.com/Heng-Z/IsoNet
+"""
 
 
 def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
@@ -42,12 +44,12 @@ def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
     points = np.arange(0, length)
     points = points/(2 * length) * ny
     k2 = points ** 2
-    term1 = (lambda1 ** 3) * cs * (k2 ** 2)
+    term1 = lambda1**3 * cs * k2**2
 
     w = np.pi/2 * (term1 + lambda2 * defocus * k2) - phaseshift
 
     acurve = np.cos(w) * amplitude
-    pcurve = -np.sqrt(1 - (amplitude ** 2)) * np.sin(w)
+    pcurve = -np.sqrt(1 - amplitude**2) * np.sin(w)
     bfactor = np.exp(-bfactor * k2 * 0.25)
     ctf = (pcurve + acurve) * bfactor
 
@@ -55,7 +57,7 @@ def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
 
 
 def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength=1,
-               highpassnyquist=0.02, phaseflipped=False, phaseshift=0):
+               highpassnyquist=0.02, phaseflipped=False, phaseshift=0, ncpu=1, gpu=-1):
     """
     :param vol: tomogram volume (or 2D image)
     :param angpix: angstrom per pixel
@@ -67,17 +69,19 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
     :param highpassnyquist: fraction of Nyquist frequency to be cut off on the lower end (since it will be boosted the most)
     :param phaseflipped: whether the data are already phase-flipped
     :param phaseshift: CTF phase shift in degrees (e.g. from a phase plate)
+    :param ncpu: number of CPUs for FFT
+    :param gpu: GPU id, -1 = not used
 
     Example:
     deconv = tom_deconv(mytomo, 3.42, 300, 2.7, 6, 1.1, 1, 0.02, False, 0);
 
     """
 
-    highpass = np.arange(0, 1+1/2047, 1/2047)
-    highpass = np.minimum(1, highpass / highpassnyquist) * np.pi
+    data = np.arange(0, 1+1/2047, 1/2047)
+    highpass = np.minimum(1, data / highpassnyquist) * np.pi
     highpass = 1 - np.cos(highpass)
 
-    snr = np.exp(np.arange(0, -1-1/2047, -1/2047) * snrfalloff * 100 / angpix) * (10**(3 * deconvstrength)) * highpass
+    snr = np.exp(-data * snrfalloff * 100 / angpix) * (10**(3 * deconvstrength)) * highpass
     ctf = tom_ctf1d(2048, angpix * 1e-10, voltage * 1000, cs * 1e-3,
                     -defocus * 1e-6, 0.07, phaseshift / 180 * np.pi, 0)
     if phaseflipped:
@@ -87,32 +91,49 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
 
     s1 = -math.floor(vol.shape[0] / 2)
     f1 = s1 + vol.shape[0] - 1
+    m1 = np.arange(s1, f1 + 1)
     s2 = -math.floor(vol.shape[1] / 2)
     f2 = s2 + vol.shape[1] - 1
+    m2 = np.arange(s2, f2 + 1)
 
     if vol.ndim == 3:
         s3 = -math.floor(vol.shape[2] / 2)
         f3 = s3 + vol.shape[2] - 1
-        x, y, z = np.meshgrid([range(s1, f1+1)], [range(s2, f2+1)],
-                              [range(s3, f3+1)], indexing='ij')
+        m3 = np.arange(s3, f3 + 1)
+        x, y, z = np.meshgrid(m1, m2, m3, indexing='ij')
         x = np.divide(x, abs(s1))
         y = np.divide(y, abs(s2))
         z = np.divide(z, max(1, abs(s3)))
         r = np.sqrt(x**2 + y**2 + z**2)
+        del x, y, z
     else:
-        x, y = np.meshgrid([range(s1, f1+1)], [range(s2, f2+1)], indexing='ij')
+        x, y = np.meshgrid(m1, m2, indexing='ij')
         x = np.divide(x, abs(s1))
         y = np.divide(y, abs(s2))
         r = np.sqrt(x ** 2 + y ** 2)
+        del x, y
 
     r = np.minimum(1, r)
     r = np.fft.ifftshift(r)
+    ramp = np.interp(r, data, wiener).astype(np.float32)
 
-    x = np.arange(0, 1+1/2047, 1/2047)
+    if gpu == -1:
+        deconv = np.real(scipy.fft.ifftn(scipy.fft.fftn(vol, overwrite_x=True, workers=ncpu) * ramp,
+                                         overwrite_x=True, workers=ncpu))
+        deconv = deconv.astype(np.float32)
+    else:
+        import cupy as cp
+        with cp.cuda.Device(gpu):
+            deconv = cp.real(cp.fft.ifftn(cp.fft.fftn(cp.asarray(vol)) * cp.asarray(ramp)))
+            deconv = cp.asnumpy(deconv).astype(np.float32)
 
-    ramp = interp1d(x, wiener)(r)
+    # normalize volume - check if necessary
+    std_deconv = np.std(deconv)
+    std_vol = np.std(vol)
+    avg_vol = np.average(vol)
+    del vol, ramp
+    deconv /= std_deconv
+    deconv *= std_vol
+    deconv += avg_vol
 
-    vol = vol.astype('float32')
-    result = np.real(np.fft.ifftn(np.fft.fftn(vol) * ramp))
-
-    return result.astype('float32')
+    return deconv

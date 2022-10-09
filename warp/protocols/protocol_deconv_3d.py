@@ -107,8 +107,10 @@ class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
 
                 with mrcfile.new(self._getOutputTomo(micName), overwrite=True) as mrcOut:
                     self.info(f"Deconvolving {micName}")
-                    result = tom_deconv(inputData, pix, voltage, cs, defocus)
+                    result = tom_deconv(inputData, pix, voltage, cs, defocus,
+                                        ncpu=self.numberOfThreads.get())
                     mrcOut.set_data(result)
+                    mrcOut.voxel_size = pix
                     mrcOut.update_header_from_data()
             else:
                 self.info(f"No CTF found for tomo: {tsKey}")
