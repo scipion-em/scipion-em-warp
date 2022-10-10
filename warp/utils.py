@@ -1,8 +1,8 @@
 # **************************************************************************
 # *
-# * Authors:     Dimitry Tegunov (tegunov@gmail.com)
+# * Authors:     Grigory Sharov (gsharov@mrc-lmb.cam.ac.uk)
 # *
-# * Max Planck Institute for Biophysical Chemistry
+# * MRC Laboratory of Molecular Biology (MRC-LMB)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -26,11 +26,23 @@
 
 import numpy as np
 import math
-import scipy
+import scipy.fft
 
 
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
     and https://github.com/Heng-Z/IsoNet
+
+    Original code is probably from:
+
+    Nickell et al., 'TOM software toolbox: acquisition and analysis for electron tomography',
+    Journal of Structural Biology, 149 (2005), 227-234.
+
+    Copyright (c) 2004-2007
+    TOM toolbox for Electron Tomography
+    Max-Planck-Institute of Biochemistry
+    Dept. Molecular Structural Biology
+    82152 Martinsried, Germany
+    http://www.biochem.mpg.de/tom
 """
 
 
