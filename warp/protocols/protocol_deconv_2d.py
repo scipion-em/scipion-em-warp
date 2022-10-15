@@ -24,29 +24,21 @@
 # *
 # **************************************************************************
 
-import os
-import mrcfile
-
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
 from pwem.protocols import ProtMicrographs
 from pwem.objects import SetOfMicrographs
-from pwem.emlib.image import ImageHandler
 from pwem.constants import RELATION_CTF
 
-from ..utils import tom_deconv
+from .protocol_base import ProtWarpBase
 
 
-class ProtWarpDeconv2D(ProtMicrographs):
+class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
     """ Protocol to deconvolve (Wiener-like filter) a set of micrographs.
     See https://github.com/dtegunov/tom_deconv
     """
     _label = 'deconvolve 2D'
     _possibleOutputs = {'outputMicrographs': SetOfMicrographs}
-
-    def __init__(self, **kwargs):
-        ProtMicrographs.__init__(self, **kwargs)
-        #self.stepsExecutionMode = params.STEPS_PARALLEL
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -64,13 +56,9 @@ class ProtWarpDeconv2D(ProtMicrographs):
                       help='Choose a CTF estimation '
                            'related to the input micrographs.')
 
-        form.addParallelSection(threads=1, mpi=0)
+        form.addParallelSection(threads=8, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
-    def _insertAllSteps(self):
-        self._insertFunctionStep(self.deconvolveStep)
-        self._insertFunctionStep(self.createOutputStep)
-
     def deconvolveStep(self):
         # Load CTFs
         ctfDict = dict()
@@ -81,29 +69,12 @@ class ProtWarpDeconv2D(ProtMicrographs):
         input_mics = self.getInputMicrographs()
         acq = input_mics.getAcquisition()
         pix = input_mics.getSamplingRate()
-        voltage = acq.getVoltage()
-        cs = acq.getSphericalAberration()
-
-        micsList = input_mics.aggregate(["COUNT"], "_micName", ["_micName", "_filename"])
-        ih = ImageHandler()
+        micsList = input_mics.aggregate(["COUNT"], "_micName",
+                                        ["_micName", "_filename"])
 
         # Iterate over mics
-        for mic in micsList:
-            micKey = mic["_micName"]
-            if micKey in ctfDict:
-                micName = mic["_filename"]
-                defocus = ctfDict[micKey] / 10000
-                inputData = ih.read(micName).getData()
-
-                with mrcfile.new(self._getOutputMic(micName), overwrite=True) as mrcOut:
-                    self.info(f"Deconvolving {micName}")
-                    result = tom_deconv(inputData, pix, voltage, cs, defocus,
-                                        ncpu=self.numberOfThreads.get())
-                    mrcOut.set_data(result)
-                    mrcOut.voxel_size = pix
-                    mrcOut.update_header_from_data()
-            else:
-                self.info(f"No CTF found for mic: {micKey}")
+        self._deconvolve(pix, acq, micsList, ctfDict,
+                         keyName="_micName")
 
     def createOutputStep(self):
         in_mics = self.getInputMicrographs()
@@ -119,6 +90,10 @@ class ProtWarpDeconv2D(ProtMicrographs):
     def _summary(self):
         summary = []
 
+        if self.isFinished():
+            summary.append(f"Deconvolved {self.getInputMicrographs().getSize()} "
+                           "micrographs")
+
         return summary
 
     # -------------------------- UTILS functions ------------------------------
@@ -127,13 +102,3 @@ class ProtWarpDeconv2D(ProtMicrographs):
             return self.inputMicrographs
         else:
             return self.inputMicrographs.get()
-
-    def _getOutputMic(self, micName):
-        return self._getExtraPath(os.path.basename(micName))
-
-    def _updateItem(self, item, row):
-        current_out_mic = self._getOutputMic(item.getFileName())
-        if os.path.exists(current_out_mic):
-            item.setFileName(current_out_mic)
-        else:
-            item._appendItem = False

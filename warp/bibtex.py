@@ -40,4 +40,18 @@
 	journal = {Nature Methods}
 }
 
+@article{Nickell2005,
+  doi = {10.1016/j.jsb.2004.10.006},
+  url = {https://doi.org/10.1016/j.jsb.2004.10.006},
+  year = {2005},
+  month = {mar},
+  publisher = {Elsevier {BV}},
+  volume = {149},
+  number = {3},
+  pages = {227--234},
+  author = {Stephan Nickell and Friedrich F\"{o}rster and Alexandros Linaroudis and William Del Net and Florian Beck and Reiner Hegerl and Wolfgang Baumeister and J\"{u}rgen M. Plitzko},
+  title = {{TOM} software toolbox: acquisition and analysis for electron tomography},
+  journal = {Journal of Structural Biology}
+}
+
 """

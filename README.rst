@@ -2,7 +2,7 @@
 Warp plugin
 ===========
 
-This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/dtegunov/warp>`_ ssoftware.
+This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/dtegunov/warp>`_ software.
 
 .. image:: https://img.shields.io/pypi/v/scipion-em-warp.svg
         :target: https://pypi.python.org/pypi/scipion-em-warp
@@ -52,9 +52,11 @@ b) Developer's version
 
 Verifying
 ---------
-To check the installation, simply run the following Scipion test:
 
-tbd
+To check the installation, simply run one of the following Scipion tests:
+
+* scipion tests warp.tests.test_protocols.TestDeconvolve2D
+* scipion tests warp.tests.test_protocols_tomo.TestDeconvolve3D
 
 Protocols
 ----------

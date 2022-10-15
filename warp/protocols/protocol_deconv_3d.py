@@ -24,30 +24,21 @@
 # *
 # **************************************************************************
 
-import os
-import mrcfile
-
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
-from pwem.emlib.image import ImageHandler
-from pwem.protocols import EMProtocol
 
 from tomo.protocols import ProtTomoBase
 from tomo.objects import SetOfTomograms
 
-from ..utils import tom_deconv
+from .protocol_base import ProtWarpBase
 
 
-class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
+class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
     """ Protocol to deconvolve (Wiener-like filter) a set of tomograms.
     See https://github.com/dtegunov/tom_deconv
     """
     _label = 'deconvolve 3D'
     _possibleOutputs = {'outputTomograms': SetOfTomograms}
-
-    def __init__(self, **kwargs):
-        EMProtocol.__init__(self, **kwargs)
-        self.stepsExecutionMode = params.STEPS_PARALLEL
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -65,13 +56,9 @@ class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
                       help='Set of CTFs that correspond to the '
                            'input above. The matching is done using tsId.')
 
-        form.addParallelSection(threads=1, mpi=1)
+        form.addParallelSection(threads=8, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
-    def _insertAllSteps(self):
-        self._insertFunctionStep(self.deconvolveStep)
-        self._insertFunctionStep(self.createOutputStep)
-
     def deconvolveStep(self):
         tomoSet = self.getInputTomos()
         ctfSet = self.inputCTFs.get()
@@ -91,29 +78,11 @@ class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
 
         acq = tomoSet.getAcquisition()
         pix = tomoSet.getSamplingRate()
-        voltage = acq.getVoltage()
-        cs = acq.getSphericalAberration()
-
-        tomoList = tomoSet.aggregate(["COUNT"], "_tsId", ["_tsId", "_filename"])
-        ih = ImageHandler()
+        tomoList = tomoSet.aggregate(["COUNT"], "_tsId",
+                                     ["_tsId", "_filename"])
 
         # Iterate over tomos
-        for tomo in tomoList:
-            tsKey = tomo["_tsId"]
-            if tsKey in ctfDict:
-                micName = tomo["_filename"]
-                defocus = ctfDict[tsKey] / 10000
-                inputData = ih.read(micName).getData()
-
-                with mrcfile.new(self._getOutputTomo(micName), overwrite=True) as mrcOut:
-                    self.info(f"Deconvolving {micName}")
-                    result = tom_deconv(inputData, pix, voltage, cs, defocus,
-                                        ncpu=self.numberOfThreads.get())
-                    mrcOut.set_data(result)
-                    mrcOut.voxel_size = pix
-                    mrcOut.update_header_from_data()
-            else:
-                self.info(f"No CTF found for tomo: {tsKey}")
+        self._deconvolve(pix, acq, tomoList, ctfDict, keyName="_tsId")
 
     def createOutputStep(self):
         in_tomos = self.getInputTomos()
@@ -129,6 +98,10 @@ class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
     def _summary(self):
         summary = []
 
+        if self.isFinished():
+            summary.append(f"Deconvolved {self.getInputTomos().getSize()} "
+                           "tomograms")
+
         return summary
 
     # -------------------------- UTILS functions ------------------------------
@@ -137,13 +110,3 @@ class ProtWarpDeconv3D(EMProtocol, ProtTomoBase):
             return self.inputTomograms
         else:
             return self.inputTomograms.get()
-
-    def _getOutputTomo(self, micName):
-        return self._getExtraPath(os.path.basename(micName))
-
-    def _updateItem(self, item, row):
-        current_out_fn = self._getOutputTomo(item.getFileName())
-        if os.path.exists(current_out_fn):
-            item.setLocation(current_out_fn)
-        else:
-            item._appendItem = False

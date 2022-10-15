@@ -32,7 +32,7 @@ import scipy.fft
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
     and https://github.com/Heng-Z/IsoNet
 
-    Original code is probably from:
+    Original code is from:
 
     Nickell et al., 'TOM software toolbox: acquisition and analysis for electron tomography',
     Journal of Structural Biology, 149 (2005), 227-234.
@@ -69,7 +69,7 @@ def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
 
 
 def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength=1,
-               highpassnyquist=0.02, phaseflipped=False, phaseshift=0, ncpu=1, gpu=-1):
+               highpassnyquist=0.02, phaseflipped=False, phaseshift=0, ncpu=1):
     """
     :param vol: tomogram volume (or 2D image)
     :param angpix: angstrom per pixel
@@ -82,7 +82,6 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
     :param phaseflipped: whether the data are already phase-flipped
     :param phaseshift: CTF phase shift in degrees (e.g. from a phase plate)
     :param ncpu: number of CPUs for FFT
-    :param gpu: GPU id, -1 = not used
 
     Example:
     deconv = tom_deconv(mytomo, 3.42, 300, 2.7, 6, 1.1, 1, 0.02, False, 0);
@@ -128,24 +127,9 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
     r = np.minimum(1, r)
     r = np.fft.ifftshift(r)
     ramp = np.interp(r, data, wiener).astype(np.float32)
+    vol = vol.astype(np.float32)
 
-    if gpu == -1:
-        deconv = np.real(scipy.fft.ifftn(scipy.fft.fftn(vol, overwrite_x=True, workers=ncpu) * ramp,
-                                         overwrite_x=True, workers=ncpu))
-        deconv = deconv.astype(np.float32)
-    else:
-        import cupy as cp
-        with cp.cuda.Device(gpu):
-            deconv = cp.real(cp.fft.ifftn(cp.fft.fftn(cp.asarray(vol)) * cp.asarray(ramp)))
-            deconv = cp.asnumpy(deconv).astype(np.float32)
-
-    # normalize volume - check if necessary
-    std_deconv = np.std(deconv)
-    std_vol = np.std(vol)
-    avg_vol = np.average(vol)
-    del vol, ramp
-    deconv /= std_deconv
-    deconv *= std_vol
-    deconv += avg_vol
+    deconv = np.real(scipy.fft.ifftn(scipy.fft.fftn(vol, overwrite_x=True, workers=ncpu) * ramp,
+                                     overwrite_x=True, workers=ncpu))
 
     return deconv

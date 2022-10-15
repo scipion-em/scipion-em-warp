@@ -23,14 +23,12 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+from pyworkflow.utils import weakImport
+from .test_protocols import ProtWarpDeconv2D
 
-import pwem
+with weakImport('tomo'):
+    from .test_protocols_tomo import ProtWarpDeconv3D
 
+from pyworkflow.tests import DataSet
 
-__version__ = '3.0.0b2'
-_references = ['Nickell2005', 'Tegunov2019']
-_logo = "warp_logo.png"
-
-
-class Plugin(pwem.Plugin):
-    _url = "http://warpem.com/warp/#"
+DataSet(name='empiar10064', folder='tutorialDataSusan', files={})
