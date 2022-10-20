@@ -98,7 +98,7 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
     if phaseflipped:
         ctf = np.abs(ctf)
 
-    wiener = ctf / (ctf * ctf + np.divide(1, snr))
+    wiener = ctf / (ctf * ctf + np.divide(1, np.maximum(1e-15, snr)))
 
     s1 = -math.floor(vol.shape[0] / 2)
     f1 = s1 + vol.shape[0] - 1
