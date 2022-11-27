@@ -1,1 +1,2 @@
+3.0.0b3 - fix test
 3.0.0b1 - first version of the plugin

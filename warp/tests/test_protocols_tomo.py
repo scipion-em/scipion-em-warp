@@ -102,4 +102,4 @@ class TestDeconvolve3D(BaseTest):
         self.launchProtocol(protDeconv3D)
         outputTomos = protDeconv3D.outputTomograms
         self.assertIsNotNone(outputTomos, "Warp deconvolve 3D has failed")
-        self.assertSetSize(outputTomos, 4)
+        self.assertSetSize(outputTomos, 2)
