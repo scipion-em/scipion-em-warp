@@ -33,4 +33,4 @@ _logo = "warp_logo.png"
 
 
 class Plugin(pwem.Plugin):
-    _url = "http://warpem.com/warp/#"
+    _url = "https://github.com/dtegunov/tom_deconv"
