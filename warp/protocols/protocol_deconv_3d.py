@@ -35,7 +35,6 @@ from .protocol_base import ProtWarpBase
 
 class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
     """ Protocol to deconvolve (Wiener-like filter) a set of tomograms.
-    See https://github.com/dtegunov/tom_deconv
     """
     _label = 'deconvolve 3D'
     _possibleOutputs = {'outputTomograms': SetOfTomograms}
