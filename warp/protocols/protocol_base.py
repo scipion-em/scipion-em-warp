@@ -77,12 +77,6 @@ class ProtWarpBase(EMProtocol):
             else:
                 self.warning(f"No CTF found for: {key}")
 
-    # --------------------------- INFO functions ------------------------------
-    def _summary(self):
-        summary = []
-
-        return summary
-
     # -------------------------- UTILS functions ------------------------------
     def getInputMicrographs(self, pointer=False):
         if pointer:

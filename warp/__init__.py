@@ -27,10 +27,10 @@
 import pwem
 
 
-__version__ = '3.0.0b3'
+__version__ = '3.0.0'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 
 
 class Plugin(pwem.Plugin):
-    _url = "http://warpem.com/warp/#"
+    _url = "https://github.com/dtegunov/tom_deconv"

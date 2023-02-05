@@ -35,7 +35,6 @@ from .protocol_base import ProtWarpBase
 
 class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
     """ Protocol to deconvolve (Wiener-like filter) a set of micrographs.
-    See https://github.com/dtegunov/tom_deconv
     """
     _label = 'deconvolve 2D'
     _possibleOutputs = {'outputMicrographs': SetOfMicrographs}
@@ -95,10 +94,3 @@ class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
                            "micrographs")
 
         return summary
-
-    # -------------------------- UTILS functions ------------------------------
-    def getInputMicrographs(self, pointer=False):
-        if pointer:
-            return self.inputMicrographs
-        else:
-            return self.inputMicrographs.get()

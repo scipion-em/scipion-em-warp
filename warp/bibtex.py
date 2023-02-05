@@ -27,8 +27,7 @@
 """
 
 @article{Tegunov2019,
-	doi = {10.1038/s41592-019-0580-y},
-	url = {https://doi.org/10.1038%2Fs41592-019-0580-y},
+	doi = {https://dx.doi.org/10.1038/s41592-019-0580-y},
 	year = 2019,
 	month = {oct},
 	publisher = {Springer Science and Business Media {LLC}},
@@ -41,8 +40,7 @@
 }
 
 @article{Nickell2005,
-  doi = {10.1016/j.jsb.2004.10.006},
-  url = {https://doi.org/10.1016/j.jsb.2004.10.006},
+  doi = {https://dx.doi.org/10.1016/j.jsb.2004.10.006},
   year = {2005},
   month = {mar},
   publisher = {Elsevier {BV}},
