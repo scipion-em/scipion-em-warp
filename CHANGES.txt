@@ -1,2 +1,3 @@
+3.0.0 - clean unused functions, minor changes
 3.0.0b3 - fix test
 3.0.0b1 - first version of the plugin
