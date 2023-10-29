@@ -42,6 +42,17 @@ class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
         form.addSection(label=Message.LABEL_INPUT)
+        form.addHidden(params.USE_GPU, params.BooleanParam,
+                       default=False,
+                       label="Use GPU for execution",
+                       help="This protocol has both CPU and GPU implementation. "
+                            "Select the one you want to use.")
+        form.addHidden(params.GPU_LIST, params.StringParam, default='0',
+                       label="Choose GPU ID",
+                       help="GPU may have several cores. Set it to zero"
+                            " if you do not know what we are talking about."
+                            " First core index is 0, second 1 and so on."
+                            " You can use only single GPU.")
         form.addParam('inputMicrographs',
                       params.PointerParam,
                       pointerClass='SetOfMicrographs',
@@ -72,8 +83,7 @@ class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
                                         ["_micName", "_filename"])
 
         # Iterate over mics
-        self._deconvolve(pix, acq, micsList, ctfDict,
-                         keyName="_micName")
+        self._deconvolve(pix, acq, micsList, ctfDict, keyName="_micName")
 
     def createOutputStep(self):
         in_mics = self.getInputMicrographs()
