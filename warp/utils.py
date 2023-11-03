@@ -24,7 +24,6 @@
 # *
 # **************************************************************************
 
-import cupy as cp
 import numpy as np
 import math
 import scipy.fft
@@ -134,6 +133,7 @@ def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength
     vol = vol.astype(np.float32)
 
     if gpu:
+        import cupy as cp
         with cp.cuda.Device(gpuid):
             deconv = cp.real(cp.fft.ifftn(cp.fft.fftn(cp.asarray(vol)) * cp.asarray(ramp)))
             deconv = cp.asnumpy(deconv).astype(np.float32)
