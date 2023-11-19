@@ -70,12 +70,23 @@ class ProtWarpBase(EMProtocol):
                 with mrcfile.new(self._getOutputFn(fileName), overwrite=True) as mrcOut:
                     self.info(f"Deconvolving {fileName}")
                     result = tom_deconv(inputData, pixSize, voltage, cs, defocus,
-                                        ncpu=self.numberOfThreads.get())
+                                        ncpu=self.numberOfThreads.get(),
+                                        gpu=self.useGpu,
+                                        gpuid=self.getGpuList()[0])
                     mrcOut.set_data(result)
                     mrcOut.voxel_size = pixSize
                     mrcOut.update_header_from_data()
             else:
                 self.warning(f"No CTF found for: {key}")
+
+    # --------------------------- INFO functions ------------------------------
+    def _warnings(self):
+        warnings = []
+
+        if self.usesGpu() and self.numberOfThreads > 1:
+            warnings.append("Number of threads is ignored for GPU execution")
+
+        return warnings
 
     # -------------------------- UTILS functions ------------------------------
     def getInputMicrographs(self, pointer=False):
