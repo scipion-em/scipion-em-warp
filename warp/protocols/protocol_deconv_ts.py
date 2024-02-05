@@ -27,11 +27,12 @@ from enum import Enum
 
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
+import pyworkflow.utils as pwutils
 
 from tomo.protocols import ProtTomoBase
-from tomo.objects import SetOfTiltSeries, TiltSeries, TiltImage
+from tomo.objects import SetOfTiltSeries
 
-from .protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase
 
 
 class outputs(Enum):
@@ -93,35 +94,29 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
 
         acq = tsSet.getAcquisition()
         pix = tsSet.getSamplingRate()
-        tsList = tsSet.aggregate(["COUNT"], "_tsId",
-                                 ["_tsId", "_filename"])
+        tsList = [{
+            "_tsId": tsId,
+            "_filename": tsSet.getTiltSeriesFromTsId(tsId).getFirstItem().getFileName()
+        } for tsId in tsIds_from_ts]
 
         # Iterate over TS
-        print(tsList.items())
-        #self._deconvolve(pix, acq, tsList, ctfDict, keyName="_tsId")
+        self._deconvolve(pix, acq, tsList, ctfDict, keyName="_tsId", isTS=True)
 
     def createOutputStep(self):
         in_ts = self.getInputTS()
-        out_ts = self.getOutputTS()
-        sampling = out_ts.getSamplingRate()
-        for ts in in_ts:
-            newTs = TiltSeries(tsId=ts.getTsId())
-            newTs.copyInfo(ts)
-            newTs.setSamplingRate(sampling)
-            out_ts.append(newTs)
+        output = outputs.TiltSeries.name
+        if hasattr(self, output):
+            getattr(self, output).enableAppend()
+        else:
+            in_ts = self.getInputTS()
+            out_ts = self._createSetOfTiltSeries()
+            out_ts.copyInfo(in_ts)
+            self._defineOutputs(**{output: out_ts})
+            self._defineTransformRelation(self.getInputTS(pointer=True), out_ts)
 
-            for ti in ts.iterItems():
-                newTi = TiltImage()
-                newTi.copyInfo(ti, copyId=True)
-                #newTi.setLocation()
-                newTi.setSamplingRate(sampling)
-                newTs.append(newTi)
-
-            newTs.write()
-            out_ts.update(newTs)
-            out_ts.write()
-
-        self._store()
+        out_ts = getattr(self, output)
+        out_ts.copyInfo(in_ts)
+        out_ts.copyItems(in_ts, updateTiCallback=self.updateTi)
 
     # --------------------------- INFO functions ------------------------------
     def _summary(self):
@@ -140,15 +135,9 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
         else:
             return self.inputTiltSeries.get()
 
-    def getOutputTS(self):
-        output = self._possibleOutputs.TiltSeries.name
-        if hasattr(self, output):
-            getattr(self, output).enableAppend()
-        else:
-            in_ts = self.getInputTS()
-            out_ts = self._createSetOfTiltSeries()
-            out_ts.copyInfo(in_ts)
-            self._defineOutputs(**{self._possibleOutputs.TiltSeries: out_ts})
-            self._defineTransformRelation(self.getInputTS(pointer=True), out_ts)
+    def updateTi(self, j, ts, ti, tsOut, tiOut):
+        fn = ti.getFileName()
+        tiOut.setFileName(self._getOutputFn(fn))
 
-        return getattr(self, output)
+    def _getOutputFn(self, micName):
+        return self._getExtraPath(pwutils.removeBaseExt(micName) + "_deconv.mrcs")

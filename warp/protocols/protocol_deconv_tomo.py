@@ -31,7 +31,7 @@ from pyworkflow.utils.properties import Message
 from tomo.protocols import ProtTomoBase
 from tomo.objects import SetOfTomograms
 
-from .protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase
 
 
 class outputs(Enum):
@@ -105,7 +105,7 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
         out_tomos.copyInfo(in_tomos)
         out_tomos.copyItems(in_tomos, updateItemCallback=self._updateItem)
 
-        self._defineOutputs(**{self._possibleOutputs.Tomograms: out_tomos})
+        self._defineOutputs(**{outputs.Tomograms.name: out_tomos})
         self._defineTransformRelation(self.getInputTomos(pointer=True),
                                       out_tomos)
 

@@ -31,11 +31,11 @@ from pwem.protocols import ProtMicrographs
 from pwem.objects import SetOfMicrographs
 from pwem.constants import RELATION_CTF
 
-from .protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase
 
 
 class outputs(Enum):
-    Micrographs: SetOfMicrographs
+    Micrographs = SetOfMicrographs
 
 
 class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
@@ -96,7 +96,7 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
         out_mics.copyInfo(in_mics)
         out_mics.copyItems(in_mics, updateItemCallback=self._updateItem)
 
-        self._defineOutputs(**{self._possibleOutputs.Micrographs.name: out_mics})
+        self._defineOutputs(**{outputs.Micrographs.name: out_mics})
         self._defineTransformRelation(self.getInputMicrographs(pointer=True),
                                       out_mics)
 

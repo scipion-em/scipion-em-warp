@@ -28,10 +28,10 @@ from pyworkflow.tests import BaseTest, DataSet, setupTestProject
 from pyworkflow.utils import magentaStr
 from pwem.protocols import ProtImportMicrographs, ProtImportCTF
 
-from ..protocols.protocol_deconv_mics import ProtWarpDeconvMics
+from warp.protocols.protocol_deconv_mics import ProtWarpDeconvMics, outputs
 
 
-class TestDeconvolve2D(BaseTest):
+class TestDeconvolveMics(BaseTest):
     @classmethod
     def setUpClass(cls):
         setupTestProject(cls)
@@ -48,7 +48,8 @@ class TestDeconvolve2D(BaseTest):
                                      filesPath=filesPath,
                                      samplingRate=samplingRate)
         cls.launchProtocol(protImport)
-        cls.assertIsNotNone(protImport.outputMicrographs,
+        output = getattr(protImport, protImport._possibleOutputs.outputMicrographs.name)
+        cls.assertIsNotNone(output,
                             "SetOfMicrographs has not been produced.")
 
         return protImport
@@ -58,9 +59,8 @@ class TestDeconvolve2D(BaseTest):
         print(magentaStr("\n==> Importing data - ctfs:"))
         protCTF = cls.newProtocol(ProtImportCTF,
                                   importFrom=ProtImportCTF.IMPORT_FROM_SCIPION,
-                                  filesPath=filesPath)
-
-        protCTF.inputMicrographs.set(inputMics)
+                                  filesPath=filesPath,
+                                  inputMicrographs=inputMics)
         cls.launchProtocol(protCTF)
         cls.assertIsNotNone(protCTF.outputCTF,
                             "There was a problem when importing CTFs.")
@@ -68,15 +68,15 @@ class TestDeconvolve2D(BaseTest):
 
     def test_run(self):
         protImport = self.runImportMics(self.micsFn, 1.237)
-        protCTF = self.runImportCTFs(self.ctfFn,
-                                     protImport.outputMicrographs)
+        mics = getattr(protImport, protImport._possibleOutputs.outputMicrographs.name)
+        protCTF = self.runImportCTFs(self.ctfFn, mics)
 
-        print(magentaStr("\n==> Testing warp - deconvolve 2D:"))
+        print(magentaStr("\n==> Testing warp - deconvolve micrographs:"))
         protDeconv2D = self.newProtocol(
             ProtWarpDeconvMics,
-            inputMicrographs=protImport.outputMicrographs,
+            inputMicrographs=mics,
             ctfRelations=protCTF.outputCTF)
         self.launchProtocol(protDeconv2D)
-        outputMics = protDeconv2D.outputMicrographs
-        self.assertIsNotNone(outputMics, "Warp deconvolve 2D has failed")
+        outputMics = getattr(protDeconv2D, outputs.Micrographs.name)
+        self.assertIsNotNone(outputMics, "Warp deconvolve micrographs has failed")
         self.assertSetSize(outputMics, 3)
