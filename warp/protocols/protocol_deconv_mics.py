@@ -23,6 +23,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+from enum import Enum
 
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
@@ -33,11 +34,15 @@ from pwem.constants import RELATION_CTF
 from .protocol_base import ProtWarpBase
 
 
-class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
+class outputs(Enum):
+    Micrographs: SetOfMicrographs
+
+
+class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
     """ Protocol to deconvolve (Wiener-like filter) a set of micrographs.
     """
-    _label = 'deconvolve 2D'
-    _possibleOutputs = {'outputMicrographs': SetOfMicrographs}
+    _label = 'deconvolve micrographs'
+    _possibleOutputs = outputs
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -91,7 +96,7 @@ class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
         out_mics.copyInfo(in_mics)
         out_mics.copyItems(in_mics, updateItemCallback=self._updateItem)
 
-        self._defineOutputs(outputMicrographs=out_mics)
+        self._defineOutputs(**{self._possibleOutputs.Micrographs.name: out_mics})
         self._defineTransformRelation(self.getInputMicrographs(pointer=True),
                                       out_mics)
 
@@ -104,3 +109,10 @@ class ProtWarpDeconv2D(ProtWarpBase, ProtMicrographs):
                            "micrographs")
 
         return summary
+
+    # -------------------------- UTILS functions ------------------------------
+    def getInputMicrographs(self, pointer=False):
+        if pointer:
+            return self.inputMicrographs
+        else:
+            return self.inputMicrographs.get()

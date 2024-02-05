@@ -28,7 +28,7 @@ from pyworkflow.tests import BaseTest, DataSet, setupTestProject
 from pyworkflow.utils import magentaStr
 from pwem.protocols import ProtImportMicrographs, ProtImportCTF
 
-from ..protocols.protocol_deconv_2d import ProtWarpDeconv2D
+from ..protocols.protocol_deconv_mics import ProtWarpDeconvMics
 
 
 class TestDeconvolve2D(BaseTest):
@@ -73,7 +73,7 @@ class TestDeconvolve2D(BaseTest):
 
         print(magentaStr("\n==> Testing warp - deconvolve 2D:"))
         protDeconv2D = self.newProtocol(
-            ProtWarpDeconv2D,
+            ProtWarpDeconvMics,
             inputMicrographs=protImport.outputMicrographs,
             ctfRelations=protCTF.outputCTF)
         self.launchProtocol(protDeconv2D)

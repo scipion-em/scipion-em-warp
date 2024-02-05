@@ -25,7 +25,8 @@
 # **************************************************************************
 from pyworkflow.utils import weakImport
 
-from .protocol_deconv_2d import ProtWarpDeconv2D
+from .protocol_deconv_mics import ProtWarpDeconvMics
 
 with weakImport('tomo'):
-    from .protocol_deconv_3d import ProtWarpDeconv3D
+    from .protocol_deconv_tomo import ProtWarpDeconvTomo
+    from .protocol_deconv_ts import ProtWarpDeconvTS

@@ -23,6 +23,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+from enum import Enum
 
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
@@ -33,11 +34,15 @@ from tomo.objects import SetOfTomograms
 from .protocol_base import ProtWarpBase
 
 
-class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
+class outputs(Enum):
+    Tomograms = SetOfTomograms
+
+
+class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
     """ Protocol to deconvolve (Wiener-like filter) a set of tomograms.
     """
-    _label = 'deconvolve 3D'
-    _possibleOutputs = {'outputTomograms': SetOfTomograms}
+    _label = 'deconvolve tomograms'
+    _possibleOutputs = outputs
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -100,7 +105,7 @@ class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
         out_tomos.copyInfo(in_tomos)
         out_tomos.copyItems(in_tomos, updateItemCallback=self._updateItem)
 
-        self._defineOutputs(outputTomograms=out_tomos)
+        self._defineOutputs(**{self._possibleOutputs.Tomograms: out_tomos})
         self._defineTransformRelation(self.getInputTomos(pointer=True),
                                       out_tomos)
 

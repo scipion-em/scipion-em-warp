@@ -31,7 +31,7 @@ from pyworkflow.utils import magentaStr
 from tomo.protocols import ProtImportTs
 from tomo.tests import DataSet
 
-from ..protocols.protocol_deconv_3d import ProtWarpDeconv3D
+from ..protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
 
 imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
 
@@ -95,7 +95,7 @@ class TestDeconvolve3D(BaseTest):
 
         print(magentaStr("\n==> Testing warp - deconvolve 3D:"))
         protDeconv3D = self.newProtocol(
-            ProtWarpDeconv3D,
+            ProtWarpDeconvTomo,
             inputTomograms=protImportTomo.Tomograms,
             inputCTFs=protImportCtf.CTFTomoSeries)
 

@@ -89,12 +89,6 @@ class ProtWarpBase(EMProtocol):
         return warnings
 
     # -------------------------- UTILS functions ------------------------------
-    def getInputMicrographs(self, pointer=False):
-        if pointer:
-            return self.inputMicrographs
-        else:
-            return self.inputMicrographs.get()
-
     def _getOutputFn(self, micName):
         return self._getExtraPath(pwutils.removeBaseExt(micName) + "_deconv.mrc")
 
