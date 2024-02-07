@@ -104,19 +104,12 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
 
     def createOutputStep(self):
         in_ts = self.getInputTS()
-        output = outputs.TiltSeries.name
-        if hasattr(self, output):
-            getattr(self, output).enableAppend()
-        else:
-            in_ts = self.getInputTS()
-            out_ts = self._createSetOfTiltSeries()
-            out_ts.copyInfo(in_ts)
-            self._defineOutputs(**{output: out_ts})
-            self._defineTransformRelation(self.getInputTS(pointer=True), out_ts)
-
-        out_ts = getattr(self, output)
+        out_ts = self._createSetOfTiltSeries()
         out_ts.copyInfo(in_ts)
         out_ts.copyItems(in_ts, updateTiCallback=self.updateTi)
+
+        self._defineOutputs(**{outputs.TiltSeries.name: out_ts})
+        self._defineTransformRelation(self.getInputTS(pointer=True), out_ts)
 
     # --------------------------- INFO functions ------------------------------
     def _summary(self):
@@ -140,4 +133,5 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
         tiOut.setFileName(self._getOutputFn(fn))
 
     def _getOutputFn(self, micName):
+        """ Overwrite base class method to output mrcs instead. """
         return self._getExtraPath(pwutils.removeBaseExt(micName) + "_deconv.mrcs")

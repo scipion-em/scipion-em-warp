@@ -73,7 +73,7 @@ class ProtWarpBase(EMProtocol):
                 outputFn = self._getOutputFn(fileName)
                 self.info(f"Deconvolving {fileName}")
 
-                func = self._processStack if isTS else self._processVolume
+                func = self._processStack if isTS else self._processImage
                 func(fileName, outputFn, angpix=pixSize, voltage=voltage,
                      cs=cs, defocus=defocus, ncpu=ncpu, gpu=gpu, gpuid=gpuid)
             else:
@@ -100,7 +100,7 @@ class ProtWarpBase(EMProtocol):
             item._appendItem = False
 
     @classmethod
-    def _processVolume(cls, inputFn, outputFn, **kwargs):
+    def _processImage(cls, inputFn, outputFn, **kwargs):
         ih = ImageHandler()
         inputData = ih.read(inputFn).getData()
         with mrcfile.new(outputFn) as mrcOut:

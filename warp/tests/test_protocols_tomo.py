@@ -113,6 +113,6 @@ class TestDeconvolveTomo(BaseTest):
             inputCTFs=ctf)
 
         self.launchProtocol(protDeconvTS)
-        outputTomos = getattr(protDeconvTS, protDeconvTS._possibleOutputs.TiltSeries.name)
-        self.assertIsNotNone(outputTomos, "Warp deconvolve tilt-series has failed")
-        self.assertSetSize(outputTomos, 2)
+        outputTS = getattr(protDeconvTS, protDeconvTS._possibleOutputs.TiltSeries.name)
+        self.assertIsNotNone(outputTS, "Warp deconvolve tilt-series has failed")
+        self.assertSetSize(outputTS, 2)
