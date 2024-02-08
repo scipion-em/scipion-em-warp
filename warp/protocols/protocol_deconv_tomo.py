@@ -77,29 +77,31 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
     def deconvolveStep(self):
         tomoSet = self.getInputTomos()
         ctfSet = self.inputCTFs.get()
-
-        tsIds_from_tomos = self._getTsIds(tomoSet)
-        tsIds_from_ctfs = self._getTsIds(ctfSet)
-
-        if not tsIds_from_ctfs.issubset(tsIds_from_tomos):
-            self.warning("Found CTFs with tsId that did not match "
-                         "provided tomograms: "
-                         f"{set.difference(tsIds_from_ctfs, tsIds_from_tomos)}")
-
-        # Load CTFs
-        ctfDict = dict()
-        for ctfSeries in ctfSet.iterItems():
-            tsKey = ctfSeries.getTsId()
-            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
-            ctfDict[tsKey] = sum(ctfValues) / len(ctfValues)
-
         acq = tomoSet.getAcquisition()
         pix = tomoSet.getSamplingRate()
-        tomoList = tomoSet.aggregate(["COUNT"], "_tsId",
-                                     ["_tsId", "_filename"])
+
+        tsDict, ctfDict = {}, {}
+
+        for tomo in tomoSet.iterItems():
+            tsDict[tomo.getTsId()] = {
+                "_tsId": tomo.getTsId(),
+                "_filename": tomo.getFileName()
+            }
+
+        for ctfSeries in ctfSet.iterItems():
+            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
+            ctfDict[ctfSeries.getTsId()] = sum(ctfValues) / len(ctfValues)
+
+        matchIds = tsDict.keys() & ctfDict.keys()
+        matchTs = [tsDict[i] for i in matchIds]
+        mismatchIds = tsDict.keys() - ctfDict.keys()
+
+        if mismatchIds:
+            self.warning("No CTFs found for tomograms with tsId: "
+                         f"{mismatchIds}")
 
         # Iterate over tomos
-        self._deconvolve(pix, acq, tomoList, ctfDict, keyName="_tsId")
+        self._deconvolve(pix, acq, matchTs, ctfDict, keyName="_tsId")
 
     def createOutputStep(self):
         in_tomos = self.getInputTomos()

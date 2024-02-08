@@ -78,31 +78,31 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
     def deconvolveStep(self):
         tsSet = self.getInputTS()
         ctfSet = self.inputCTFs.get()
-
-        tsIds_from_ts = self._getTsIds(tsSet)
-        tsIds_from_ctfs = self._getTsIds(ctfSet)
-
-        if not tsIds_from_ctfs.issubset(tsIds_from_ts):
-            self.warning("Found CTFs with tsId that did not match "
-                         "provided tilt-series: "
-                         f"{set.difference(tsIds_from_ctfs, tsIds_from_ts)}")
-
-        # Load CTFs
-        ctfDict = dict()
-        for ctfSeries in ctfSet.iterItems():
-            tsKey = ctfSeries.getTsId()
-            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
-            ctfDict[tsKey] = sum(ctfValues) / len(ctfValues)
-
         acq = tsSet.getAcquisition()
         pix = tsSet.getSamplingRate()
-        tsList = [{
-            "_tsId": tsId,
-            "_filename": tsSet.getTiltSeriesFromTsId(tsId).getFirstItem().getFileName()
-        } for tsId in tsIds_from_ts]
+
+        tsDict, ctfDict = {}, {}
+
+        for ts in tsSet.iterItems():
+            tsDict[ts.getTsId()] = {
+                "_tsId": ts.getTsId(),
+                "_filename": ts.getFirstItem().getFileName()
+            }
+
+        for ctfSeries in ctfSet.iterItems():
+            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
+            ctfDict[ctfSeries.getTsId()] = sum(ctfValues) / len(ctfValues)
+
+        matchIds = tsDict.keys() & ctfDict.keys()
+        matchTs = [tsDict[i] for i in matchIds]
+        mismatchIds = tsDict.keys() - ctfDict.keys()
+
+        if mismatchIds:
+            self.warning("No CTFs found for tilt-series with tsId: "
+                         f"{mismatchIds}")
 
         # Iterate over TS
-        self._deconvolve(pix, acq, tsList, ctfDict, keyName="_tsId", isTS=True)
+        self._deconvolve(pix, acq, matchTs, ctfDict, keyName="_tsId", isTS=True)
 
     def createOutputStep(self):
         in_ts = self.getInputTS()
