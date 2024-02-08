@@ -77,8 +77,10 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
     def deconvolveStep(self):
         tomoSet = self.getInputTomos()
         ctfSet = self.inputCTFs.get()
-        tsIds_from_tomos = set(item.getTsId() for item in tomoSet)
-        tsIds_from_ctfs = set(item.getTsId() for item in ctfSet)
+
+        tsIds_from_tomos = self._getTsIds(tomoSet)
+        tsIds_from_ctfs = self._getTsIds(ctfSet)
+
         if not tsIds_from_ctfs.issubset(tsIds_from_tomos):
             self.warning("Found CTFs with tsId that did not match "
                          "provided tomograms: "

@@ -24,6 +24,7 @@
 # *
 # **************************************************************************
 from pyworkflow.utils import weakImport
+
 from .test_protocols import ProtWarpDeconvMics
 
 with weakImport('tomo'):

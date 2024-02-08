@@ -78,11 +78,13 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
     def deconvolveStep(self):
         tsSet = self.getInputTS()
         ctfSet = self.inputCTFs.get()
-        tsIds_from_ts = set(item.getTsId() for item in tsSet)
-        tsIds_from_ctfs = set(item.getTsId() for item in ctfSet)
+
+        tsIds_from_ts = self._getTsIds(tsSet)
+        tsIds_from_ctfs = self._getTsIds(ctfSet)
+
         if not tsIds_from_ctfs.issubset(tsIds_from_ts):
             self.warning("Found CTFs with tsId that did not match "
-                         "provided tilt-seriess: "
+                         "provided tilt-series: "
                          f"{set.difference(tsIds_from_ctfs, tsIds_from_ts)}")
 
         # Load CTFs
