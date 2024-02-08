@@ -109,7 +109,7 @@ class TestDeconvolveTomo(BaseTest):
         print(magentaStr("\n==> Testing warp - deconvolve tilt-series:"))
         protDeconvTS = self.newProtocol(
             ProtWarpDeconvTS,
-            inputTS=protImportTS.outputTiltSeries,
+            inputTiltSeries=protImportTS.outputTiltSeries,
             inputCTFs=ctf)
 
         self.launchProtocol(protDeconvTS)
