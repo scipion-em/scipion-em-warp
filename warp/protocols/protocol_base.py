@@ -124,7 +124,3 @@ class ProtWarpBase(EMProtocol):
         mrc.set_image_stack()
         mrc.voxel_size = kwargs["angpix"]
         mrc.close()
-
-    def _getTsIds(self, inputSet):
-        tsIds = inputSet.aggregate(["COUNT"], "_tsId", ["_tsId"])
-        return set([d['_tsId'] for d in tsIds])
