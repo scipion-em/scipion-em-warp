@@ -25,6 +25,7 @@
 # **************************************************************************
 from enum import Enum
 
+from pyworkflow.constants import NEW
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
 import pyworkflow.utils as pwutils
@@ -44,6 +45,7 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
     """
     _label = 'deconvolve tilt-series'
     _possibleOutputs = outputs
+    _devStatus = NEW
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):

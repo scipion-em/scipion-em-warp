@@ -25,6 +25,7 @@
 # **************************************************************************
 from enum import Enum
 
+from pyworkflow.constants import PROD
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
 from pwem.protocols import ProtMicrographs
@@ -43,6 +44,7 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
     """
     _label = 'deconvolve micrographs'
     _possibleOutputs = outputs
+    _devStatus = PROD
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
