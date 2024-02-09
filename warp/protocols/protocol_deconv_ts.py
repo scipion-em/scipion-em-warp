@@ -23,21 +23,29 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+from enum import Enum
 
+from pyworkflow.constants import NEW
 import pyworkflow.protocol.params as params
 from pyworkflow.utils.properties import Message
+import pyworkflow.utils as pwutils
 
 from tomo.protocols import ProtTomoBase
-from tomo.objects import SetOfTomograms
+from tomo.objects import SetOfTiltSeries
 
-from .protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase
 
 
-class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
-    """ Protocol to deconvolve (Wiener-like filter) a set of tomograms.
+class outputs(Enum):
+    TiltSeries = SetOfTiltSeries
+
+
+class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
+    """ Protocol to deconvolve (Wiener-like filter) a set of tilt-series.
     """
-    _label = 'deconvolve 3D'
-    _possibleOutputs = {'outputTomograms': SetOfTomograms}
+    _label = 'deconvolve tilt-series'
+    _possibleOutputs = outputs
+    _devStatus = NEW
 
     # -------------------------- DEFINE param functions -----------------------
     def _defineParams(self, form):
@@ -53,10 +61,10 @@ class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
                             " if you do not know what we are talking about."
                             " First core index is 0, second 1 and so on."
                             " You can use only single GPU.")
-        form.addParam('inputTomograms',
+        form.addParam('inputTiltSeries',
                       params.PointerParam,
-                      pointerClass='SetOfTomograms',
-                      label='Input tomograms',
+                      pointerClass='SetOfTiltSeries',
+                      label='Input tilt-series',
                       important=True)
         form.addParam('inputCTFs',
                       params.PointerParam,
@@ -70,53 +78,64 @@ class ProtWarpDeconv3D(ProtWarpBase, ProtTomoBase):
 
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
-        tomoSet = self.getInputTomos()
+        tsSet = self.getInputTS()
         ctfSet = self.inputCTFs.get()
-        tsIds_from_tomos = set(item.getTsId() for item in tomoSet)
-        tsIds_from_ctfs = set(item.getTsId() for item in ctfSet)
-        if not tsIds_from_ctfs.issubset(tsIds_from_tomos):
-            self.warning("Found CTFs with tsId that did not match "
-                         "provided tomograms: "
-                         f"{set.difference(tsIds_from_ctfs, tsIds_from_tomos)}")
+        acq = tsSet.getAcquisition()
+        pix = tsSet.getSamplingRate()
 
-        # Load CTFs
-        ctfDict = dict()
+        tsDict, ctfDict = {}, {}
+
+        for ts in tsSet.iterItems():
+            tsDict[ts.getTsId()] = {
+                "_tsId": ts.getTsId(),
+                "_filename": ts.getFirstItem().getFileName()
+            }
+
         for ctfSeries in ctfSet.iterItems():
-            tsKey = ctfSeries.getTsId()
             ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
-            ctfDict[tsKey] = sum(ctfValues) / len(ctfValues)
+            ctfDict[ctfSeries.getTsId()] = sum(ctfValues) / len(ctfValues)
 
-        acq = tomoSet.getAcquisition()
-        pix = tomoSet.getSamplingRate()
-        tomoList = tomoSet.aggregate(["COUNT"], "_tsId",
-                                     ["_tsId", "_filename"])
+        matchIds = tsDict.keys() & ctfDict.keys()
+        matchTs = [tsDict[i] for i in matchIds]
+        mismatchIds = tsDict.keys() - ctfDict.keys()
 
-        # Iterate over tomos
-        self._deconvolve(pix, acq, tomoList, ctfDict, keyName="_tsId")
+        if mismatchIds:
+            self.warning("No CTFs found for tilt-series with tsId: "
+                         f"{mismatchIds}")
+
+        # Iterate over TS
+        self._deconvolve(pix, acq, matchTs, ctfDict, keyName="_tsId", isTS=True)
 
     def createOutputStep(self):
-        in_tomos = self.getInputTomos()
-        out_tomos = self._createSetOfTomograms()
-        out_tomos.copyInfo(in_tomos)
-        out_tomos.copyItems(in_tomos, updateItemCallback=self._updateItem)
+        in_ts = self.getInputTS()
+        out_ts = self._createSetOfTiltSeries()
+        out_ts.copyInfo(in_ts)
+        out_ts.copyItems(in_ts, updateTiCallback=self.updateTi)
 
-        self._defineOutputs(outputTomograms=out_tomos)
-        self._defineTransformRelation(self.getInputTomos(pointer=True),
-                                      out_tomos)
+        self._defineOutputs(**{outputs.TiltSeries.name: out_ts})
+        self._defineTransformRelation(self.getInputTS(pointer=True), out_ts)
 
     # --------------------------- INFO functions ------------------------------
     def _summary(self):
         summary = []
 
         if self.isFinished():
-            summary.append(f"Deconvolved {self.getInputTomos().getSize()} "
-                           "tomograms")
+            summary.append(f"Deconvolved {self.getInputTS().getSize()} "
+                           "tilt-series")
 
         return summary
 
     # -------------------------- UTILS functions ------------------------------
-    def getInputTomos(self, pointer=False):
+    def getInputTS(self, pointer=False):
         if pointer:
-            return self.inputTomograms
+            return self.inputTiltSeries
         else:
-            return self.inputTomograms.get()
+            return self.inputTiltSeries.get()
+
+    def updateTi(self, j, ts, ti, tsOut, tiOut):
+        fn = ti.getFileName()
+        tiOut.setFileName(self._getOutputFn(fn))
+
+    def _getOutputFn(self, micName):
+        """ Overwrite base class method to output mrcs instead. """
+        return self._getExtraPath(pwutils.removeBaseExt(micName) + "_deconv.mrcs")

@@ -28,15 +28,16 @@ from pwem import Domain
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import magentaStr
 
-from tomo.protocols import ProtImportTs
+from tomo.protocols import ProtImportTs, ProtImportTsCTF
 from tomo.tests import DataSet
 
-from ..protocols.protocol_deconv_3d import ProtWarpDeconv3D
+from warp.protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
+from warp.protocols.protocol_deconv_ts import ProtWarpDeconvTS
 
 imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
 
 
-class TestDeconvolve3D(BaseTest):
+class TestDeconvolveTomo(BaseTest):
     @classmethod
     def setUpClass(cls):
         setupTestProject(cls)
@@ -53,11 +54,10 @@ class TestDeconvolve3D(BaseTest):
 
     @classmethod
     def runImportCtf(cls, **kwargs):
-        cls.protImportCtf = cls.newProtocol(
-            imodProts.ProtImodImportSetOfCtfTomoSeries, **kwargs)
+        cls.protImportCtf = cls.newProtocol(ProtImportTsCTF, **kwargs)
         cls.launchProtocol(cls.protImportCtf)
-        cls.assertIsNotNone(cls.protImportCtf.CTFTomoSeries,
-                            "SetOfCTFTomoSeries has not been produced.")
+        ctf = getattr(cls.protImportCtf, cls.protImportCtf._possibleOutputs.CTFs.name)
+        cls.assertIsNotNone(ctf, "SetOfCTFTomoSeries has not been produced.")
         return cls.protImportCtf
 
     @classmethod
@@ -73,7 +73,7 @@ class TestDeconvolve3D(BaseTest):
     def test_run(self):
         print(magentaStr("\n==> Importing data - tilt series:"))
         protImportTS = self.runImportTiltSeries(filesPath=self.ts_path,
-                                                filesPattern="mixedCTEM_{TS}.mrcs",
+                                                filesPattern="{TS}.mrcs",
                                                 anglesFrom=2,  # tlt file
                                                 voltage=300,
                                                 sphericalAberration=2.7,
@@ -86,6 +86,7 @@ class TestDeconvolve3D(BaseTest):
         print(magentaStr("\n==> Importing data - tomo CTFs:"))
         protImportCtf = self.runImportCtf(filesPath=self.ts_path,
                                           filesPattern="mixedCTEM_tomo*.defocus",
+                                          importFrom=1,  # imod
                                           inputSetOfTiltSeries=protImportTS.outputTiltSeries)
 
         print(magentaStr("\n==> Running imod - tomo reconstruct:"))
@@ -93,13 +94,25 @@ class TestDeconvolve3D(BaseTest):
             tomoThickness=110.0,
             inputSetOfTiltSeries=protImportTS.outputTiltSeries)
 
-        print(magentaStr("\n==> Testing warp - deconvolve 3D:"))
-        protDeconv3D = self.newProtocol(
-            ProtWarpDeconv3D,
+        print(magentaStr("\n==> Testing warp - deconvolve tomograms:"))
+        ctf = getattr(protImportCtf, protImportCtf._possibleOutputs.CTFs.name)
+        protDeconvTomo = self.newProtocol(
+            ProtWarpDeconvTomo,
             inputTomograms=protImportTomo.Tomograms,
-            inputCTFs=protImportCtf.CTFTomoSeries)
+            inputCTFs=ctf)
 
-        self.launchProtocol(protDeconv3D)
-        outputTomos = protDeconv3D.outputTomograms
-        self.assertIsNotNone(outputTomos, "Warp deconvolve 3D has failed")
+        self.launchProtocol(protDeconvTomo)
+        outputTomos = getattr(protDeconvTomo, protDeconvTomo._possibleOutputs.Tomograms.name)
+        self.assertIsNotNone(outputTomos, "Warp deconvolve tomograms has failed")
         self.assertSetSize(outputTomos, 2)
+
+        print(magentaStr("\n==> Testing warp - deconvolve tilt-series:"))
+        protDeconvTS = self.newProtocol(
+            ProtWarpDeconvTS,
+            inputTiltSeries=protImportTS.outputTiltSeries,
+            inputCTFs=ctf)
+
+        self.launchProtocol(protDeconvTS)
+        outputTS = getattr(protDeconvTS, protDeconvTS._possibleOutputs.TiltSeries.name)
+        self.assertIsNotNone(outputTS, "Warp deconvolve tilt-series has failed")
+        self.assertSetSize(outputTS, 2)

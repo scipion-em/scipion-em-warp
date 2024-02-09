@@ -31,7 +31,7 @@ import pyworkflow.utils as pwutils
 from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 
-from ..utils import tom_deconv
+from warp.utils import tom_deconv
 
 
 class ProtWarpBase(EMProtocol):
@@ -52,30 +52,30 @@ class ProtWarpBase(EMProtocol):
         raise NotImplementedError
 
     def _deconvolve(self, pixSize, acquisition, inputList,
-                    ctfDict, keyName="_micName"):
+                    ctfDict, keyName="_micName", isTS=False):
         """ Main function to iterate over inputList items.
         Checks the match with ctfDict by keyName for each item.
         """
+        pwutils.cleanPath(self._getExtraPath())
+        pwutils.makePath(self._getExtraPath())
+
         voltage = acquisition.getVoltage()
         cs = acquisition.getSphericalAberration()
-        ih = ImageHandler()
+        ncpu = self.numberOfThreads.get()
+        gpu = self.useGpu
+        gpuid = self.getGpuList()[0]
 
         for item in inputList:
             key = item[keyName]
             if key in ctfDict:
                 fileName = item["_filename"]
                 defocus = ctfDict[key] / 10000
-                inputData = ih.read(fileName).getData()
+                outputFn = self._getOutputFn(fileName)
+                self.info(f"Deconvolving {fileName}")
 
-                with mrcfile.new(self._getOutputFn(fileName), overwrite=True) as mrcOut:
-                    self.info(f"Deconvolving {fileName}")
-                    result = tom_deconv(inputData, pixSize, voltage, cs, defocus,
-                                        ncpu=self.numberOfThreads.get(),
-                                        gpu=self.useGpu,
-                                        gpuid=self.getGpuList()[0])
-                    mrcOut.set_data(result)
-                    mrcOut.voxel_size = pixSize
-                    mrcOut.update_header_from_data()
+                func = self._processStack if isTS else self._processImage
+                func(fileName, outputFn, angpix=pixSize, voltage=voltage,
+                     cs=cs, defocus=defocus, ncpu=ncpu, gpu=gpu, gpuid=gpuid)
             else:
                 self.warning(f"No CTF found for: {key}")
 
@@ -89,12 +89,6 @@ class ProtWarpBase(EMProtocol):
         return warnings
 
     # -------------------------- UTILS functions ------------------------------
-    def getInputMicrographs(self, pointer=False):
-        if pointer:
-            return self.inputMicrographs
-        else:
-            return self.inputMicrographs.get()
-
     def _getOutputFn(self, micName):
         return self._getExtraPath(pwutils.removeBaseExt(micName) + "_deconv.mrc")
 
@@ -104,3 +98,29 @@ class ProtWarpBase(EMProtocol):
             item.setFileName(outputFn)
         else:
             item._appendItem = False
+
+    @classmethod
+    def _processImage(cls, inputFn, outputFn, **kwargs):
+        ih = ImageHandler()
+        inputData = ih.read(inputFn).getData()
+        with mrcfile.new(outputFn) as mrcOut:
+            result = tom_deconv(inputData, **kwargs)
+            mrcOut.set_data(result)
+            mrcOut.voxel_size = kwargs["angpix"]
+            mrcOut.update_header_from_data()
+
+    @classmethod
+    def _processStack(cls, inputFn, outputFn, **kwargs):
+        ih = ImageHandler()
+        x, y, z, n = ih.getDimensions(inputFn)
+        stack_shape = (n, y, x)
+        mrc = mrcfile.new_mmap(outputFn, shape=stack_shape,
+                               mrc_mode=2, overwrite=True)
+        for i in range(n):
+            inputData = ih.read((i + 1, inputFn)).getData()
+            mrc.data[i] = tom_deconv(inputData, **kwargs)
+        mrc.reset_header_stats()
+        mrc.update_header_from_data()
+        mrc.set_image_stack()
+        mrc.voxel_size = kwargs["angpix"]
+        mrc.close()

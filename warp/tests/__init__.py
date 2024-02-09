@@ -24,10 +24,11 @@
 # *
 # **************************************************************************
 from pyworkflow.utils import weakImport
-from .test_protocols import ProtWarpDeconv2D
+
+from .test_protocols import ProtWarpDeconvMics
 
 with weakImport('tomo'):
-    from .test_protocols_tomo import ProtWarpDeconv3D
+    from .test_protocols_tomo import ProtWarpDeconvTomo
 
 from pyworkflow.tests import DataSet
 

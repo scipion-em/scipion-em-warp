@@ -66,9 +66,9 @@ def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
     return ctf
 
 
-def tom_deconv(vol, angpix, voltage, cs, defocus, snrfalloff=1.1, deconvstrength=1,
-               highpassnyquist=0.02, phaseflipped=False, phaseshift=0, ncpu=1,
-               gpu=False, gpuid=0):
+def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1,
+               deconvstrength=1, highpassnyquist=0.02, phaseflipped=False,
+               phaseshift=0, ncpu=1, gpu=False, gpuid=0):
     """
     :param vol: tomogram volume (or 2D image)
     :param angpix: angstrom per pixel

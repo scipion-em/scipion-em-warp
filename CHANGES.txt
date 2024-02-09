@@ -1,3 +1,6 @@
+3.2:
+ - minor refactoring
+ - new deconvolve tilt-series protocol
 3.1 - some optimisations, add gpu options
 3.0.0 - clean unused functions, minor changes
 3.0.0b3 - fix test
