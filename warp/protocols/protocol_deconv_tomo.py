@@ -77,6 +77,7 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
 
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
+        """ Load CTF and tomograms sets, match by tsId before processing. """
         tomoSet = self.getInputTomos()
         ctfSet = self.inputCTFs.get()
         acq = tomoSet.getAcquisition()
@@ -91,7 +92,7 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
             }
 
         for ctfSeries in ctfSet.iterItems():
-            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
+            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusV()) for ctf in ctfSeries]
             ctfDict[ctfSeries.getTsId()] = sum(ctfValues) / len(ctfValues)
 
         matchIds = tsDict.keys() & ctfDict.keys()
@@ -119,7 +120,7 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
     def _summary(self):
         summary = []
 
-        if self.isFinished():
+        if hasattr(self, outputs.Tomograms.name):
             summary.append(f"Deconvolved {self.getInputTomos().getSize()} "
                            "tomograms")
 
@@ -127,7 +128,4 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
 
     # -------------------------- UTILS functions ------------------------------
     def getInputTomos(self, pointer=False):
-        if pointer:
-            return self.inputTomograms
-        else:
-            return self.inputTomograms.get()
+        return self.inputTomograms if pointer else self.inputTomograms.get()

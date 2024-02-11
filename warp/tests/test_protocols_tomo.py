@@ -34,8 +34,6 @@ from tomo.tests import DataSet
 from warp.protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
 from warp.protocols.protocol_deconv_ts import ProtWarpDeconvTS
 
-imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
-
 
 class TestDeconvolveTomo(BaseTest):
     @classmethod
@@ -62,6 +60,7 @@ class TestDeconvolveTomo(BaseTest):
 
     @classmethod
     def runTomoReconstruct(cls, **kwargs):
+        imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
         cls.protRecon = cls.newProtocol(
             imodProts.ProtImodTomoReconstruction, **kwargs)
         cls.launchProtocol(cls.protRecon)
