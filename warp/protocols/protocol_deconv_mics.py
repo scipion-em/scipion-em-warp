@@ -77,7 +77,7 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
 
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
-        # Load CTFs
+        """ Load input CTFs and micrograph sets, then run deconvolution. """
         ctfDict = dict()
         for ctf in self.ctfRelations.get():
             micKey = ctf.getMicrograph().getMicName()
@@ -106,7 +106,7 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
     def _summary(self):
         summary = []
 
-        if self.isFinished():
+        if hasattr(self, outputs.Micrographs.name):
             summary.append(f"Deconvolved {self.getInputMicrographs().getSize()} "
                            "micrographs")
 
@@ -114,7 +114,4 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
 
     # -------------------------- UTILS functions ------------------------------
     def getInputMicrographs(self, pointer=False):
-        if pointer:
-            return self.inputMicrographs
-        else:
-            return self.inputMicrographs.get()
+        return self.inputMicrographs if pointer else self.inputMicrographs.get()

@@ -78,6 +78,7 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
 
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
+        """ Load CTF and TS sets, match by tsId before processing. """
         tsSet = self.getInputTS()
         ctfSet = self.inputCTFs.get()
         acq = tsSet.getAcquisition()
@@ -119,7 +120,7 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
     def _summary(self):
         summary = []
 
-        if self.isFinished():
+        if hasattr(self, outputs.TiltSeries.name):
             summary.append(f"Deconvolved {self.getInputTS().getSize()} "
                            "tilt-series")
 
@@ -127,10 +128,7 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
 
     # -------------------------- UTILS functions ------------------------------
     def getInputTS(self, pointer=False):
-        if pointer:
-            return self.inputTiltSeries
-        else:
-            return self.inputTiltSeries.get()
+        return self.inputTiltSeries if pointer else self.inputTiltSeries.get()
 
     def updateTi(self, j, ts, ti, tsOut, tiOut):
         fn = ti.getFileName()

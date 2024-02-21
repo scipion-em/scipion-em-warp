@@ -55,14 +55,15 @@ Verifying
 
 To check the installation, simply run one of the following Scipion tests:
 
-* scipion tests warp.tests.test_protocols.TestDeconvolve2D
-* scipion tests warp.tests.test_protocols_tomo.TestDeconvolve3D
+* scipion3 tests warp.tests.test_protocols.TestDeconvolveMics
+* scipion3 tests warp.tests.test_protocols_tomo.TestDeconvolveTomo
 
 Protocols
 ----------
 
-* deconvolution 2D
-* deconvolution 3D
+* deconvolve micrographs
+* deconvolve tomograms
+* deconvolve tilt-series
 
 References
 -----------

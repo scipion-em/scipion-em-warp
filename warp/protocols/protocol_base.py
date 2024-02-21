@@ -37,9 +37,6 @@ from warp.utils import tom_deconv
 class ProtWarpBase(EMProtocol):
     _label = None
 
-    def __init__(self, **args):
-        EMProtocol.__init__(self, **args)
-
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
         self._insertFunctionStep(self.deconvolveStep)
@@ -55,6 +52,13 @@ class ProtWarpBase(EMProtocol):
                     ctfDict, keyName="_micName", isTS=False):
         """ Main function to iterate over inputList items.
         Checks the match with ctfDict by keyName for each item.
+        :param pixSize: input pixel size
+        :param acquisition: input acquisition object
+        :param inputList: list of dicts
+        :param ctfDict: defocus dict
+        :param keyName: ket for inputList
+        :param isTS: flag to process TS mrcs stack
+        .
         """
         pwutils.cleanPath(self._getExtraPath())
         pwutils.makePath(self._getExtraPath())
@@ -62,7 +66,7 @@ class ProtWarpBase(EMProtocol):
         voltage = acquisition.getVoltage()
         cs = acquisition.getSphericalAberration()
         ncpu = self.numberOfThreads.get()
-        gpu = self.useGpu
+        gpu = self.usesGpu()
         gpuid = self.getGpuList()[0]
 
         for item in inputList:
