@@ -96,7 +96,8 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
         in_mics = self.getInputMicrographs()
         out_mics = self._createSetOfMicrographs()
         out_mics.copyInfo(in_mics)
-        out_mics.copyItems(in_mics, updateItemCallback=self._updateItem)
+        out_mics.copyItems(in_mics, doClone=False,
+                           updateItemCallback=self._updateItem)
 
         self._defineOutputs(**{outputs.Micrographs.name: out_mics})
         self._defineTransformRelation(self.getInputMicrographs(pointer=True),
