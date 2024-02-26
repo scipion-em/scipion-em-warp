@@ -110,7 +110,8 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
         in_tomos = self.getInputTomos()
         out_tomos = self._createSetOfTomograms()
         out_tomos.copyInfo(in_tomos)
-        out_tomos.copyItems(in_tomos, updateItemCallback=self._updateItem)
+        out_tomos.copyItems(in_tomos, doClone=False,
+                            updateItemCallback=self._updateItem)
 
         self._defineOutputs(**{outputs.Tomograms.name: out_tomos})
         self._defineTransformRelation(self.getInputTomos(pointer=True),

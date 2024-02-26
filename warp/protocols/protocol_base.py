@@ -107,8 +107,8 @@ class ProtWarpBase(EMProtocol):
     def _processImage(cls, inputFn, outputFn, **kwargs):
         ih = ImageHandler()
         inputData = ih.read(inputFn).getData()
+        result = tom_deconv(inputData, **kwargs)
         with mrcfile.new(outputFn) as mrcOut:
-            result = tom_deconv(inputData, **kwargs)
             mrcOut.set_data(result)
             mrcOut.voxel_size = kwargs["angpix"]
             mrcOut.update_header_from_data()

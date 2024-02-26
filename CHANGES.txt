@@ -1,3 +1,4 @@
+3.2.2: bugfix wrong snr calculation
 3.2.1: fix avg defocus calculation, update readme, move imod import
 3.2:
  - minor refactoring

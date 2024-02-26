@@ -53,8 +53,8 @@ def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
     lambda1 = 12.2643247 / np.sqrt(voltage * (1.0 + voltage * 0.978466e-6)) * 1e-10
     lambda2 = lambda1 * 2
 
-    k2 = (np.arange(length, dtype=np.int32) / (2 * length) * ny) ** 2
-    term1 = lambda1 ** 3 * cs * k2 ** 2
+    k2 = (np.arange(length, dtype=np.float32) / (2 * length) * ny) ** 2
+    term1 = lambda1**3 * cs * k2**2
 
     w = np.pi/2 * (term1 + lambda2 * defocus * k2) - phaseshift
 
@@ -90,9 +90,11 @@ def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1
     """
 
     # Precompute highpass filter
-    data = np.arange(0, 1+1/2047, 1/2047, dtype=np.int32)
-    highpass = np.minimum(1, data / highpassnyquist) * np.pi
+    data = np.arange(0, 1+1/2047, 1/2047, dtype=np.float32)
+    highpass = np.minimum(1, data/highpassnyquist) * np.pi
     highpass = 1 - np.cos(highpass)
+
+    snr = np.exp(-data * snrfalloff * 100 / angpix) * (10 ** (3 * deconvstrength)) * highpass + 1e-6
 
     # Precompute some constants
     angpix *= 1e-10
@@ -104,17 +106,15 @@ def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1
     ctf = tom_ctf1d(2048, angpix, voltage, cs, defocus, 0.07, phaseshift, 0)
     if phaseflipped:
         ctf = np.abs(ctf)
+    wiener = ctf / (ctf*ctf + 1.0/snr)
 
-    snr = np.exp(-data * snrfalloff * 100 / angpix) * (10**(3 * deconvstrength)) * highpass
-    wiener = ctf / (ctf * ctf + 1.0 / np.maximum(1e-15, snr))
-
-    s1, f1 = -math.floor(vol.shape[0] / 2), -math.floor(vol.shape[0] / 2) + vol.shape[0] - 1
+    s1, f1 = -math.floor(vol.shape[0]/2), -math.floor(vol.shape[0]/2) + vol.shape[0] - 1
     m1 = np.arange(s1, f1 + 1, dtype=np.int32)
-    s2, f2 = -math.floor(vol.shape[1] / 2), -math.floor(vol.shape[1] / 2) + vol.shape[1] - 1
+    s2, f2 = -math.floor(vol.shape[1]/2), -math.floor(vol.shape[1]/2) + vol.shape[1] - 1
     m2 = np.arange(s2, f2 + 1, dtype=np.int32)
 
     if vol.ndim == 3:
-        s3, f3 = -math.floor(vol.shape[2] / 2), -math.floor(vol.shape[2] / 2) + vol.shape[2] - 1
+        s3, f3 = -math.floor(vol.shape[2]/2), -math.floor(vol.shape[2]/2) + vol.shape[2] - 1
         m3 = np.arange(s3, f3 + 1, dtype=np.int32)
         x, y, z = np.meshgrid(m1, m2, m3, indexing='ij')
         x = np.divide(x, abs(s1))
@@ -125,7 +125,7 @@ def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1
         x, y = np.meshgrid(m1, m2, indexing='ij')
         x = np.divide(x, abs(s1))
         y = np.divide(y, abs(s2))
-        r = np.sqrt(x ** 2 + y ** 2)
+        r = np.sqrt(x**2 + y**2)
 
     r = np.minimum(1, r)
     r = np.fft.ifftshift(r)
