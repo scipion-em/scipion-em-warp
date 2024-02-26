@@ -73,7 +73,9 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
                       help='Set of CTFs that correspond to the '
                            'input above. The matching is done using tsId.')
 
+        self.defineProcessParams(form)
         form.addParallelSection(threads=8, mpi=0)
+        
 
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
