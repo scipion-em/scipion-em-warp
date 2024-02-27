@@ -72,7 +72,8 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
                       label='CTF estimation',
                       help='Choose a CTF estimation '
                            'related to the input micrographs.')
-
+        
+        self.defineProcessParams(form)
         form.addParallelSection(threads=8, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
