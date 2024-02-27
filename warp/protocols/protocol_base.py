@@ -91,10 +91,9 @@ class ProtWarpBase(EMProtocol):
         gpu = self.usesGpu()
         gpuid = self.getGpuList()[0]
 
-        # I'm not sure why but tom_deconv() complains about these variables being of type "Float" and not "float", so I have to do this:
-        snrfalloff = float(self.snrfalloff)
-        deconvstrength = float(self.deconvstrength)
-        highpassnyquist = float(self.highpassnyquist)
+        snrfalloff = self.snrfalloff.get()
+        deconvstrength = self.deconvstrength.get()
+        highpassnyquist = self.highpassnyquist.get()
 
         for item in inputList:
             key = item[keyName]
