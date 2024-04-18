@@ -27,6 +27,7 @@
 import os
 import mrcfile
 
+from pyworkflow.protocol import FloatParam, Positive, LEVEL_ADVANCED
 import pyworkflow.utils as pwutils
 from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
@@ -37,6 +38,26 @@ from warp.utils import tom_deconv
 class ProtWarpBase(EMProtocol):
     _label = None
 
+    # -------------------------- DEFINE param functions -----------------------
+    @classmethod
+    def defineProcessParams(cls, form):
+        form.addParam('deconvstrength', FloatParam, validators=[Positive],
+                      default=1.0,
+                      expertLevel=LEVEL_ADVANCED,
+                      label='Deconvolution strength',
+                      help='Strength parameter for the deconvolution filter.')
+        form.addParam('snrfalloff', FloatParam, validators=[Positive],
+                      default=1.1,
+                      expertLevel=LEVEL_ADVANCED,
+                      label='SNR falloff',
+                      help='SNR falloff parameter for the deconvolution filter.')
+        form.addParam('highpassnyquist', FloatParam, validators=[Positive],
+                      default=0.02,
+                      expertLevel=LEVEL_ADVANCED,
+                      label='High-pass fraction',
+                      help='Fraction of Nyquist frequency to be cut off on '
+                           'the lower end (since it will be boosted the most).')
+        
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
         self._insertFunctionStep(self.deconvolveStep)
@@ -69,6 +90,10 @@ class ProtWarpBase(EMProtocol):
         gpu = self.usesGpu()
         gpuid = self.getGpuList()[0]
 
+        snrfalloff = self.snrfalloff.get()
+        deconvstrength = self.deconvstrength.get()
+        highpassnyquist = self.highpassnyquist.get()
+
         for item in inputList:
             key = item[keyName]
             if key in ctfDict:
@@ -79,7 +104,9 @@ class ProtWarpBase(EMProtocol):
 
                 func = self._processStack if isTS else self._processImage
                 func(fileName, outputFn, angpix=pixSize, voltage=voltage,
-                     cs=cs, defocus=defocus, ncpu=ncpu, gpu=gpu, gpuid=gpuid)
+                     cs=cs, defocus=defocus, ncpu=ncpu, gpu=gpu, gpuid=gpuid,
+                     snrfalloff=snrfalloff, deconvstrength=deconvstrength,
+                     highpassnyquist=highpassnyquist)
             else:
                 self.warning(f"No CTF found for: {key}")
 
@@ -103,8 +130,8 @@ class ProtWarpBase(EMProtocol):
         else:
             item._appendItem = False
 
-    @classmethod
-    def _processImage(cls, inputFn, outputFn, **kwargs):
+    @staticmethod
+    def _processImage(inputFn, outputFn, **kwargs):
         ih = ImageHandler()
         inputData = ih.read(inputFn).getData()
         result = tom_deconv(inputData, **kwargs)
@@ -113,8 +140,8 @@ class ProtWarpBase(EMProtocol):
             mrcOut.voxel_size = kwargs["angpix"]
             mrcOut.update_header_from_data()
 
-    @classmethod
-    def _processStack(cls, inputFn, outputFn, **kwargs):
+    @staticmethod
+    def _processStack(inputFn, outputFn, **kwargs):
         ih = ImageHandler()
         x, y, z, n = ih.getDimensions(inputFn)
         stack_shape = (n, y, x)
