@@ -2,7 +2,7 @@
 Warp plugin
 ===========
 
-This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/dtegunov/warp>`_ software.
+This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/warpem/warp>`_ software.
 
 .. image:: https://img.shields.io/pypi/v/scipion-em-warp.svg
         :target: https://pypi.python.org/pypi/scipion-em-warp
