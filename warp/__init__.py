@@ -27,7 +27,7 @@
 import pwem
 
 
-__version__ = '3.2.3'
+__version__ = '3.2.4'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 

@@ -144,10 +144,11 @@ class ProtWarpBase(EMProtocol):
     def _processStack(inputFn, outputFn, **kwargs):
         ih = ImageHandler()
         x, y, z, n = ih.getDimensions(inputFn)
-        stack_shape = (n, y, x)
+        nImages = max(z, n)  # Just handle ambiguity with mrc format
+        stack_shape = (nImages, y, x)
         mrc = mrcfile.new_mmap(outputFn, shape=stack_shape,
                                mrc_mode=2, overwrite=True)
-        for i in range(n):
+        for i in range(nImages):
             inputData = ih.read((i + 1, inputFn)).getData()
             mrc.data[i] = tom_deconv(inputData, **kwargs)
         mrc.reset_header_stats()
