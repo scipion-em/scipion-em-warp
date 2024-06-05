@@ -77,14 +77,11 @@ class Plugin(pwem.Plugin):
     def addWarpPackage(cls, env, version, default=False):
         ENV_NAME = getWarpEnvName(version)
         FLAG = f"warp_{version}_installed"
-        versions = {
-            V2_0_0: V2_0_0 + "dev6"
-        }
 
         # try to get CONDA activation command
         installCmds = [
             cls.getCondaActivationCmd(),
-            f'conda create -y -n {ENV_NAME} warp={versions[version]} -c warpem'
+            f'conda create -y -n {ENV_NAME} warp -c warpem'
             '-c nvidia/label/cuda-11.7.0',
             '-c pytorch -c conda-forge &&',
             f'conda activate {ENV_NAME} &&',
