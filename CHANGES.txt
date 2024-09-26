@@ -1,3 +1,4 @@
+3.4: Adding ctf estimation protocol
 3.3: adding first Warp 2.0.0 tools
 3.2.3: Deconvolution filter options are now exposed to user as advanced input parameters
 3.2.2: bugfix wrong snr calculation

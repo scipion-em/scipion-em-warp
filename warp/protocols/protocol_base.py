@@ -155,3 +155,10 @@ class ProtWarpBase(EMProtocol):
         mrc.set_image_stack()
         mrc.voxel_size = kwargs["angpix"]
         mrc.close()
+
+    @staticmethod
+    def _createDataImportSettings():
+        """ Create data import settings"""
+        pass
+
+

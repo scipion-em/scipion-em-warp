@@ -38,3 +38,11 @@ DEFAULT_ENV_NAME = getWarpEnvName(WARP_DEFAULT_VER_NUM)
 DEFAULT_ACTIVATION_CMD = 'conda activate ' + DEFAULT_ENV_NAME
 WARP_ENV_ACTIVATION = 'WARP_ENV_ACTIVATION'
 WARP_LOADER = 'WARP_LOADER'
+
+
+# --------- [PROGRAMS] ---------------
+CREATE_SETTINGS = 'create_settings'
+FS_MOTION = 'fs_motion'
+TS_CTF = 'ts_ctf'
+FS_MOTION_AND_CTF = 'fs_motion_and_ctf'
+

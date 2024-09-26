@@ -30,3 +30,4 @@ from .protocol_deconv_mics import ProtWarpDeconvMics
 with weakImport('tomo'):
     from .protocol_deconv_tomo import ProtWarpDeconvTomo
     from .protocol_deconv_ts import ProtWarpDeconvTS
+    from .protocol_ts_ctfEstimation import ProtWarpTSCtfEstimation
