@@ -24,16 +24,13 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import glob
-import os.path
 
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
+import os.path
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import tomo.objects as tomoObj
-import pyworkflow.utils as pwutils
 from tomo.protocols import ProtTomoBase
-from warp.constants import CREATE_SETTINGS, TS_CTF, FS_MOTION_AND_CTF
+from warp.constants import TS_CTF
 from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import parseCtfXMLFile
 
@@ -100,115 +97,9 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
                            'GPU are separated by ",". For example: "0,1,5"')
 
     def _insertAllSteps(self):
-        self._insertFunctionStep(self.convertInputStep)
+        self._insertFunctionStep(self.dataPrepare, self.inputSet.get())
         self._insertFunctionStep(self.tsCtfEstimationStep)
         self._insertFunctionStep(self.createOutputStep)
-
-    def convertInputStep(self):
-        setOfTiltSeries = self.inputSet.get()
-        starFolder = self._getExtraPath('tomostar')
-        pwutils.makePath(starFolder)
-        tiltimagesFolder = self._getExtraPath('tiltimages')
-        pwutils.makePath(tiltimagesFolder)
-
-        # 1. Extract all tilt images from the tiltseries
-        for ts in setOfTiltSeries.iterItems():
-            tsId = ts.getTsId()
-            properties = {"sr": ts.getSamplingRate()}
-            index = 1
-            tiValues = {}
-            for ti in ts.iterItems():
-                newBinaryName = tsId + '_%s_%s.mrc' % (index, ti.getTiltAngle())
-                newFrame = ImageStack(properties=properties)
-                newFrame.append(ImageReadersRegistry.open(str(index) + '@' + ti.getFileName()))
-                ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath('tiltimages'), newBinaryName))
-                # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
-                dose = 0
-                if ts.hasAcquisition():
-                    axisAngle = ts._acquisition.getTiltAxisAngle()
-                else:
-                    axisAngle = 0
-                amplitudeContrast = 0
-                maskedFraction = 0
-                if ti.getAcquisition():
-                    amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-                    dose = ti.getAcquisition().getDosePerFrame()
-
-                tiValues[newBinaryName] = [ti.getTiltAngle(), axisAngle, dose, amplitudeContrast, maskedFraction]
-
-                index += 1
-
-            self.tomoStarGenerate(tsId, tiValues, starFolder)
-
-        # 3. Create symbolic links from tiltseries folder to average folder
-        #    We need to do this because warp needs both folders: The tiltimages folder to get
-        #    the header of the images (it only needs the first tiltimage of each tiltseries),
-        #    and the averages folder to read them.
-        tiltSeriesFiles = glob.glob(os.path.join(tiltimagesFolder, '*'))
-        averagesFolder = os.path.join(tiltimagesFolder, 'average')
-        pwutils.makePath(averagesFolder)
-        for file in tiltSeriesFiles:
-            fileName = os.path.basename(file)
-            destFolder = os.path.join(averagesFolder, fileName)
-            os.symlink('../' + fileName, destFolder)
-
-        # 4. Create warp_tiltseries.settings file
-        self.processingFolder = os.path.abspath(self._getExtraPath('warp_tiltseries'))
-        pwutils.makePath(self.processingFolder)
-        argsDict = {
-            "--folder_data": os.path.abspath(self._getExtraPath('tomostar')),
-            "--extension": "*.tomostar",
-            "--folder_processing":  self.processingFolder,
-            '--angpix': 0.7894,
-            '--exposure': 2.64,
-            "--output": os.path.abspath(self._getExtraPath("warp_tiltseries.settings")),
-        }
-
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
-
-    def tomoStarGenerate(self, tsId, tiValues, otputFolder):
-        """Generate the .tomostar files from TS"""
-        _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
-        _file = open(_fileName, 'a+')
-        header = """
-data_
-
-loop_
-_wrpMovieName #1
-_wrpAngleTilt #2
-_wrpAxisAngle #3
-_wrpDose #4
-_wrpAverageIntensity #5
-_wrpMaskedFraction #6
-"""
-        _file.write(header)
-
-        for key, value in tiValues.items():
-            tiPath = '../tiltimages/' + key
-            angleTilt = value[0]
-            axisAngle = value[1]
-            dose = value[2]
-            averageIntensity = value[3]
-            maskedFraction = value[4]
-            _file.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                    tiPath, angleTilt, axisAngle, dose, averageIntensity, maskedFraction))
-
-        _file.close()
-
-    def motionAndCtfStep(self):
-        """Estimate 2D sample motion and contrast transfer function"""
-        argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath("warp_frameseries.settings")),
-            "--m_grid": '1x1x3',
-            "--c_grid": '2x2x1',
-            "--c_range_max": self.range_high.get(),
-            "--c_defocus_max": self.defocus_max.get(),
-        }
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        cmd += ' --c_use_sum --out_averages --out_average_halves'
-
-        self.runJob(self.getPlugin().getProgram(FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
 
     def tsCtfEstimationStep(self):
         """CTF estimation"""
@@ -248,6 +139,7 @@ _wrpMaskedFraction #6
                 newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
                 newCTFTomo.setIndex(ti.getIndex())
                 newCTFTomo.setObjId(tiObjId)
+                # TODO We need to understand how to calculate the defocus values
                 newCTFTomo.setDefocusU(gridCtfData["Nodes"][tiObjId] + defocusDelta)
                 newCTFTomo.setDefocusV(gridCtfData["Nodes"][tiObjId] - defocusDelta)
                 newCTFTomoSeries.append(newCTFTomo)
