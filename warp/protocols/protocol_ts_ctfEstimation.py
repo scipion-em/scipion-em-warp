@@ -91,7 +91,7 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
                       label='Auto hand', help='Run defocus handedness estimation based on this many tilt series '
                                               '(e.g. 10), then estimate CTF with the correct handedness')
 
-        form.addParam(params.GPU_LIST, params.StringParam, default='0',
+        form.addHidden(params.GPU_LIST, params.StringParam, default='0',
                       label='Choose GPU IDs:', validators=[params.NonEmpty],
                       help='This argument is necessary. By default, the '
                            'protocol will attempt to launch on GPU 0. You can '
