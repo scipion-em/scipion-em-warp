@@ -91,7 +91,6 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
                       label='Auto hand', help='Run defocus handedness estimation based on this many tilt series '
                                               '(e.g. 10), then estimate CTF with the correct handedness')
 
-        form.addParallelSection(threads=0, mpi=1)
         form.addParam(params.GPU_LIST, params.StringParam, default='0',
                       label='Choose GPU IDs:', validators=[params.NonEmpty],
                       help='This argument is necessary. By default, the '
@@ -249,8 +248,8 @@ _wrpMaskedFraction #6
                 newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
                 newCTFTomo.setIndex(ti.getIndex())
                 newCTFTomo.setObjId(tiObjId)
-                newCTFTomo.setDefocusU(gridCtfData["Nodes"][tiObjId])
-                newCTFTomo.setDefocusV(gridCtfData["Nodes"][tiObjId] + defocusDelta)
+                newCTFTomo.setDefocusU(gridCtfData["Nodes"][tiObjId] + defocusDelta)
+                newCTFTomo.setDefocusV(gridCtfData["Nodes"][tiObjId] - defocusDelta)
                 newCTFTomoSeries.append(newCTFTomo)
 
         self._defineOutputs(**{'CTFTomoSeries': outputSetOfCTFTomoSeries})
