@@ -23,16 +23,17 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+import os.path
 
 from pwem import Domain
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import magentaStr
+from pwem.protocols import ProtImportMovies
 
-from tomo.protocols import ProtImportTs, ProtImportTsCTF
+from tomo.protocols import ProtImportTs, ProtImportTsCTF, ProtImportTsMovies
 from tomo.tests import DataSet
-
-from warp.protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
-from warp.protocols.protocol_deconv_ts import ProtWarpDeconvTS
+from warp.protocols import (ProtWarpTSCtfEstimationTomoReconstruct, ProtWarpTSDefocusHand, ProtWarpDeconvTomo,
+                            ProtWarpDeconvTS)
 
 
 class TestWarpBase(BaseTest):
@@ -41,6 +42,8 @@ class TestWarpBase(BaseTest):
         setupTestProject(cls)
         cls.inputDataSet = DataSet.getDataSet('empiar10064')
         cls.ts_path = cls.inputDataSet.getPath()
+        cls.inputTSM = DataSet.getDataSet('EMPIAR-10491')
+        cls.tsm_path = cls.inputTSM.getPath()
 
     @classmethod
     def runImportTiltSeries(cls, **kwargs):
@@ -49,6 +52,48 @@ class TestWarpBase(BaseTest):
         cls.assertIsNotNone(cls.protImportTS.outputTiltSeries,
                             "SetOfTiltSeries has not been produced.")
         return cls.protImportTS
+
+    @classmethod
+    def runImportTiltSeriesM(cls, **kwargs):
+        cls.protImportTSM = cls.newProtocol(ProtImportTsMovies, **kwargs)
+        cls.launchProtocol(cls.protImportTSM)
+        cls.assertIsNotNone(cls.protImportTSM.outputTiltSeriesM,
+                            "SetOfTiltSeriesM has not been imported.")
+        return cls.protImportTSM
+
+    @classmethod
+    def runMotioncorrTSMovieAligment(cls, **kwargs):
+        motioncorrProts = Domain.importFromPlugin('motioncorr.protocols', doRaise=True)
+        cls.motioncorrTSMovieAligment = cls.newProtocol(motioncorrProts.ProtTsMotionCorr, **kwargs)
+        cls.launchProtocol(cls.motioncorrTSMovieAligment)
+        cls.assertIsNotNone(cls.motioncorrTSMovieAligment.outputTiltSeries,
+                            "SetOfTiltSeries has not been produced.")
+        return cls.motioncorrTSMovieAligment
+
+    @classmethod
+    def runImodImportTMatrix(cls, **kwargs):
+        imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
+        cls.importTransformationMatrix = cls.newProtocol(imodProts.ProtImodImportTransformationMatrix, **kwargs)
+        cls.launchProtocol(cls.importTransformationMatrix)
+        cls.assertIsNotNone(cls.importTransformationMatrix.TiltSeries,
+                            "Transformation matrix has not been produced.")
+        return cls.importTransformationMatrix
+
+    @classmethod
+    def runWarpCTFEstimationTomoReconstruction(cls, **kwargs):
+        cls.ctfEstimationTomoReconstruct = cls.newProtocol(ProtWarpTSCtfEstimationTomoReconstruct, **kwargs)
+        cls.launchProtocol(cls.ctfEstimationTomoReconstruct)
+        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.CTFTomoSeries, "CTFTomoSeries has not been produced.")
+        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.Tomograms, "SetOfTomograms has not been produced.")
+        return cls.ctfEstimationTomoReconstruct
+
+    @classmethod
+    def runWarpDefocusHand(cls, **kwargs):
+        cls.defocusHand = cls.newProtocol(ProtWarpTSDefocusHand, **kwargs)
+        cls.launchProtocol(cls.defocusHand)
+        cls.assertIsNotNone(cls.defocusHand, "Warp defocus handedness for all tilt series has failed")
+        return cls.defocusHand
+
 
     @classmethod
     def runImportCtf(cls, **kwargs):
@@ -118,3 +163,35 @@ class TestDeconvolveTomo(TestWarpBase):
         outputTS = getattr(protDeconvTS, protDeconvTS._possibleOutputs.TiltSeries.name)
         self.assertIsNotNone(outputTS, "Warp deconvolve tilt-series has failed")
         self.assertSetSize(outputTS, 2)
+
+
+class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
+    def test_warpCTFEstimationTomoReconstruction(self):
+        print(magentaStr("\n==> Importing data - tilt series movies:"))
+        protImportTSM = self.runImportTiltSeriesM(filesPath=self.tsm_path,
+                                                  filesPattern="*/*.mdoc",
+                                                  samplingRate=0.79,
+                                                  gainFile=os.path.join(self.tsm_path, 'gain_ref.mrc'))
+
+        print(magentaStr("\n==> Running Motioncorr - tiltseries movies "))
+        protImportCtf = self.runMotioncorrTSMovieAligment(inputTiltSeriesM=protImportTSM.outputTiltSeriesM,
+                                                          binFactor=4.0)
+
+        print(magentaStr("\n==> Running Imod - import transformation matrix "))
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.outputTiltSeries,
+                                                  filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                  filesPattern='*.xf')
+
+        print(magentaStr("\n==> Running Warp - Defocus Hand "))
+        self.runWarpDefocusHand(inputSet=protImportTM.TiltSeries)
+
+        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction "))
+        ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   reconstruct=True,
+                                                                                   range_high=6.42)
+        self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
+        setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
+        self.assertSetSize(setOfTomogram, 1)
+        self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
+        self.assertTrue(setOfTomogram.getDim() == (1172, 1172, 442))
+

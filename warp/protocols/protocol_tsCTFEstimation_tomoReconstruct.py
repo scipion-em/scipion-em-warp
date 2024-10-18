@@ -37,7 +37,7 @@ from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import parseCtfXMLFile
 
 
-class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
+class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     """
     CTF estimation of a set of input tilt-series and reconstruct tomograms for various tasks and, optionally,
     half-tomograms for denoiser training using the Warp procedure.
