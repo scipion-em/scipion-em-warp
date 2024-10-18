@@ -109,3 +109,4 @@ class Plugin(pwem.Plugin):
     def getProgram(cls, program):
         """ Create Warp command line. """
         return f"{cls.getActivationCmd()} && WarpTools {program}"
+

@@ -40,9 +40,21 @@ WARP_ENV_ACTIVATION = 'WARP_ENV_ACTIVATION'
 WARP_LOADER = 'WARP_LOADER'
 
 
+OUTPUT_CTF_SERIE = "CTFTomoSeries"
+OUTPUT_TOMOGRAMS_NAME = "Tomograms"
+EXT_MRC_EVEN_NAME = "even.mrc"
+EXT_MRC_ODD_NAME = "odd.mrc"
+EVEN = 'even'
+ODD = 'odd'
+MRC_EXT = 'mrc'
+
+
 # --------- [PROGRAMS] ---------------
 CREATE_SETTINGS = 'create_settings'
 FS_MOTION = 'fs_motion'
 TS_CTF = 'ts_ctf'
+FS_CTF = 'fs_ctf'
 FS_MOTION_AND_CTF = 'fs_motion_and_ctf'
+TS_RECONSTRUCTION = 'ts_reconstruct'
+TS_DEFOCUS_HAND = 'ts_defocus_hand'
 

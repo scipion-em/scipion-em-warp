@@ -35,7 +35,7 @@ from warp.protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
 from warp.protocols.protocol_deconv_ts import ProtWarpDeconvTS
 
 
-class TestDeconvolveTomo(BaseTest):
+class TestWarpBase(BaseTest):
     @classmethod
     def setUpClass(cls):
         setupTestProject(cls)
@@ -68,6 +68,9 @@ class TestDeconvolveTomo(BaseTest):
                             "SetOfTomograms has not been produced.")
 
         return cls.protRecon
+
+
+class TestDeconvolveTomo(TestWarpBase):
 
     def test_run(self):
         print(magentaStr("\n==> Importing data - tilt series:"))
