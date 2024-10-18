@@ -31,6 +31,7 @@ import pyworkflow.protocol.params as params
 import tomo.objects as tomoObj
 from pyworkflow.object import Set
 from tomo.protocols import ProtTomoBase
+from warp import TILTSERIE_SETTINGS, TILTSERIES_FOLDER
 from warp.constants import TS_CTF, OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME
 from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import parseCtfXMLFile
@@ -151,7 +152,7 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
         self.info(">>> Starting ctf estimation...")
         inputTSAdquisition = self.inputSet.get().getAcquisition()
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath("warp_tiltseries.settings")),
+            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
             "--window": self.window.get(),
             "--range_low": self.range_low.get(),
             "--range_high": self.range_high.get(),
@@ -169,7 +170,7 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
         """Tomo Reconstruction"""
         self.info(">>> Starting tomogram reconstruction...")
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath("warp_tiltseries.settings")),
+            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
             "--angpix": self.angpix.get(),
             "--halfmap_tilts": self.halfmap_tilts.get(),
             "--deconv": self.deconv.get(),
@@ -180,7 +181,7 @@ class ProtWarpTSCtfEstimation(ProtWarpBase, ProtTomoBase):
 
     def createOutputStep(self):
         self.info(">>> Generating outputs...")
-        processingFolder = os.path.abspath(self._getExtraPath('warp_tiltseries'))
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tomogramFolder = os.path.join(processingFolder, 'reconstruction')
         generateOutput = False
         tsSet = self.inputSet.get()

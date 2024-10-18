@@ -58,3 +58,13 @@ FS_MOTION_AND_CTF = 'fs_motion_and_ctf'
 TS_RECONSTRUCTION = 'ts_reconstruct'
 TS_DEFOCUS_HAND = 'ts_defocus_hand'
 
+# -------------[LABELS]----------------
+TOMOSTAR_FOLDER = 'tomostar'
+TILTIMAGES_FOLDER = 'tiltimages'
+AVERAGE_FOLDER = 'average'
+TILTSERIES_FOLDER = 'warp_tiltseries'
+TILTSERIE_SETTINGS = "warp_tiltseries.settings"
+FRAMESERIES_FOLDER = 'warp_frameseries'
+FRAMESERIES_SETTINGS = "warp_frameseries.settings"
+
+

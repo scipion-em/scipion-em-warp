@@ -32,7 +32,7 @@ import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
 from .protocol_base import ProtMovieAlignBase, ProtWarpBase
 
-from .. import Plugin, CREATE_SETTINGS, FS_MOTION
+from .. import Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER
 
 
 class ProtWarpMotionCorr(ProtMovieAlignBase):
@@ -128,12 +128,12 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         return [createSettingStep]
 
     def createSettingStep(self):
-        """ Create settings file. """
+        """ Create a settings file. """
         movies = self.getInputMovies()
         firstMovie = movies.getFirstItem()
         fileName, extension = os.path.splitext(firstMovie.getFileName())
         folderData = os.path.abspath(os.path.dirname(fileName))
-        processingFolder = os.path.abspath(self._getExtraPath('warp_frameseries'))
+        processingFolder = os.path.abspath(self._getExtraPath(FRAMESERIES_FOLDER))
         sr = firstMovie.getSamplingRate()
         gainPath = os.path.abspath(movies.getGain()) if movies.getGain() else None
         pwutils.makePath(processingFolder)
@@ -144,7 +144,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             "--bin": self.binFactor.get(),
             "--angpix": sr,
             # "--exposure": -30.648,  # exposure/frame
-            "--output": os.path.abspath(self._getExtraPath("warp_frameseries.settings")),
+            "--output": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if gainPath:
@@ -167,7 +167,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         warpMoviesNamesList = [os.path.abspath(self.getFileName(micName)) for micName in micNamesList]
         warpMoviesNamesList = " ".join(warpMoviesNamesList)
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath("warp_frameseries.settings")),
+            "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
             "--range_min": self.range_min.get(),
             "--range_max": self.range_max.get(),
             "--bfac": self.bfactor.get(),
@@ -179,11 +179,13 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --averages'
+
         if self.x.get() and self.y.get() and self.z.get():
             cmd += ' --grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
+
         self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
 
-        processingFolder = self._getExtraPath('warp_frameseries', 'average')
+        processingFolder = self._getExtraPath(FRAMESERIES_FOLDER, AVERAGE_FOLDER)
         # Generate a list of output micrograph locations based on the original micrograph names
         micLocations = [os.path.join(processingFolder, os.path.splitext(micNames)[0] + '.mrc')
                         for micNames in micNamesList]
