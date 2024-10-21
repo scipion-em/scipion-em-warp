@@ -26,9 +26,11 @@
 
 from pyworkflow.tests import BaseTest, DataSet, setupTestProject
 from pyworkflow.utils import magentaStr
-from pwem.protocols import ProtImportMicrographs, ProtImportCTF
+from pwem.protocols import ProtImportMicrographs, ProtImportCTF, ProtImportMovies
+from warp.protocols import ProtWarpMotionCorr
 
 from warp.protocols.protocol_deconv_mics import ProtWarpDeconvMics, outputs
+from warp.tests.test_protocols_tomo import TestWarpBase
 
 
 class TestDeconvolveMics(BaseTest):
@@ -80,3 +82,51 @@ class TestDeconvolveMics(BaseTest):
         outputMics = getattr(protDeconv2D, outputs.Micrographs.name)
         self.assertIsNotNone(outputMics, "Warp deconvolve micrographs has failed")
         self.assertSetSize(outputMics, 3)
+
+
+class TestWarpMotionCorrection(TestWarpBase):
+    @classmethod
+    def setUpClass(cls):
+        setupTestProject(cls)
+        cls.setData()
+
+    @classmethod
+    def setData(cls):
+        cls.ds1 = DataSet.getDataSet('movies')
+
+    @classmethod
+    def runImportMovies(cls, pattern, label, **kwargs):
+        protImport = cls.newProtocol(ProtImportMovies, filesPattern=pattern,
+                                     **kwargs)
+        protImport.setObjLabel(f"import movies - {label}")
+        cls.launchProtocol(protImport)
+        return protImport
+
+    @classmethod
+    def runMotioncorr(cls, **kwargs):
+        protMotioncorr = cls.newProtocol(ProtWarpMotionCorr, **kwargs)
+        cls.launchProtocol(protMotioncorr)
+        return protMotioncorr
+
+    def test_warpMotionCorrection(self):
+        print(magentaStr("\n==> Importing movies:"))
+        protImport = self.runImportMovies(self.ds1.getFile('Falcon*.mrcs'),"mrcs",
+                                           samplingRate=1.1,
+                                           voltage=300,
+                                           sphericalAberration=2.7,
+                                           dosePerFrame=1.2)
+        self.assertIsNotNone(protImport.outputMovies, msg='SetOfMovies has not been imported.')
+        self.assertSetSize(protImport.outputMovies, 2)
+
+        print(magentaStr("\n==> Testing motioncor - mrcs movies:"))
+        protMotion = self.runMotioncorr(inputMovies=protImport.outputMovies)
+        self.assertIsNotNone(protMotion.Micrographs)
+        self.assertSetSize(protMotion.Micrographs, 2)
+
+        print(magentaStr("\n==> Testing motioncor - bining factor 1"))
+        protMotion = self.runMotioncorr(inputMovies=protImport.outputMovies,
+                                        binFactor=1.0
+                                        )
+        self.assertIsNotNone(protMotion.Micrographs)
+        self.assertSetSize(protMotion.Micrographs, 2)
+        self.assertTrue(protMotion.Micrographs.getDim(), (974, 974))
