@@ -42,7 +42,7 @@ class TestWarpBase(BaseTest):
         setupTestProject(cls)
         cls.inputDataSet = DataSet.getDataSet('empiar10064')
         cls.ts_path = cls.inputDataSet.getPath()
-        cls.inputTSM = DataSet.getDataSet('EMPIAR-10491')
+        cls.inputTSM = DataSet.getDataSet('empiar_10491')
         cls.tsm_path = cls.inputTSM.getPath()
 
     @classmethod
