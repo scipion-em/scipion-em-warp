@@ -32,7 +32,8 @@ import tomo.objects as tomoObj
 from pyworkflow.object import Set
 from tomo.protocols import ProtTomoBase
 from warp import TILTSERIE_SETTINGS, TILTSERIES_FOLDER
-from warp.constants import TS_CTF, OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME
+from warp.constants import TS_CTF, OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME, \
+    RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER
 from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import parseCtfXMLFile
 
@@ -182,7 +183,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def createOutputStep(self):
         self.info(">>> Generating outputs...")
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        tomogramFolder = os.path.join(processingFolder, 'reconstruction')
+        tomogramFolder = os.path.join(processingFolder, RECONSTRUCTION_FOLDER)
         generateOutput = False
         tsSet = self.inputSet.get()
 
@@ -228,8 +229,8 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                     newTomogram.setLocation(tomoLocation)
 
                     if self.halfmap_tilts.get():
-                        halfMapsList = [os.path.join(tomogramFolder, 'odd', self.getOutFile(tsId, ext=MRC_EXT)),
-                                        os.path.join(tomogramFolder, 'even', self.getOutFile(tsId, ext=MRC_EXT))]
+                        halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER, self.getOutFile(tsId, ext=MRC_EXT)),
+                                        os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER, self.getOutFile(tsId, ext=MRC_EXT))]
                         newTomogram.setHalfMaps(halfMapsList)
 
                     # Set default tomogram origin

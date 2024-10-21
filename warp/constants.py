@@ -66,5 +66,8 @@ TILTSERIES_FOLDER = 'warp_tiltseries'
 TILTSERIE_SETTINGS = "warp_tiltseries.settings"
 FRAMESERIES_FOLDER = 'warp_frameseries'
 FRAMESERIES_SETTINGS = "warp_frameseries.settings"
+RECONSTRUCTION_FOLDER = 'reconstruction'
+RECONSTRUCTION_ODD_FOLDER = 'odd'
+RECONSTRUCTION_EVEN_FOLDER = 'even'
 
 
