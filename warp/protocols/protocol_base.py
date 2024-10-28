@@ -171,12 +171,14 @@ class ProtWarpBase(EMProtocol):
         """ Create data import settings"""
         pass
 
-    def runProgram(self, argsDict, program):
+    def runProgram(self, argsDict, program, othersCmds=None):
         gpuList = self.getGpuList()
         if gpuList:
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        if othersCmds:
+            cmd += ' %s' % othersCmds
         self.runJob(self.getPlugin().getProgram(program), cmd, executable='/bin/bash')
 
     def dataPrepare(self, objSet):
@@ -190,6 +192,7 @@ class ProtWarpBase(EMProtocol):
         pwutils.makePath(tiltimagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
+        exposure = objSet.getAcquisition().getDosePerFrame()
 
         # 1. Extract all tilt images from the tiltseries
         for ts in objSet.iterItems():
@@ -212,7 +215,7 @@ class ProtWarpBase(EMProtocol):
                 maskedFraction = 0
                 if ti.getAcquisition():
                     amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-                    dose = ti.getAcquisition().getDosePerFrame()
+                    dose = ti.getAcquisition().getAccumDose()
 
                 shiftX = 0
                 shiftY = 0
@@ -256,10 +259,19 @@ class ProtWarpBase(EMProtocol):
             "--extension": "*.tomostar",
             "--folder_processing": processingFolder,
             '--angpix': sr,
-            "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
+            "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
         }
 
+        if exposure is not None:
+            argsDict['--exposure'] = exposure
+
+        if hasattr(self, 'tomo_dimensions'):
+            tsDim = objSet.getDimensions()
+            outputTomoDim = '%sx%sx%s' % (tsDim[0], tsDim[1], self.tomo_dimensions.get())
+            argsDict['--tomo_dimensions'] = outputTomoDim
+
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
         self.runJob(plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     @staticmethod
@@ -286,8 +298,8 @@ _wrpMaskedFraction #8
             tiPath = '../%s/' % TILTIMAGES_FOLDER + key
             angleTilt = value[0]
             axisAngle = value[1]
-            shiftX = value[2]
-            shiftY = value[3]
+            shiftX = f"{value[2]:.6f}"
+            shiftY = f"{value[3]:.6f}"
             dose = value[4]
             averageIntensity = value[5]
             maskedFraction = value[6]
@@ -417,6 +429,10 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             newMic = Micrograph(location=micLocations[index])
             newMic.copyInfo(movie)
             output.append(newMic)
+            movieAcq = movie.getAcquisition()
+            newMic.getAcquisition().setDosePerFrame(movieAcq.getDosePerFrame() * movie.getNumberOfFrames() +
+                                                    movieAcq.getDoseInitial())
+            newMic.getAcquisition().setDoseInitial(0)
             output.update(newMic)
             output.write()
             self._store(output)

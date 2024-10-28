@@ -66,7 +66,6 @@ class ProtWarpTSDefocusHand(ProtWarpBase, ProtTomoBase):
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath("warp_tiltseries.settings")),
             "--input_data": os.path.join(averagesPath, '*.mrc'),
-            "--grid": "2x2x1",
             "--output_processing": averagesPath,
             "--range_max": inputTS.getSamplingRate() * 2 + 0.1
         }

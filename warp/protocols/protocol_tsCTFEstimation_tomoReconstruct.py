@@ -26,6 +26,8 @@
 # **************************************************************************
 
 import os.path
+from email.policy import default
+
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import tomo.objects as tomoObj
@@ -81,7 +83,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         line.addParam('defocus_max', params.FloatParam, default=5,
                       label='Max', help='Maximum defocus value in um to explore during fitting (positive = underfocus)')
 
-        form.addParam('fit_phase', params.BooleanParam, default=True,
+        form.addParam('fit_phase', params.BooleanParam, default=False,
                       label='Fit phase', help='Fit the phase shift of a phase plate')
 
         form.addSection(label="Reconstruction")
@@ -111,10 +113,14 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                       help='Invert the contrast; contrast inversion is needed for template matching on cryo '
                            'data, i.e. when the density is dark in original images')
 
-        form.addParam('dont_normalize', params.BooleanParam, default=False,
+        form.addParam('dont_normalize', params.BooleanParam, default=True,
                       condition='reconstruct==True',
                       label='Normalize the tilt images?',
                       help='Normalize the tilt images')
+        form.addParam('tomo_dimensions', params.IntParam, default='1000',
+                      condition='reconstruct==True',
+                      label='Tomogram thickness unbinned (pixels)',
+                      help="Z height of the reconstructed volume in unbinned pixels.")
 
         """
        --deconv_strength         Default: 1. Strength of the deconvolution filter, if requested
@@ -151,7 +157,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def tsCtfEstimationStep(self):
         """CTF estimation"""
         self.info(">>> Starting ctf estimation...")
-        inputTSAdquisition = self.inputSet.get().getAcquisition()
+        inputTSAdquisition = self.inputSet.get().getFirstItem().getAcquisition()
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
             "--window": self.window.get(),
@@ -162,8 +168,6 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
             "--voltage": int(inputTSAdquisition.getVoltage()),
             "--cs": inputTSAdquisition.getSphericalAberration(),
             "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
-            "--fit_phase": self.fit_phase.get(),
-            "--auto_hand": 0,
         }
         self.runProgram(argsDict, TS_CTF)
 
@@ -173,12 +177,19 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
             "--angpix": self.angpix.get(),
-            "--halfmap_tilts": self.halfmap_tilts.get(),
-            "--deconv": self.deconv.get(),
-            "--dont_invert": not self.dont_invert.get(),
-            "--dont_normalize": not self.dont_normalize.get(),
         }
-        self.runProgram(argsDict, TS_RECONSTRUCTION)
+
+        cmd = ''
+        if self.halfmap_tilts.get():
+            cmd += " --halfmap_tilts"
+        if self.deconv.get():
+            cmd += " --deconv"
+        if not self.dont_invert.get():
+            cmd += " --dont_invert"
+        if not self.dont_normalize.get():
+            cmd += " --dont_normalize"
+
+        self.runProgram(argsDict, TS_RECONSTRUCTION, othersCmds=cmd)
 
     def createOutputStep(self):
         self.info(">>> Generating outputs...")
@@ -229,8 +240,10 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                     newTomogram.setLocation(tomoLocation)
 
                     if self.halfmap_tilts.get():
-                        halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER, self.getOutFile(tsId, ext=MRC_EXT)),
-                                        os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER, self.getOutFile(tsId, ext=MRC_EXT))]
+                        halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER,
+                                        self.getOutFile(tsId, ext=MRC_EXT)),
+                                        os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER,
+                                        self.getOutFile(tsId, ext=MRC_EXT))]
                         newTomogram.setHalfMaps(halfMapsList)
 
                     # Set default tomogram origin
@@ -292,7 +305,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         if rangeHigh is None or rangeHigh < self.inputSet.get().getSamplingRate() * 2:
             return ["Resolution parameter(Max) can't be higher than the binned data's Nyquist resolution"]
 
-    def getOutFile(self, tsId, ext):
+    def getOutFile(self, tsId, ext) -> str:
         angpix = self.angpix.get()
         suffix = str(f"{angpix:.2f}") + 'Apx'
         return f'{tsId}_{suffix}.{ext}'
