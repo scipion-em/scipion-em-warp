@@ -93,9 +93,13 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                       help='reconstruct tomograms for various tasks and, optionally'
                            'half-tomograms for denoiser training using the Warp procedure')
 
-        form.addParam('angpix', params.IntParam, default=10,
-                      condition='reconstruct==True',
-                      label='Pixel size (Å)', help='Pixel size of the reconstructed tomograms in Angstrom')
+        form.addParam('binFactor', params.IntParam,
+                      default=4, label='Binning factor', important=True,
+                      help='Binning factor of the reconstructed tomograms')
+
+        # form.addParam('angpix', params.IntParam, default=10,
+        #               condition='reconstruct==True',
+        #               label='Pixel size (Å)', help='Pixel size of the reconstructed tomograms in Angstrom')
 
         form.addParam('halfmap_tilts', params.BooleanParam, default=False,
                       condition='reconstruct==True',
@@ -107,20 +111,43 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                       label='Produce a deconvolved version',
                       help='Produce a deconvolved version; all half-tomograms, if requested, will also be deconvolved')
 
-        form.addParam('dont_invert', params.BooleanParam, default=False,
+        form.addParam('invert', params.BooleanParam, default=False,
                       condition='reconstruct==True',
                       label='Invert contrast?',
                       help='Invert the contrast; contrast inversion is needed for template matching on cryo '
                            'data, i.e. when the density is dark in original images')
 
-        form.addParam('dont_normalize', params.BooleanParam, default=True,
+        form.addParam('normalize', params.BooleanParam, default=True,
                       condition='reconstruct==True',
                       label='Normalize the tilt images?',
                       help='Normalize the tilt images')
-        form.addParam('tomo_dimensions', params.IntParam, default='1000',
+
+        form.addParam('tomo_thickness', params.IntParam, default='1000',
                       condition='reconstruct==True',
+                      important=True,
                       label='Tomogram thickness unbinned (pixels)',
                       help="Z height of the reconstructed volume in unbinned pixels.")
+
+        form.addParam('x_dimension', params.IntParam, default=None,
+                      allowsNull=True,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      condition='reconstruct==True',
+                      label='Tomogram x dimension unbinned (pixels)',
+                      help="X width of the reconstructed volume in unbinned pixels. If the value is None or 0, "
+                           "the dimension of the tiltseries will be taken into account. ")
+
+        form.addParam('y_dimension', params.IntParam, default=None,
+                      allowsNull=True,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      condition='reconstruct==True',
+                      label='Tomogram Y dimension unbinned (pixels)',
+                      help="Y height of the reconstructed volume in unbinned pixels. If the value is None or 0, "
+                           "the dimension of the tiltseries will be taken into account.")
+
+        # form.addParam('tomo_dimensions', params.IntParam, default='1000',
+        #               condition='reconstruct==True',
+        #               label='Tomogram thickness unbinned (pixels)',
+        #               help="Z height of the reconstructed volume in unbinned pixels.")
 
         """
        --deconv_strength         Default: 1. Strength of the deconvolution filter, if requested
@@ -174,9 +201,10 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def tomoReconstructionStep(self):
         """Tomo Reconstruction"""
         self.info(">>> Starting tomogram reconstruction...")
+        angpix = round(self.inputSet.get().getSamplingRate() * self.binFactor.get())
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
-            "--angpix": self.angpix.get(),
+            "--angpix": angpix,
         }
 
         cmd = ''
@@ -184,9 +212,9 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
             cmd += " --halfmap_tilts"
         if self.deconv.get():
             cmd += " --deconv"
-        if not self.dont_invert.get():
+        if not self.invert.get():
             cmd += " --dont_invert"
-        if not self.dont_normalize.get():
+        if not self.normalize.get():
             cmd += " --dont_normalize"
 
         self.runProgram(argsDict, TS_RECONSTRUCTION, othersCmds=cmd)

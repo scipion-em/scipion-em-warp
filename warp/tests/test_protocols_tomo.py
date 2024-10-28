@@ -188,7 +188,9 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
         print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
                                                                                    reconstruct=True,
-                                                                                   range_high=6.42)
+                                                                                   binFactor=13,
+                                                                                   range_high=6.42,
+                                                                                   tomo_thickness=1000)
         self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
         setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
         self.assertSetSize(setOfTomogram, 1)

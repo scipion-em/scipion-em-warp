@@ -265,10 +265,12 @@ class ProtWarpBase(EMProtocol):
         if exposure is not None:
             argsDict['--exposure'] = exposure
 
-        if hasattr(self, 'tomo_dimensions'):
-            tsDim = objSet.getDimensions()
-            outputTomoDim = '%sx%sx%s' % (tsDim[0], tsDim[1], self.tomo_dimensions.get())
-            argsDict['--tomo_dimensions'] = outputTomoDim
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or objSet.getDimensions()[0]
+            y = self.y_dimension.get() or objSet.getDimensions()[1]
+
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
