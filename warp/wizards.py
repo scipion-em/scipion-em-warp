@@ -10,7 +10,7 @@ class ProtWarpMaxResolutionWizard(Wizard):
 
         if protocol.inputSet.hasValue():
             sr = protocol.inputSet.get().getSamplingRate()
-            return sr * 2 + 0.1
+            return round(sr * 2 + 0.1, 2)
 
         return range_high
 

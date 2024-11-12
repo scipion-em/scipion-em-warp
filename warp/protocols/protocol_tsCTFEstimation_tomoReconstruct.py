@@ -88,7 +88,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
         form.addSection(label="Reconstruction")
 
-        form.addParam('reconstruct', params.BooleanParam, default=False,
+        form.addParam('reconstruct', params.BooleanParam, default=True,
                       label='Tomogram reconstruction ?',
                       help='reconstruct tomograms for various tasks and, optionally'
                            'half-tomograms for denoiser training using the Warp procedure')
@@ -201,7 +201,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def tomoReconstructionStep(self):
         """Tomo Reconstruction"""
         self.info(">>> Starting tomogram reconstruction...")
-        angpix = round(self.inputSet.get().getSamplingRate() * self.binFactor.get())
+        angpix = self.getAngPix()
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
             "--angpix": angpix,
@@ -238,6 +238,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
             defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
             ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
             defocusDelta = float(ctfData['DefocusDelta']) * 1e4
+            defocusAngle = float(ctfData['DefocusAngle'])
 
             for ti in ts.iterItems():
                 tiObjId = ti.getObjId()
@@ -245,8 +246,17 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                 newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
                 newCTFTomo.setIndex(ti.getIndex())
                 newCTFTomo.setObjId(tiObjId)
-                newCTFTomo.setDefocusU(gridCtfData["Nodes"][tiObjId] + defocusDelta)
-                newCTFTomo.setDefocusV(gridCtfData["Nodes"][tiObjId] - defocusDelta)
+                defocusU = 0
+                defocusV = 0
+                if tiObjId in gridCtfData["Nodes"]:
+                    defocusU = gridCtfData["Nodes"][tiObjId] + defocusDelta
+                    defocusV = gridCtfData["Nodes"][tiObjId] - defocusAngle
+                newCTFTomo.setDefocusU(defocusU)
+                newCTFTomo.setDefocusV(defocusV)
+                newCTFTomo.setDefocusAngle(defocusAngle)
+                newCTFTomo.setResolution(0)
+                newCTFTomo.setFitQuality(0)
+                newCTFTomo.standardize()
                 newCTFTomoSeries.append(newCTFTomo)
 
             outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
@@ -261,10 +271,10 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
                 if generateOutput:
                     outputSetOfTomograms = self.getOutputSetOfTomograms(OUTPUT_TOMOGRAMS_NAME)
-                    outputSetOfTomograms.setSamplingRate(self.angpix.get())
+                    outputSetOfTomograms.setSamplingRate(self.getAngPix())
                     newTomogram = tomoObj.Tomogram(tsId=tsId)
                     newTomogram.copyInfo(ts)
-                    newTomogram.setSamplingRate(self.angpix.get())
+                    newTomogram.setSamplingRate(self.getAngPix())
                     newTomogram.setLocation(tomoLocation)
 
                     if self.halfmap_tilts.get():
@@ -297,7 +307,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
             outputSetOfCTFTomoSeries = tomoObj.SetOfCTFTomoSeries.create(self._getPath(),
                                                                   template='CTFmodels%s.sqlite')
             tsSet = self.inputSet.get()
-            outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
+            outputSetOfCTFTomoSeries.setSetOfTiltSeries(self.inputSet)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
             self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
@@ -333,10 +343,17 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         if rangeHigh is None or rangeHigh < self.inputSet.get().getSamplingRate() * 2:
             return ["Resolution parameter(Max) can't be higher than the binned data's Nyquist resolution"]
 
+    def getAngPix(self):
+        return round(self.inputSet.get().getSamplingRate() * self.binFactor.get())
+
     def getOutFile(self, tsId, ext) -> str:
-        angpix = self.angpix.get()
+        angpix = self.getAngPix()
         suffix = str(f"{angpix:.2f}") + 'Apx'
         return f'{tsId}_{suffix}.{ext}'
+
+    def getBinFactor(self):
+        import math
+        return math.floor(math.log2(self.binFactor.get()))
 
 
 

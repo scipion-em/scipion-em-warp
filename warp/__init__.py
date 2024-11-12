@@ -44,6 +44,7 @@ class Plugin(pwem.Plugin):
     def _defineVariables(cls):
         cls._defineVar(WARP_ENV_ACTIVATION, DEFAULT_ACTIVATION_CMD)
         cls._defineVar(WARP_LOADER, None)
+        cls._defineVar(WARP_FORCE_MRC_FLOAT32, 1)  # Force writing 32 bit MRCs
 
     @classmethod
     def getEnviron(cls):

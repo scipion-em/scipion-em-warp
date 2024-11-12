@@ -230,10 +230,11 @@ class ProtWarpBase(EMProtocol):
                     tiShift = [-1 * matrix[0, 2], -1 * matrix[1, 2], 0]
                     transpose = numpy.transpose(newMatrix)
                     multShift = numpy.dot(transpose, tiShift)
-                    shiftX = multShift[0] * 10
-                    shiftY = multShift[1] * 10
+                    shiftX = multShift[0] * sr
+                    shiftY = multShift[1] * sr
 
-                tiValues[newBinaryName] = [ti.getTiltAngle(), axisAngle, shiftX, shiftY, dose, amplitudeContrast, maskedFraction]
+                tiValues[newBinaryName] = [ti.getTiltAngle() * -1, axisAngle, shiftX, shiftY, dose,
+                                           amplitudeContrast, maskedFraction]
 
                 index += 1
 

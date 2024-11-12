@@ -65,19 +65,12 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        form.addParam('binFactor', params.FloatParam, default=0.,
+        form.addParam('binFactor', params.IntParam, default=1,
                       label="Binning factor",
                       help="Binning factor, applied in Fourier "
                            "space when loading raw data. 1 = no binning, "
                            "2 = 2x2 binning, 4 = 4x4 binning, supports "
                            "non-integer values")
-
-        form.addParam('eerGroup', params.IntParam, default=40,
-                      label='EER fractionation',
-                      help="The number of hardware frames to group into one "
-                           "fraction. This option is relevant only for Falcon 4 "
-                           "movies in the EER format. Fractionate such that each fraction "
-                           "has about 0.5 to 1.25 e/A2.")
 
         line = form.addLine('Resolution to fit',
                             help='Resolution in Angstrom to consider in fit.')
@@ -98,11 +91,6 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         line.addParam('x', params.IntParam, default=2, label='X')
         line.addParam('y', params.IntParam, default=2, label='Y')
         line.addParam('z', params.IntParam, default=1, label='Temporal')
-
-        line.addParam('sumFrame0', params.IntParam, default=1,
-                      label='from')
-        line.addParam('sumFrameN', params.IntParam, default=0,
-                      label='to')
 
         # form.addParam('average_halves', params.BooleanParam,
         #               default=False,
@@ -144,9 +132,12 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             "--folder_processing": processingFolder,
             "--bin": self.getBinFactor(),
             "--angpix": sr,
-            "--exposure": exposure,  # exposure/frame
             "--output": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
         }
+
+        if exposure is not None:
+            argsDict['--exposure'] = exposure
+
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if gainPath:
             cmd += " --gain_path %s" % gainPath
