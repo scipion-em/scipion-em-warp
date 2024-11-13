@@ -30,7 +30,7 @@ import os
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from .protocol_base import ProtMovieAlignBase, ProtWarpBase
+from .protocol_base import ProtMovieAlignBase
 
 from .. import Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER
 

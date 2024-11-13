@@ -235,7 +235,6 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         output.write()
         self._store(output)
 
-
     def getOutputSetOfTS(self, outputSetName):
         outputSetOfTiltSeries = getattr(self, outputSetName, None)
 

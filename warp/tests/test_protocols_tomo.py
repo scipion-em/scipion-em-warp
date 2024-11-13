@@ -28,12 +28,11 @@ import os.path
 from pwem import Domain
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import magentaStr
-from pwem.protocols import ProtImportMovies
 
 from tomo.protocols import ProtImportTs, ProtImportTsCTF, ProtImportTsMovies
 from tomo.tests import DataSet
-from warp.protocols import (ProtWarpTSCtfEstimationTomoReconstruct, ProtWarpTSDefocusHand, ProtWarpDeconvTomo,
-                            ProtWarpDeconvTS)
+from warp.protocols import (ProtWarpTSCtfEstimationTomoReconstruct, ProtWarpDeconvTomo,
+                            ProtWarpDeconvTS, ProtWarpTSMotionCorr)
 
 
 class TestWarpBase(BaseTest):
@@ -63,10 +62,9 @@ class TestWarpBase(BaseTest):
 
     @classmethod
     def runMotioncorrTSMovieAligment(cls, **kwargs):
-        motioncorrProts = Domain.importFromPlugin('motioncorr.protocols', doRaise=True)
-        cls.motioncorrTSMovieAligment = cls.newProtocol(motioncorrProts.ProtTsMotionCorr, **kwargs)
+        cls.motioncorrTSMovieAligment = cls.newProtocol(ProtWarpTSMotionCorr, **kwargs)
         cls.launchProtocol(cls.motioncorrTSMovieAligment)
-        cls.assertIsNotNone(cls.motioncorrTSMovieAligment.outputTiltSeries,
+        cls.assertIsNotNone(cls.motioncorrTSMovieAligment.TiltSeries,
                             "SetOfTiltSeries has not been produced.")
         return cls.motioncorrTSMovieAligment
 
@@ -86,14 +84,6 @@ class TestWarpBase(BaseTest):
         cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.CTFTomoSeries, "CTFTomoSeries has not been produced.")
         cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.Tomograms, "SetOfTomograms has not been produced.")
         return cls.ctfEstimationTomoReconstruct
-
-    @classmethod
-    def runWarpDefocusHand(cls, **kwargs):
-        cls.defocusHand = cls.newProtocol(ProtWarpTSDefocusHand, **kwargs)
-        cls.launchProtocol(cls.defocusHand)
-        cls.assertIsNotNone(cls.defocusHand, "Warp defocus handedness for all tilt series has failed")
-        return cls.defocusHand
-
 
     @classmethod
     def runImportCtf(cls, **kwargs):
@@ -170,30 +160,31 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
         print(magentaStr("\n==> Importing data - tilt series movies:"))
         protImportTSM = self.runImportTiltSeriesM(filesPath=self.tsm_path,
                                                   filesPattern="*/*.mdoc",
+                                                  voltage=300,
                                                   samplingRate=0.79,
+                                                  tiltAxisAngle=-85.6,
+                                                  dosePerFrame=0.88,
                                                   gainFile=os.path.join(self.tsm_path, 'gain_ref.mrc'))
 
-        print(magentaStr("\n==> Running Motioncorr - tiltseries movies "))
-        protImportCtf = self.runMotioncorrTSMovieAligment(inputTiltSeriesM=protImportTSM.outputTiltSeriesM,
-                                                          binFactor=4.0)
+        print(magentaStr("\n==> Running Warp - align tiltseries movies "))
+        protImportCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
+                                                          binFactor=1, x=1, y=1, z=3, gainFlip=2)
 
         print(magentaStr("\n==> Running Imod - import transformation matrix "))
-        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.outputTiltSeries,
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
                                                   filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
-                                                  filesPattern='*.xf')
-
-        print(magentaStr("\n==> Running Warp - Defocus Hand "))
-        self.runWarpDefocusHand(inputSet=protImportTM.TiltSeries)
+                                                  filesPattern='*.xf',
+                                                  binningTM=13)
 
         print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
                                                                                    reconstruct=True,
                                                                                    binFactor=13,
-                                                                                   range_high=6.42,
+                                                                                   range_high=1.68,
                                                                                    tomo_thickness=1000)
         self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
         setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
         self.assertSetSize(setOfTomogram, 1)
         self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
-        self.assertTrue(setOfTomogram.getDim() == (1172, 1172, 442))
+        self.assertTrue(setOfTomogram.getDim() == (456, 324, 80))
 
