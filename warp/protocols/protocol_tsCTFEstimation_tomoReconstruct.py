@@ -227,41 +227,44 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         tsSet = self.inputSet.get()
 
         for ts in tsSet.iterItems():
-            tsId = ts.getTsId()
-            outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
+            if ts.isEnabled():
+                tsId = ts.getTsId()
+                outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
 
-            # CTF outputs
-            newCTFTomoSeries = tomoObj.CTFTomoSeries(tsId=tsId)
-            newCTFTomoSeries.copyInfo(ts)
-            newCTFTomoSeries.setTiltSeries(ts)
-            outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
-            defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-            ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
-            defocusDelta = float(ctfData['DefocusDelta']) * 1e4
-            defocusAngle = float(ctfData['DefocusAngle'])
+                # CTF outputs
+                newCTFTomoSeries = tomoObj.CTFTomoSeries(tsId=tsId)
+                newCTFTomoSeries.copyInfo(ts)
+                newCTFTomoSeries.setTiltSeries(ts)
+                outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
+                defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+                ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+                defocusDelta = float(ctfData['DefocusDelta']) * 1e4
+                defocusAngle = float(ctfData['DefocusAngle'])
 
-            for ti in ts.iterItems():
-                tiObjId = ti.getObjId()
-                newCTFTomo = tomoObj.CTFTomo()
-                newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
-                newCTFTomo.setIndex(ti.getIndex())
-                newCTFTomo.setObjId(tiObjId)
-                defocusU = 0
-                defocusV = 0
-                if tiObjId in gridCtfData["Nodes"]:
-                    defocusU = gridCtfData["Nodes"][tiObjId] + defocusDelta
-                    defocusV = gridCtfData["Nodes"][tiObjId] - defocusAngle
-                newCTFTomo.setDefocusU(defocusU)
-                newCTFTomo.setDefocusV(defocusV)
-                newCTFTomo.setDefocusAngle(defocusAngle)
-                newCTFTomo.setResolution(0)
-                newCTFTomo.setFitQuality(0)
-                newCTFTomo.standardize()
-                newCTFTomoSeries.append(newCTFTomo)
+                index = 0
+                for ti in ts.iterItems():
+                    if ti.isEnabled():
+                        index += 1
+                        newCTFTomo = tomoObj.CTFTomo()
+                        newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
+                        newCTFTomo.setIndex(index)
+                        newCTFTomo.setObjId(index)
+                        defocusU = 0
+                        defocusV = 0
+                        if index in gridCtfData["Nodes"]:
+                            defocusU = gridCtfData["Nodes"][index] + defocusDelta
+                            defocusV = gridCtfData["Nodes"][index] - defocusAngle
+                        newCTFTomo.setDefocusU(defocusU)
+                        newCTFTomo.setDefocusV(defocusV)
+                        newCTFTomo.setDefocusAngle(defocusAngle)
+                        newCTFTomo.setResolution(0)
+                        newCTFTomo.setFitQuality(0)
+                        newCTFTomo.standardize()
+                        newCTFTomoSeries.append(newCTFTomo)
 
-            outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
-            outputSetOfCTFTomoSeries.write()
-            self._store(outputSetOfCTFTomoSeries)
+                outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
+                outputSetOfCTFTomoSeries.write()
+                self._store(outputSetOfCTFTomoSeries)
 
             # Reconstruction outputs
             if self.reconstruct.get():
@@ -323,7 +326,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
             outputSetOfTomograms = tomoObj.SetOfTomograms.create(self._getExtraPath(), template='tomograms%s.sqlite')
             outputSetOfTomograms.setAcquisition(tsSet.getAcquisition())
             outputSetOfTomograms.setSamplingRate(tsSet.getSamplingRate())
-
+            outputSetOfTomograms.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfTomograms})
             self._defineSourceRelation(tsSet, outputSetOfTomograms)
 
@@ -331,9 +334,10 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
     def _summary(self):
         summary = []
-        if self.hasAttribute('CTFTomoSeries'):
+        if self.hasAttribute(OUTPUT_CTF_SERIE) and self.hasAttribute(OUTPUT_TOMOGRAMS_NAME):
             summary.append(f"Input tilt-series: {self.inputSet.get().getSize()}\n"
-                           f"CTF Estimation: {self.CTFTomoSeries.getSize()}")
+                           f"CTF Estimation: {self.CTFTomoSeries.getSize()}\n"
+                           f"Tomograms: {self.Tomograms.getSize()}")
         else:
             summary.append("Outputs are not ready yet.")
         return summary

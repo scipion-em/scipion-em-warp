@@ -185,6 +185,14 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         # Register the output micrographs along with their corresponding output locations
         self.addMicrographs(micNamesList, micLocations)
 
+    def _summary(self):
+        summary = []
+        if self.hasAttribute(self.OUT_MICS):
+            summary.append(f"Micrographs: {self.Micrographs.getSize()} of {self.inputMovies.get().getSize()}\n")
+        else:
+            summary.append("Outputs are not ready yet.")
+        return summary
+
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))

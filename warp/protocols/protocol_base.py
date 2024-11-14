@@ -193,52 +193,53 @@ class ProtWarpBase(EMProtocol):
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
         exposure = objSet.getAcquisition().getDosePerFrame()
-
         # 1. Extract all tilt images from the tiltseries
         for ts in objSet.iterItems():
-            tsId = ts.getTsId()
-            properties = {"sr": sr}
-            index = 1
-            tiValues = {}
-            for ti in ts.iterItems():
-                newBinaryName = tsId + '_%s_%s.mrc' % (index, ti.getTiltAngle())
-                newFrame = ImageStack(properties=properties)
-                newFrame.append(ImageReadersRegistry.open(str(index) + '@' + ti.getFileName()))
-                ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
-                # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
-                dose = 0
-                if ts.hasAcquisition():
-                    axisAngle = ts._acquisition.getTiltAxisAngle()
-                else:
-                    axisAngle = 0
-                amplitudeContrast = 0
-                maskedFraction = 0
-                if ti.getAcquisition():
-                    amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-                    dose = ti.getAcquisition().getAccumDose()
+            if ts.isEnabled():
+                tsId = ts.getTsId()
+                properties = {"sr": sr}
+                index = 1
+                tiValues = {}
+                for ti in ts.iterItems():
+                    if ti.isEnabled():  # Excluding views
+                        newBinaryName = tsId + '_%s_%s.mrc' % (index, ti.getTiltAngle())
+                        newFrame = ImageStack(properties=properties)
+                        newFrame.append(ImageReadersRegistry.open(str(index) + '@' + ti.getFileName()))
+                        ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
+                        # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
+                        dose = 0
+                        if ts.hasAcquisition():
+                            axisAngle = ts._acquisition.getTiltAxisAngle()
+                        else:
+                            axisAngle = 0
+                        amplitudeContrast = 0
+                        maskedFraction = 0
+                        if ti.getAcquisition():
+                            amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
+                            dose = ti.getAcquisition().getAccumDose()
 
-                shiftX = 0
-                shiftY = 0
+                        shiftX = 0
+                        shiftY = 0
 
-                if hasAlignment:
-                    transform = ti.getTransform()
-                    matrix = transform.getMatrix()
-                    newMatrix = numpy.zeros((3, 3), dtype=float)
-                    newMatrix[0, 0:2] = matrix[0, 0:2]
-                    newMatrix[1, 0:2] = matrix[1, 0:2]
-                    newMatrix[2, 2] = 1
-                    tiShift = [-1 * matrix[0, 2], -1 * matrix[1, 2], 0]
-                    transpose = numpy.transpose(newMatrix)
-                    multShift = numpy.dot(transpose, tiShift)
-                    shiftX = multShift[0] * sr
-                    shiftY = multShift[1] * sr
+                        if hasAlignment:
+                            transform = ti.getTransform()
+                            matrix = transform.getMatrix()
+                            newMatrix = numpy.zeros((3, 3), dtype=float)
+                            newMatrix[0, 0:2] = matrix[0, 0:2]
+                            newMatrix[1, 0:2] = matrix[1, 0:2]
+                            newMatrix[2, 2] = 1
+                            tiShift = [-1 * matrix[0, 2], -1 * matrix[1, 2], 0]
+                            transpose = numpy.transpose(newMatrix)
+                            multShift = numpy.dot(transpose, tiShift)
+                            shiftX = multShift[0] * sr
+                            shiftY = multShift[1] * sr
 
-                tiValues[newBinaryName] = [ti.getTiltAngle() * -1, axisAngle, shiftX, shiftY, dose,
-                                           amplitudeContrast, maskedFraction]
+                        tiValues[newBinaryName] = [ti.getTiltAngle() * -1, axisAngle, shiftX, shiftY, dose,
+                                                   amplitudeContrast, maskedFraction]
 
-                index += 1
+                        index += 1
 
-            self.tomoStarGenerate(tsId, tiValues, starFolder)
+                self.tomoStarGenerate(tsId, tiValues, starFolder)
 
         # 2. Create symbolic links from tiltseries folder to average folder
         #    We need to do this because warp needs both folders: The tiltimages folder to get

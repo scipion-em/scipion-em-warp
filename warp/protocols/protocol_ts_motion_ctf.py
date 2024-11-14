@@ -29,11 +29,13 @@ from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
+from pyworkflow.object import Set
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries, TiltImage, TiltSeries
 from tomo.protocols import ProtTomoBase
 from .protocol_base import ProtWarpBase
 
-from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER)
+from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER,
+                OUTPUT_TILTSERIES)
 
 
 class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
@@ -182,6 +184,8 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
             self.createOutput(tsMovie)
 
+        self._closeOutputSet()
+
     def createOutput(self, tsMovie):
         self.info(">>> Generating output for %s..." % tsMovie.getTsId())
         output = self.getOutputSetOfTS('TiltSeries')
@@ -235,6 +239,14 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         output.write()
         self._store(output)
 
+    def _summary(self):
+        summary = []
+        if self.hasAttribute(OUTPUT_TILTSERIES):
+            summary.append(f"Aligned tiltseries: {self.TiltSeries.getSize()} of {self.inputTSMovies.get().getSize()}\n")
+        else:
+            summary.append("Outputs are not ready yet.")
+        return summary
+
     def getOutputSetOfTS(self, outputSetName):
         outputSetOfTiltSeries = getattr(self, outputSetName, None)
 
@@ -245,6 +257,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             tsMovieSet = self.inputTSMovies.get()
             outputSetOfTiltSeries.setSamplingRate(tsMovieSet.getSamplingRate() * self.binFactor.get())
             outputSetOfTiltSeries.setAcquisition(tsMovieSet.getAcquisition())
+            outputSetOfTiltSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfTiltSeries})
             self._defineSourceRelation(outputSetOfTiltSeries, tsMovieSet)
 

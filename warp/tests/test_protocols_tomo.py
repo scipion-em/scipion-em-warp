@@ -156,6 +156,8 @@ class TestDeconvolveTomo(TestWarpBase):
 
 
 class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
+    excludedViewsDict = {'TS_1': [1, 2, 3, 37, 38, 39]}
+
     def test_warpCTFEstimationTomoReconstruction(self):
         print(magentaStr("\n==> Importing data - tilt series movies:"))
         protImportTSM = self.runImportTiltSeriesM(filesPath=self.tsm_path,
@@ -181,10 +183,52 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
                                                                                    reconstruct=True,
                                                                                    binFactor=13,
                                                                                    range_high=1.68,
-                                                                                   tomo_thickness=1000)
+                                                                                   tomo_thickness=1000,
+                                                                                   x_dimension=4400,
+                                                                                   y_dimension=6000)
         self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
+        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 40)
         setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
         self.assertSetSize(setOfTomogram, 1)
         self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
-        self.assertTrue(setOfTomogram.getDim() == (456, 324, 80))
+        self.assertTrue(setOfTomogram.getDim() == (348, 474, 80))
+
+        print(magentaStr("\n==> Running Imod - import transformation matrix (Excluding views)"))
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
+                                                 filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                 filesPattern='*.xf',
+                                                 binningTM=13)
+
+        self._excludeTsSetViews(protImportTM.TiltSeries)
+
+        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction (Excluding views) "))
+        ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   reconstruct=True,
+                                                                                   binFactor=13,
+                                                                                   range_high=1.68,
+                                                                                   tomo_thickness=1000,
+                                                                                   x_dimension=4400,
+                                                                                   y_dimension=6000)
+        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 35)
+
+    @classmethod
+    def _excludeTsSetViews(cls, tsSet):
+        tsList = [ts.clone(ignoreAttrs=[]) for ts in tsSet]
+        for ts in tsList:
+            cls._excludeTsViews(tsSet, ts, cls.excludedViewsDict[ts.getTsId()])
+
+    @staticmethod
+    def _excludeTsViews(tsSet, ts, excludedViewsList):
+        tiList = [ti.clone() for ti in ts]
+        for i, ti in enumerate(tiList):
+            if i in excludedViewsList:
+                ti._objEnabled = False
+                ts.update(ti)
+        ts.write()
+        tsSet.update(ts)
+        tsSet.write()
+
+
+
+
 
