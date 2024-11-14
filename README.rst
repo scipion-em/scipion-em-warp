@@ -2,7 +2,7 @@
 Warp plugin
 ===========
 
-This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/dtegunov/warp>`_ software.
+This plugin provides a wrapper for some of the programs of the `Warp <https://github.com/warpem/warp>`_ software.
 
 .. image:: https://img.shields.io/pypi/v/scipion-em-warp.svg
         :target: https://pypi.python.org/pypi/scipion-em-warp
@@ -57,6 +57,8 @@ To check the installation, simply run one of the following Scipion tests:
 
 * scipion3 tests warp.tests.test_protocols.TestDeconvolveMics
 * scipion3 tests warp.tests.test_protocols_tomo.TestDeconvolveTomo
+* scipion3 tests warp.tests.test_protocols_tomo.TestWarpEstimateCTFTomoReconstruction
+* scipion3 tests warp.tests.test_protocols.TestWarpMotionCorrection
 
 Protocols
 ----------
@@ -64,6 +66,9 @@ Protocols
 * deconvolve micrographs
 * deconvolve tomograms
 * deconvolve tilt-series
+* ctf estimation and tomo reconstruction
+* motioncorr
+* align tilt-series movies
 
 References
 -----------

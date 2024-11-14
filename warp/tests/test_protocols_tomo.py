@@ -23,24 +23,26 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+import os.path
 
 from pwem import Domain
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import magentaStr
 
-from tomo.protocols import ProtImportTs, ProtImportTsCTF
+from tomo.protocols import ProtImportTs, ProtImportTsCTF, ProtImportTsMovies
 from tomo.tests import DataSet
+from warp.protocols import (ProtWarpTSCtfEstimationTomoReconstruct, ProtWarpDeconvTomo,
+                            ProtWarpDeconvTS, ProtWarpTSMotionCorr)
 
-from warp.protocols.protocol_deconv_tomo import ProtWarpDeconvTomo
-from warp.protocols.protocol_deconv_ts import ProtWarpDeconvTS
 
-
-class TestDeconvolveTomo(BaseTest):
+class TestWarpBase(BaseTest):
     @classmethod
     def setUpClass(cls):
         setupTestProject(cls)
         cls.inputDataSet = DataSet.getDataSet('empiar10064')
         cls.ts_path = cls.inputDataSet.getPath()
+        cls.inputTSM = DataSet.getDataSet('empiar_10491')
+        cls.tsm_path = cls.inputTSM.getPath()
 
     @classmethod
     def runImportTiltSeries(cls, **kwargs):
@@ -49,6 +51,39 @@ class TestDeconvolveTomo(BaseTest):
         cls.assertIsNotNone(cls.protImportTS.outputTiltSeries,
                             "SetOfTiltSeries has not been produced.")
         return cls.protImportTS
+
+    @classmethod
+    def runImportTiltSeriesM(cls, **kwargs):
+        cls.protImportTSM = cls.newProtocol(ProtImportTsMovies, **kwargs)
+        cls.launchProtocol(cls.protImportTSM)
+        cls.assertIsNotNone(cls.protImportTSM.outputTiltSeriesM,
+                            "SetOfTiltSeriesM has not been imported.")
+        return cls.protImportTSM
+
+    @classmethod
+    def runMotioncorrTSMovieAligment(cls, **kwargs):
+        cls.motioncorrTSMovieAligment = cls.newProtocol(ProtWarpTSMotionCorr, **kwargs)
+        cls.launchProtocol(cls.motioncorrTSMovieAligment)
+        cls.assertIsNotNone(cls.motioncorrTSMovieAligment.TiltSeries,
+                            "SetOfTiltSeries has not been produced.")
+        return cls.motioncorrTSMovieAligment
+
+    @classmethod
+    def runImodImportTMatrix(cls, **kwargs):
+        imodProts = Domain.importFromPlugin('imod.protocols', doRaise=True)
+        cls.importTransformationMatrix = cls.newProtocol(imodProts.ProtImodImportTransformationMatrix, **kwargs)
+        cls.launchProtocol(cls.importTransformationMatrix)
+        cls.assertIsNotNone(cls.importTransformationMatrix.TiltSeries,
+                            "Transformation matrix has not been produced.")
+        return cls.importTransformationMatrix
+
+    @classmethod
+    def runWarpCTFEstimationTomoReconstruction(cls, **kwargs):
+        cls.ctfEstimationTomoReconstruct = cls.newProtocol(ProtWarpTSCtfEstimationTomoReconstruct, **kwargs)
+        cls.launchProtocol(cls.ctfEstimationTomoReconstruct)
+        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.CTFTomoSeries, "CTFTomoSeries has not been produced.")
+        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.Tomograms, "SetOfTomograms has not been produced.")
+        return cls.ctfEstimationTomoReconstruct
 
     @classmethod
     def runImportCtf(cls, **kwargs):
@@ -68,6 +103,9 @@ class TestDeconvolveTomo(BaseTest):
                             "SetOfTomograms has not been produced.")
 
         return cls.protRecon
+
+
+class TestDeconvolveTomo(TestWarpBase):
 
     def test_run(self):
         print(magentaStr("\n==> Importing data - tilt series:"))
@@ -115,3 +153,82 @@ class TestDeconvolveTomo(BaseTest):
         outputTS = getattr(protDeconvTS, protDeconvTS._possibleOutputs.TiltSeries.name)
         self.assertIsNotNone(outputTS, "Warp deconvolve tilt-series has failed")
         self.assertSetSize(outputTS, 2)
+
+
+class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
+    excludedViewsDict = {'TS_1': [1, 2, 3, 37, 38, 39]}
+
+    def test_warpCTFEstimationTomoReconstruction(self):
+        print(magentaStr("\n==> Importing data - tilt series movies:"))
+        protImportTSM = self.runImportTiltSeriesM(filesPath=self.tsm_path,
+                                                  filesPattern="*/*.mdoc",
+                                                  voltage=300,
+                                                  samplingRate=0.79,
+                                                  tiltAxisAngle=-85.6,
+                                                  dosePerFrame=0.88,
+                                                  gainFile=os.path.join(self.tsm_path, 'gain_ref.mrc'))
+
+        print(magentaStr("\n==> Running Warp - align tiltseries movies "))
+        protImportCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
+                                                          binFactor=1, x=1, y=1, z=3, gainFlip=2)
+
+        print(magentaStr("\n==> Running Imod - import transformation matrix "))
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
+                                                  filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                  filesPattern='*.xf',
+                                                  binningTM=13)
+
+        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction "))
+        ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   reconstruct=True,
+                                                                                   binFactor=13,
+                                                                                   range_high=1.68,
+                                                                                   tomo_thickness=1000,
+                                                                                   x_dimension=4400,
+                                                                                   y_dimension=6000)
+        self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
+        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 40)
+        setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
+        self.assertSetSize(setOfTomogram, 1)
+        self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
+        self.assertTrue(setOfTomogram.getDim() == (348, 474, 80))
+
+        print(magentaStr("\n==> Running Imod - import transformation matrix (Excluding views)"))
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
+                                                 filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                 filesPattern='*.xf',
+                                                 binningTM=13)
+
+        self._excludeTsSetViews(protImportTM.TiltSeries)
+
+        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction (Excluding views) "))
+        ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   reconstruct=True,
+                                                                                   binFactor=13,
+                                                                                   range_high=1.68,
+                                                                                   tomo_thickness=1000,
+                                                                                   x_dimension=4400,
+                                                                                   y_dimension=6000)
+        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 35)
+
+    @classmethod
+    def _excludeTsSetViews(cls, tsSet):
+        tsList = [ts.clone(ignoreAttrs=[]) for ts in tsSet]
+        for ts in tsList:
+            cls._excludeTsViews(tsSet, ts, cls.excludedViewsDict[ts.getTsId()])
+
+    @staticmethod
+    def _excludeTsViews(tsSet, ts, excludedViewsList):
+        tiList = [ti.clone() for ti in ts]
+        for i, ti in enumerate(tiList):
+            if i in excludedViewsList:
+                ti._objEnabled = False
+                ts.update(ti)
+        ts.write()
+        tsSet.update(ts)
+        tsSet.write()
+
+
+
+
+
