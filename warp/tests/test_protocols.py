@@ -30,7 +30,6 @@ from pwem.protocols import ProtImportMicrographs, ProtImportCTF, ProtImportMovie
 from warp.protocols import ProtWarpMotionCorr
 
 from warp.protocols.protocol_deconv_mics import ProtWarpDeconvMics, outputs
-from warp.tests.test_protocols_tomo import TestWarpBase
 
 
 class TestDeconvolveMics(BaseTest):
@@ -84,7 +83,7 @@ class TestDeconvolveMics(BaseTest):
         self.assertSetSize(outputMics, 3)
 
 
-class TestWarpMotionCorrection(TestWarpBase):
+class TestWarpMotionCorrection(BaseTest):
     @classmethod
     def setUpClass(cls):
         setupTestProject(cls)

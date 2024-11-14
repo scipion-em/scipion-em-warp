@@ -198,13 +198,12 @@ class ProtWarpBase(EMProtocol):
             if ts.isEnabled():
                 tsId = ts.getTsId()
                 properties = {"sr": sr}
-                index = 1
                 tiValues = {}
                 for ti in ts.iterItems():
                     if ti.isEnabled():  # Excluding views
-                        newBinaryName = tsId + '_%s_%s.mrc' % (index, ti.getTiltAngle())
+                        newBinaryName = tsId + f'_TO_%02d.mrc' % ti.getAcquisitionOrder()
                         newFrame = ImageStack(properties=properties)
-                        newFrame.append(ImageReadersRegistry.open(str(index) + '@' + ti.getFileName()))
+                        newFrame.append(ImageReadersRegistry.open(str(ti.getIndex()) + '@' + ti.getFileName()))
                         ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
                         # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
                         dose = 0
@@ -237,7 +236,6 @@ class ProtWarpBase(EMProtocol):
                         tiValues[newBinaryName] = [ti.getTiltAngle() * -1, axisAngle, shiftX, shiftY, dose,
                                                    amplitudeContrast, maskedFraction]
 
-                        index += 1
 
                 self.tomoStarGenerate(tsId, tiValues, starFolder)
 

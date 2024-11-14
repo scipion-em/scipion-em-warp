@@ -42,9 +42,9 @@ class Plugin(pwem.Plugin):
 
     @classmethod
     def _defineVariables(cls):
-        cls._defineVar(WARP_ENV_ACTIVATION, DEFAULT_ACTIVATION_CMD)
-        cls._defineVar(WARP_LOADER, None)
-        cls._defineVar(WARP_FORCE_MRC_FLOAT32, 1)  # Force writing 32 bit MRCs
+        cls._defineVar(WARP_ENV_ACTIVATION, DEFAULT_ACTIVATION_CMD, description="Command to activate warp environment.")
+        cls._defineVar(WARP_LOADER, None, description="Command to load dependencies needed by the warp environment (e.g: moduleload ...)")
+        cls._defineVar(WARP_FORCE_MRC_FLOAT32, "1", description="Force writing 32 bit MRCs. A 1 will produce bigger files but compatible with the rest or the methods.")
 
     @classmethod
     def getEnviron(cls):
@@ -53,6 +53,8 @@ class Plugin(pwem.Plugin):
         if 'PYTHONPATH' in environ:
             # this is required for python virtual env to work
             del environ['PYTHONPATH']
+
+        environ[WARP_FORCE_MRC_FLOAT32]=cls.getVar(WARP_FORCE_MRC_FLOAT32)
         return environ
 
     @classmethod
