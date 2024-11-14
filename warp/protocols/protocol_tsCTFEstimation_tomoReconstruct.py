@@ -244,7 +244,6 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                 index = 0
                 for ti in ts.iterItems():
                     if ti.isEnabled():
-                        index += 1
                         newCTFTomo = tomoObj.CTFTomo()
                         newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
                         newCTFTomo.setIndex(index)
@@ -261,6 +260,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                         newCTFTomo.setFitQuality(0)
                         newCTFTomo.standardize()
                         newCTFTomoSeries.append(newCTFTomo)
+                        index += 1
 
                 outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
                 outputSetOfCTFTomoSeries.write()

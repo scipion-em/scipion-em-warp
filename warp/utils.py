@@ -171,7 +171,7 @@ def parseCtfXMLFile(defocusFilePath):
 
     nodes = gridCtf.findall('Node')
     for node in nodes:
-        tiId = int(node.get("Z")) + 1
+        tiId = int(node.get("Z"))
         defocusValue = float(node.get("Value"))
         gridCtfData["Nodes"][tiId] = defocusValue * 1e4
 
