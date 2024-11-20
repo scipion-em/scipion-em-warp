@@ -35,7 +35,7 @@ from tomo.protocols import ProtTomoBase
 from .protocol_base import ProtWarpBase
 
 from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER,
-                OUTPUT_TILTSERIES)
+                OUTPUT_TILTSERIES, FS_CTF)
 
 
 class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
@@ -109,14 +109,43 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label="Flip gain reference:", default=0,
                       display=params.EnumParam.DISPLAY_COMBO)
 
+        form.addSection(label="CTF")
+        form.addParam('window', params.IntParam, default=512,
+                      label='Windows', help='Patch size for CTF estimation in binned pixels')
+
+        line = form.addLine('Resolution (Å)',
+                            help='Resolution in Angstrom to consider in fit.')
+
+        line.addParam('range_min', params.FloatParam, default=30,
+                      label='Min', help='Lowest (worst) resolution in Angstrom to consider in fit')
+
+        line.addParam('range_max', params.FloatParam, default=4,
+                      label="Max",
+                      help="Highest (best) resolution in Angstrom to consider in fit")
+
+        line = form.addLine('Defocus search range (Å)',
+                            help='Defocus values in um to explore during fitting (positive = underfocus)')
+        line.addParam('defocus_min', params.FloatParam, default=0.5,
+                      label='Min', help='Minimum defocus value in um to explore during fitting (positive = underfocus)')
+        line.addParam('defocus_max', params.FloatParam, default=5,
+                      label='Max', help='Maximum defocus value in um to explore during fitting (positive = underfocus)')
+
+        form.addParam('fit_phase', params.BooleanParam, default=False,
+                      label='Fit phase', help='Fit the phase shift of a phase plate')
+
+        form.addParam('use_sum', params.BooleanParam, default=False,
+                      label='Use the movie average', help='Use the movie average spectrum instead of the average of individual '
+                                                           'frames spectra. Can help in the absence of an energy filter, or when signal is low')
+
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
         inputTSMovies = self.inputTSMovies.get()
         self.samplingRate = inputTSMovies.getSamplingRate()
-        self._insertFunctionStep(self.createSettingStep, needsGPU=False)
+        self._insertFunctionStep(self.createFrameSeriesSettingStep, needsGPU=False)
+        self._insertFunctionStep(self.dataPrepare, inputTSMovies)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
 
-    def createSettingStep(self):
+    def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
         tsMovies = self.inputTSMovies.get()
         firstTSMovie = tsMovies.getFirstItem()
@@ -153,38 +182,65 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         inputTSMovies = self.inputTSMovies.get()
         for tsMovie in inputTSMovies.iterItems():
             tsId = tsMovie.getTsId()
-            self.info(">>> Starting estimate motion for %s..." % tsId)
-            # Prepare a list of absolute paths for the movies to process
-            # Each movie name in micNamesList is converted to an absolute path and join them into a
-            # single string separated by spaces (warp specification)
             warpMoviesNamesList = [os.path.abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
             warpMoviesNamesList = " ".join(warpMoviesNamesList)
-            outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsId))
-            argsDict = {
-                "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
-                "--range_min": self.range_min.get(),
-                "--range_max": self.range_max.get(),
-                "--bfac": self.bfactor.get(),
-                "--input_data": warpMoviesNamesList,
-                "--output_processing": outputProcessingFolder
-            }
-            gpuList = self.getGpuList()
-            if gpuList:
-                argsDict['--device_list'] = ' '.join(map(str, gpuList))
-
-            cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-            cmd += ' --averages'
-
-            if self.average_halves.get():
-                cmd += ' --average_halves'
-
-            if self.x.get() and self.y.get() and self.z.get():
-                cmd += ' --grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
-
-            self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
+            self.info(">>> Starting estimate motion for %s..." % tsId)
+            self.fsMotion(tsMovie, warpMoviesNamesList)
+            self.fsCTFEstimation(tsMovie, warpMoviesNamesList)
             self.createOutput(tsMovie)
 
         self._closeOutputSet()
+
+    def fsMotion(self, tsMovie, warpMoviesNamesList):
+        # Prepare a list of absolute paths for the movies to process
+        # Each movie name in micNamesList is converted to an absolute path and join them into a
+        # single string separated by spaces (warp specification)
+        outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsMovie.getTsId()))
+        argsDict = {
+            "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
+            "--range_min": self.range_min.get(),
+            "--range_max": self.range_max.get(),
+            "--bfac": self.bfactor.get(),
+            "--input_data": warpMoviesNamesList,
+            "--output_processing": outputProcessingFolder
+        }
+        gpuList = self.getGpuList()
+        if gpuList:
+            argsDict['--device_list'] = ' '.join(map(str, gpuList))
+
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        cmd += ' --averages'
+
+        if self.average_halves.get():
+            cmd += ' --average_halves'
+
+        if self.x.get() and self.y.get() and self.z.get():
+            cmd += ' --grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
+
+        self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
+
+    def fsCTFEstimation(self, tsMovie, warpMoviesNamesList):
+        """Estimate CTF parameters in frame series(averages)"""
+        self.info(">>> Starting ctf estimation...")
+        inputTSAdquisition = tsMovie.getFirstItem().getAcquisition()
+        outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsMovie.getTsId()))
+        argsDict = {
+            "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
+            '--window': self.window.get(),
+            '--range_min': self.range_min.get(),
+            '--range_max': self.range_max.get(),
+            '--defocus_min': self.defocus_min.get(),
+            '--defocus_max': self.defocus_max.get(),
+            "--voltage": int(inputTSAdquisition.getVoltage()),
+            "--cs": inputTSAdquisition.getSphericalAberration(),
+            "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
+            "--input_data": warpMoviesNamesList,
+            "--output_processing": outputProcessingFolder,
+        }
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        cmd += ' --grid'
+
+        self.runJob(self.getPlugin().getProgram(FS_CTF), cmd, executable='/bin/bash')
 
     def createOutput(self, tsMovie):
         self.info(">>> Generating output for %s..." % tsMovie.getTsId())

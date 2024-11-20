@@ -95,6 +95,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
         form.addParam('binFactor', params.IntParam,
                       default=4, label='Binning factor', important=True,
+                      condition='reconstruct==True',
                       help='Binning factor of the reconstructed tomograms')
 
         # form.addParam('angpix', params.IntParam, default=10,

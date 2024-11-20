@@ -1,9 +1,9 @@
 from pyworkflow.wizard import Wizard
-from warp.protocols import ProtWarpTSCtfEstimationTomoReconstruct
+from warp.protocols import ProtWarpTSMotionCorr
 
 
 class ProtWarpMaxResolutionWizard(Wizard):
-    _targets = [(ProtWarpTSCtfEstimationTomoReconstruct, ['range_high'])]
+    _targets = [(ProtWarpTSMotionCorr, ['range_max'])]
 
     def _getRangeHighResolution(self, protocol):
         range_high = 4
