@@ -63,6 +63,7 @@ TS_DEFOCUS_HAND = 'ts_defocus_hand'
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
 TILTIMAGES_FOLDER = 'tiltimages'
+FRAMES_FOLDER = 'frames'
 AVERAGE_FOLDER = 'average'
 TILTSERIES_FOLDER = 'warp_tiltseries'
 TILTSERIE_SETTINGS = "warp_tiltseries.settings"

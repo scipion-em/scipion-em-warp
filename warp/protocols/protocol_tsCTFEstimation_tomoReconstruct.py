@@ -49,7 +49,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-reconstruct-tomograms
     """
 
-    _label = 'CTF estimation and tomo reconstruction'
+    _label = 'Tomo reconstruction'
     _possibleOutputs = {OUTPUT_CTF_SERIE: tomoObj.SetOfCTFTomoSeries,
                         OUTPUT_TOMOGRAMS_NAME: tomoObj.SetOfTomograms}
     _devStatus = BETA
@@ -62,40 +62,10 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
                       label='Input set of tilt-series',
                       help='Input set of tilt-series')
 
-        form.addSection(label="CTF")
-        form.addParam('window', params.IntParam, default=512,
-                      label='Windows', help='Patch size for CTF estimation in binned pixels')
-
-        line = form.addLine('Resolution (Å)',
-                            help='Resolution in Angstrom to consider in fit.')
-
-        line.addParam('range_low', params.FloatParam, default=30,
-                      label='Min', help='Lowest (worst) resolution in Angstrom to consider in fit')
-
-        line.addParam('range_high', params.FloatParam, default=4,
-                      label="Max",
-                      help="Highest (best) resolution in Angstrom to consider in fit")
-
-        line = form.addLine('Defocus search range (Å)',
-                            help='Defocus values in um to explore during fitting (positive = underfocus)')
-        line.addParam('defocus_min', params.FloatParam, default=0.5,
-                      label='Min', help='Minimum defocus value in um to explore during fitting (positive = underfocus)')
-        line.addParam('defocus_max', params.FloatParam, default=5,
-                      label='Max', help='Maximum defocus value in um to explore during fitting (positive = underfocus)')
-
-        form.addParam('fit_phase', params.BooleanParam, default=False,
-                      label='Fit phase', help='Fit the phase shift of a phase plate')
-
         form.addSection(label="Reconstruction")
-
-        form.addParam('reconstruct', params.BooleanParam, default=True,
-                      label='Tomogram reconstruction ?',
-                      help='reconstruct tomograms for various tasks and, optionally'
-                           'half-tomograms for denoiser training using the Warp procedure')
 
         form.addParam('binFactor', params.IntParam,
                       default=4, label='Binning factor', important=True,
-                      condition='reconstruct==True',
                       help='Binning factor of the reconstructed tomograms')
 
         # form.addParam('angpix', params.IntParam, default=10,
@@ -103,28 +73,23 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         #               label='Pixel size (Å)', help='Pixel size of the reconstructed tomograms in Angstrom')
 
         form.addParam('halfmap_tilts', params.BooleanParam, default=False,
-                      condition='reconstruct==True',
                       label='Produce two half-tomograms?',
                       help='Produce two half-tomograms, each reconstructed from half of the tilts')
 
         form.addParam('deconv', params.BooleanParam, default=False,
-                      condition='reconstruct==True',
                       label='Produce a deconvolved version',
                       help='Produce a deconvolved version; all half-tomograms, if requested, will also be deconvolved')
 
         form.addParam('invert', params.BooleanParam, default=False,
-                      condition='reconstruct==True',
                       label='Invert contrast?',
                       help='Invert the contrast; contrast inversion is needed for template matching on cryo '
                            'data, i.e. when the density is dark in original images')
 
         form.addParam('normalize', params.BooleanParam, default=True,
-                      condition='reconstruct==True',
                       label='Normalize the tilt images?',
                       help='Normalize the tilt images')
 
         form.addParam('tomo_thickness', params.IntParam, default='1000',
-                      condition='reconstruct==True',
                       important=True,
                       label='Tomogram thickness unbinned (pixels)',
                       help="Z height of the reconstructed volume in unbinned pixels.")
@@ -132,7 +97,6 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         form.addParam('x_dimension', params.IntParam, default=None,
                       allowsNull=True,
                       expertLevel=params.LEVEL_ADVANCED,
-                      condition='reconstruct==True',
                       label='Tomogram x dimension unbinned (pixels)',
                       help="X width of the reconstructed volume in unbinned pixels. If the value is None or 0, "
                            "the dimension of the tiltseries will be taken into account. ")
@@ -140,7 +104,6 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         form.addParam('y_dimension', params.IntParam, default=None,
                       allowsNull=True,
                       expertLevel=params.LEVEL_ADVANCED,
-                      condition='reconstruct==True',
                       label='Tomogram Y dimension unbinned (pixels)',
                       help="Y height of the reconstructed volume in unbinned pixels. If the value is None or 0, "
                            "the dimension of the tiltseries will be taken into account.")
@@ -178,8 +141,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def _insertAllSteps(self):
         self._insertFunctionStep(self.dataPrepare, self.inputSet.get())
         self._insertFunctionStep(self.tsCtfEstimationStep)
-        if self.reconstruct.get():
-            self._insertFunctionStep(self.tomoReconstructionStep)
+        self._insertFunctionStep(self.tomoReconstructionStep)
         self._insertFunctionStep(self.createOutputStep)
 
     def tsCtfEstimationStep(self):
@@ -188,11 +150,12 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         inputTSAdquisition = self.inputSet.get().getFirstItem().getAcquisition()
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
-            "--window": self.window.get(),
-            "--range_low": self.range_low.get(),
-            "--range_high": self.range_high.get(),
-            "--defocus_min": self.defocus_min.get(),
-            "--defocus_max": self.defocus_max.get(),
+            "--window": 512,
+            "--range_low": 30,
+            "--range_high": 8,
+            # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
+            "--defocus_min": 0.5,
+            "--defocus_max": 5,
             "--voltage": int(inputTSAdquisition.getVoltage()),
             "--cs": inputTSAdquisition.getSphericalAberration(),
             "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
@@ -228,95 +191,39 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         tsSet = self.inputSet.get()
 
         for ts in tsSet.iterItems():
-            if ts.isEnabled():
-                tsId = ts.getTsId()
-                outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
+            tsId = ts.getTsId()
+            tomoLocation = os.path.join(tomogramFolder, self.getOutFile(tsId, ext=MRC_EXT))
+            if os.path.exists(tomoLocation):
+                generateOutput = True
 
-                # CTF outputs
-                newCTFTomoSeries = tomoObj.CTFTomoSeries(tsId=tsId)
-                newCTFTomoSeries.copyInfo(ts)
-                newCTFTomoSeries.setTiltSeries(ts)
-                outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
-                defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-                ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
-                defocusDelta = float(ctfData['DefocusDelta']) * 1e4
-                defocusAngle = float(ctfData['DefocusAngle'])
+            if generateOutput:
+                outputSetOfTomograms = self.getOutputSetOfTomograms(OUTPUT_TOMOGRAMS_NAME)
+                outputSetOfTomograms.setSamplingRate(self.getAngPix())
+                newTomogram = tomoObj.Tomogram(tsId=tsId)
+                newTomogram.copyInfo(ts)
+                newTomogram.setSamplingRate(self.getAngPix())
+                newTomogram.setLocation(tomoLocation)
 
-                index = 0
-                for ti in ts.iterItems():
-                    if ti.isEnabled():
-                        newCTFTomo = tomoObj.CTFTomo()
-                        newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
-                        newCTFTomo.setIndex(index)
-                        newCTFTomo.setObjId(index)
-                        defocusU = 0
-                        defocusV = 0
-                        if index in gridCtfData["Nodes"]:
-                            defocusU = gridCtfData["Nodes"][index] + defocusDelta
-                            defocusV = gridCtfData["Nodes"][index] - defocusAngle
-                        newCTFTomo.setDefocusU(defocusU)
-                        newCTFTomo.setDefocusV(defocusV)
-                        newCTFTomo.setDefocusAngle(defocusAngle)
-                        newCTFTomo.setResolution(0)
-                        newCTFTomo.setFitQuality(0)
-                        newCTFTomo.standardize()
-                        newCTFTomoSeries.append(newCTFTomo)
-                        index += 1
+                if self.halfmap_tilts.get():
+                    halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER,
+                                    self.getOutFile(tsId, ext=MRC_EXT)),
+                                    os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER,
+                                    self.getOutFile(tsId, ext=MRC_EXT))]
+                    newTomogram.setHalfMaps(halfMapsList)
 
-                outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
-                outputSetOfCTFTomoSeries.write()
-                self._store(outputSetOfCTFTomoSeries)
+                # Set default tomogram origin
+                newTomogram.setOrigin(newOrigin=None)
+                outputSetOfTomograms.append(newTomogram)
+                outputSetOfTomograms.updateDim()
+                outputSetOfTomograms.update(newTomogram)
+                outputSetOfTomograms.write()
+                self._store(outputSetOfTomograms)
 
-            # Reconstruction outputs
-            if self.reconstruct.get():
-                tomoLocation = os.path.join(tomogramFolder, self.getOutFile(tsId, ext=MRC_EXT))
-                if os.path.exists(tomoLocation):
-                    generateOutput = True
-
-                if generateOutput:
-                    outputSetOfTomograms = self.getOutputSetOfTomograms(OUTPUT_TOMOGRAMS_NAME)
-                    outputSetOfTomograms.setSamplingRate(self.getAngPix())
-                    newTomogram = tomoObj.Tomogram(tsId=tsId)
-                    newTomogram.copyInfo(ts)
-                    newTomogram.setSamplingRate(self.getAngPix())
-                    newTomogram.setLocation(tomoLocation)
-
-                    if self.halfmap_tilts.get():
-                        halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER,
-                                        self.getOutFile(tsId, ext=MRC_EXT)),
-                                        os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER,
-                                        self.getOutFile(tsId, ext=MRC_EXT))]
-                        newTomogram.setHalfMaps(halfMapsList)
-
-                    # Set default tomogram origin
-                    newTomogram.setOrigin(newOrigin=None)
-                    outputSetOfTomograms.append(newTomogram)
-                    outputSetOfTomograms.updateDim()
-                    outputSetOfTomograms.update(newTomogram)
-                    outputSetOfTomograms.write()
-                    self._store(outputSetOfTomograms)
-
-                else:
-                    self.error(">>> Some error occurred in the reconstruction process. Please go to the "
-                               "process log(.../extra/warp_tiltseries/logs)")
+            else:
+                self.error(">>> Some error occurred in the reconstruction process. Please go to the "
+                           "process log(.../extra/warp_tiltseries/logs)")
 
         self._closeOutputSet()
-
-    def getOutputSetOfCTFTomoSeries(self, outputSetName):
-        outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
-
-        if outputSetOfCTFTomoSeries:
-            outputSetOfCTFTomoSeries.enableAppend()
-        else:
-            outputSetOfCTFTomoSeries = tomoObj.SetOfCTFTomoSeries.create(self._getPath(),
-                                                                  template='CTFmodels%s.sqlite')
-            tsSet = self.inputSet.get()
-            outputSetOfCTFTomoSeries.setSetOfTiltSeries(self.inputSet)
-            outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
-            self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
-            self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
-
-        return outputSetOfCTFTomoSeries
 
     def getOutputSetOfTomograms(self, outputSetName):
         outputSetOfTomograms = getattr(self, outputSetName, None)
@@ -342,11 +249,6 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         else:
             summary.append("Outputs are not ready yet.")
         return summary
-
-    def _validate(self):
-        rangeHigh = self.range_high.get()
-        if rangeHigh is None or rangeHigh < self.inputSet.get().getSamplingRate() * 2:
-            return ["Resolution parameter(Max) can't be higher than the binned data's Nyquist resolution"]
 
     def getAngPix(self):
         return round(self.inputSet.get().getSamplingRate() * self.binFactor.get())

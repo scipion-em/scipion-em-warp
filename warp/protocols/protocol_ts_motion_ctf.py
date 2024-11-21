@@ -25,25 +25,30 @@
 # ******************************************************************************
 
 import os
+import time
+
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from pyworkflow.object import Set
-from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries, TiltImage, TiltSeries
+from pyworkflow.object import Set, String
+from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries, TiltImage, TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries, \
+    CTFTomo
 from tomo.protocols import ProtTomoBase
 from .protocol_base import ProtWarpBase
 
 from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER,
-                OUTPUT_TILTSERIES, FS_CTF)
+                OUTPUT_TILTSERIES, FS_CTF, TILTSERIES_FOLDER, TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
+                TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF)
+from ..utils import parseCtfXMLFile
 
 
 class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
     """ This protocol wraps WarpTools programs.
-        Align tilt-series movies
+        Estimate motion in frame series, produce aligned averages, estimate CTF
     """
 
-    _label = 'align tilt-series movies'
+    _label = 'tilteries motion and ctf estimation'
     _devStatus = BETA
     evenOddCapable = True
     # -------------------------- DEFINE param functions -----------------------
@@ -74,10 +79,10 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         line = form.addLine('Resolution to fit',
                             help='Resolution in Angstrom to consider in fit.')
-        line.addParam('range_min', params.IntParam, default=500,
-                      label='Min')
-        line.addParam('range_max', params.IntParam, default=10,
-                      label='Max')
+        line.addParam('m_range_min', params.IntParam, default=500,
+                      label='Min', help='Minimum resolution in Angstrom to consider in fit')
+        line.addParam('m_range_max', params.IntParam, default=10,
+                      label='Max', help='Maximun resolution in Angstrom to consider in fit')
 
         form.addParam('bfactor', params.IntParam, default=-500,
                       label="B-factor",
@@ -85,12 +90,18 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                            "B-factor, in Angstrom^2")
 
         line = form.addLine('Motion model grid',
-                            help="Resolution of the motion model grid in "
-                                 "X, Y, and temporal dimensions, e.g. 5x5x40; "
-                                 "0 = auto")
-        line.addParam('x', params.IntParam, default=2, label='X')
-        line.addParam('y', params.IntParam, default=2, label='Y')
-        line.addParam('z', params.IntParam, default=1, label='Temporal')
+                            help="Resolution of the motion model grid in X, Y, and temporal dimensions, "
+                                 "separated by 'x': e.g. 5x5x40; empty = auto")
+        line.addParam('x', params.IntParam, default=None,
+                      allowsNull=True,
+                      label='X')
+        line.addParam('y', params.IntParam,
+                      default=None,
+                      allowsNull=True,
+                      label='Y')
+        line.addParam('z', params.IntParam, default=None,
+                      allowsNull=True,
+                      label='Temporal')
 
         form.addParam('average_halves', params.BooleanParam,
                       default=False,
@@ -130,6 +141,17 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         line.addParam('defocus_max', params.FloatParam, default=5,
                       label='Max', help='Maximum defocus value in um to explore during fitting (positive = underfocus)')
 
+        line = form.addLine('Defocus model grid',
+                            help="Resolution of the defocus model grid in X, Y, and temporal dimensions, " 
+                                 "separated by x: e.g. 5x5x40; empty = auto; Z > 1 is purely experimental")
+
+        line.addParam('c_x', params.IntParam, default=None,
+                      allowsNull=True, label='X')
+        line.addParam('c_y', params.IntParam, default=None,
+                      allowsNull=True, label='Y')
+        line.addParam('c_z', params.IntParam, default=None, allowsNull=True,
+                      label='Temporal')
+
         form.addParam('fit_phase', params.BooleanParam, default=False,
                       label='Fit phase', help='Fit the phase shift of a phase plate')
 
@@ -142,8 +164,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         inputTSMovies = self.inputTSMovies.get()
         self.samplingRate = inputTSMovies.getSamplingRate()
         self._insertFunctionStep(self.createFrameSeriesSettingStep, needsGPU=False)
-        self._insertFunctionStep(self.dataPrepare, inputTSMovies)
+        self._insertFunctionStep(self.createTiltSeriesSettingStep, needsGPU=False)
+        self._insertFunctionStep(self.dataPrepare, inputTSMovies, needsGPU=False)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
+        self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
+        self._insertFunctionStep(self.tsDefocusHandStep,  needsGPU=True)
 
     def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
@@ -177,6 +202,46 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
+    def createTiltSeriesSettingStep(self):
+        # 3. Create warp_tiltseries.settings file
+        objSet = self.inputTSMovies.get()
+        sr = objSet.getSamplingRate()
+        exposure = objSet.getAcquisition().getDosePerFrame()
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        pwutils.makePath(processingFolder)
+        argsDict = {
+            "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
+            "--extension": "*.tomostar",
+            "--folder_processing": processingFolder,
+            '--angpix': sr,
+            "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
+        }
+
+        if exposure is not None:
+            argsDict['--exposure'] = exposure
+
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or objSet.getDimensions()[0]
+            y = self.y_dimension.get() or objSet.getDimensions()[1]
+
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
+        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+
+    def tsDefocusHandStep(self):
+        """Defocus handedness"""
+        self.info(">>> Starting defocus handedness...")
+        argsDict = {
+            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
+        }
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        cmd += ' --check'
+        self.runJob(self.getPlugin().getProgram(TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
+        self.createOutputDefocusHand()
+
     def proccessMoviesStep(self) -> None:
         """Estimate motion in frame series, produce aligned averages and register the output"""
         inputTSMovies = self.inputTSMovies.get()
@@ -185,22 +250,30 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             warpMoviesNamesList = [os.path.abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
             warpMoviesNamesList = " ".join(warpMoviesNamesList)
             self.info(">>> Starting estimate motion for %s..." % tsId)
-            self.fsMotion(tsMovie, warpMoviesNamesList)
-            self.fsCTFEstimation(tsMovie, warpMoviesNamesList)
-            self.createOutput(tsMovie)
+            self.fsMotionAndCTF(tsMovie, warpMoviesNamesList)
+            self.createOutputTS(tsMovie)
 
         self._closeOutputSet()
 
-    def fsMotion(self, tsMovie, warpMoviesNamesList):
+    def fsMotionAndCTF(self, tsMovie, warpMoviesNamesList):
         # Prepare a list of absolute paths for the movies to process
         # Each movie name in micNamesList is converted to an absolute path and join them into a
         # single string separated by spaces (warp specification)
-        outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsMovie.getTsId()))
+        inputTSAdquisition = tsMovie.getFirstItem().getAcquisition()
+        outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(FRAMESERIES_FOLDER)))
         argsDict = {
             "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
-            "--range_min": self.range_min.get(),
-            "--range_max": self.range_max.get(),
-            "--bfac": self.bfactor.get(),
+            "--m_range_min": self.m_range_min.get(),
+            "--m_range_max": self.m_range_max.get(),
+            "--m_bfac": self.bfactor.get(),
+            '--c_window': self.window.get(),
+            '--c_range_min': self.range_min.get(),
+            '--c_range_max': self.range_max.get(),
+            '--c_defocus_min': self.defocus_min.get(),
+            '--c_defocus_max': self.defocus_max.get(),
+            "--c_voltage": int(inputTSAdquisition.getVoltage()),
+            "--c_cs": inputTSAdquisition.getSphericalAberration(),
+            "--c_amplitude": inputTSAdquisition.getAmplitudeContrast(),
             "--input_data": warpMoviesNamesList,
             "--output_processing": outputProcessingFolder
         }
@@ -209,47 +282,50 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        cmd += ' --averages'
+        cmd += ' --out_averages'
 
         if self.average_halves.get():
-            cmd += ' --average_halves'
+            cmd += ' --out_average_halves'
 
         if self.x.get() and self.y.get() and self.z.get():
-            cmd += ' --grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
+            cmd += ' --m_grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
 
-        self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
+        if self.c_x.get() and self.c_y.get() and self.c_z.get():
+            cmd += ' --c_grid %sx%sx%s' % (self.c_x.get(), self.c_y.get(), self.c_z.get())
 
-    def fsCTFEstimation(self, tsMovie, warpMoviesNamesList):
-        """Estimate CTF parameters in frame series(averages)"""
+        if self.fit_phase.get():
+            cmd += ' --c_fit_phase'
+        if self.use_sum.get():
+            cmd += ' --c_use_sum'
+
+        self.runJob(self.getPlugin().getProgram(FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
+
+    def tsCtfEstimationStep(self):
+        """CTF estimation"""
         self.info(">>> Starting ctf estimation...")
-        inputTSAdquisition = tsMovie.getFirstItem().getAcquisition()
-        outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsMovie.getTsId()))
+        inputTSAdquisition = self.inputTSMovies.get().getFirstItem().getAcquisition()
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
-            '--window': self.window.get(),
-            '--range_min': self.range_min.get(),
-            '--range_max': self.range_max.get(),
-            '--defocus_min': self.defocus_min.get(),
-            '--defocus_max': self.defocus_max.get(),
+            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
+            "--window": self.window.get(),
+            "--range_low": self.range_min.get(),
+            "--range_high": self.range_max.get(),
+            "--defocus_min": self.defocus_min.get(),
+            "--defocus_max": self.defocus_max.get(),
             "--voltage": int(inputTSAdquisition.getVoltage()),
             "--cs": inputTSAdquisition.getSphericalAberration(),
             "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
-            "--input_data": warpMoviesNamesList,
-            "--output_processing": outputProcessingFolder,
         }
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        cmd += ' --grid'
+        self.runProgram(argsDict, TS_CTF)
+        self.createOutputCTF()
 
-        self.runJob(self.getPlugin().getProgram(FS_CTF), cmd, executable='/bin/bash')
-
-    def createOutput(self, tsMovie):
+    def createOutputTS(self, tsMovie):
         self.info(">>> Generating output for %s..." % tsMovie.getTsId())
-        output = self.getOutputSetOfTS('TiltSeries')
-        averageFolder = os.path.join(self._getExtraPath(AVERAGE_FOLDER), tsMovie.getTsId(), AVERAGE_FOLDER)
+        outputTS = self.getOutputSetOfTS(OUTPUT_TILTSERIES)
+        averageFolder = os.path.join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
 
         tsId = tsMovie.getTsId()
         newTs = TiltSeries(tsId=tsId)
-        output.append(newTs)
+        outputTS.append(newTs)
 
         tiOrderDict = {}
         properties = {"sr": tsMovie.getSamplingRate()}
@@ -291,9 +367,71 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             ti.setObjId(index + 1)
             newTs.append(ti)
 
-        output.update(newTs)
-        output.write()
-        self._store(output)
+        outputTS.update(newTs)
+        outputTS.write()
+        self._store(outputTS)
+
+    def createOutputCTF(self):
+        self.info(">>> Generating outputs...")
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        tsSet = self.TiltSeries
+        if tsSet:
+            for ts in tsSet.iterItems():
+                if ts.isEnabled():
+                    tsId = ts.getTsId()
+                    outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
+
+                    # CTF outputs
+                    newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
+                    newCTFTomoSeries.copyInfo(ts)
+                    newCTFTomoSeries.setTiltSeries(ts)
+                    outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
+                    defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+                    ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+                    defocusDelta = float(ctfData['DefocusDelta']) * 1e4
+                    defocusAngle = float(ctfData['DefocusAngle'])
+
+                    index = 0
+                    for ti in ts.iterItems():
+                        if ti.isEnabled():
+                            newCTFTomo = CTFTomo()
+                            newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
+                            newCTFTomo.setIndex(index)
+                            newCTFTomo.setObjId(index)
+                            defocusU = 0
+                            defocusV = 0
+                            if index in gridCtfData["Nodes"]:
+                                defocusU = gridCtfData["Nodes"][index] + defocusDelta
+                                defocusV = gridCtfData["Nodes"][index] - defocusAngle
+                            newCTFTomo.setDefocusU(defocusU)
+                            newCTFTomo.setDefocusV(defocusV)
+                            newCTFTomo.setDefocusAngle(defocusAngle)
+                            newCTFTomo.setResolution(0)
+                            newCTFTomo.setFitQuality(0)
+                            newCTFTomo.standardize()
+                            newCTFTomoSeries.append(newCTFTomo)
+                            index += 1
+
+                    outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
+                    outputSetOfCTFTomoSeries.write()
+                    self._store(outputSetOfCTFTomoSeries)
+            self._closeOutputSet()
+
+    def createOutputDefocusHand(self):
+        # Registering the output
+        stdoutFile = os.path.abspath(os.path.join(self.getPath(), 'logs', 'run.stdout'))
+        with open(stdoutFile, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+
+        for line in reversed(lines):
+            if 'Average correlation:' in line:
+                average = line.split()[-1]
+                outputAverage = String(average + " (defocus handedness should be set to 'no flip')")
+                if float(average) < 0:
+                    outputAverage = String(average + " (defocus handedness should be set to 'flip')")
+
+                self._defineOutputs(**{'Average correlation': outputAverage})
+                break
 
     def _summary(self):
         summary = []
@@ -318,6 +456,22 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             self._defineSourceRelation(outputSetOfTiltSeries, tsMovieSet)
 
         return outputSetOfTiltSeries
+
+    def getOutputSetOfCTFTomoSeries(self, outputSetName):
+        outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
+
+        if outputSetOfCTFTomoSeries:
+            outputSetOfCTFTomoSeries.enableAppend()
+        else:
+            outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
+                                                                  template='CTFmodels%s.sqlite')
+            tsSet = self.inputTSMovies.get()
+            outputSetOfCTFTomoSeries.setSetOfTiltSeries(self.inputTSMovies)
+            outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
+            self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
+            self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
+
+        return outputSetOfCTFTomoSeries
 
     def getBinFactor(self):
         import math
