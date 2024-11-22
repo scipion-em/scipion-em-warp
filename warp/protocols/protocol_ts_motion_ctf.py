@@ -27,7 +27,7 @@
 import os
 import time
 
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
+from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
@@ -169,9 +169,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
         self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
         self._insertFunctionStep(self.tsDefocusHandStep,  needsGPU=True)
+        self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
 
     def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
+        self.info(">>> Starting frame series settings creation...")
         tsMovies = self.inputTSMovies.get()
         firstTSMovie = tsMovies.getFirstItem()
         fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
@@ -203,7 +205,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     def createTiltSeriesSettingStep(self):
-        # 3. Create warp_tiltseries.settings file
+        self.info(">>> Starting tilt-series settings creation...")
         objSet = self.inputTSMovies.get()
         sr = objSet.getSamplingRate()
         exposure = objSet.getAcquisition().getDosePerFrame()
@@ -259,6 +261,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         # Prepare a list of absolute paths for the movies to process
         # Each movie name in micNamesList is converted to an absolute path and join them into a
         # single string separated by spaces (warp specification)
+        self.info(">>> Starting align motion process...")
         inputTSAdquisition = tsMovie.getFirstItem().getAcquisition()
         outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(FRAMESERIES_FOLDER)))
         argsDict = {
@@ -370,6 +373,22 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         outputTS.update(newTs)
         outputTS.write()
         self._store(outputTS)
+
+    def deleteIntermediateOutputsStep(self):
+        try:
+            averageFolder = os.path.join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
+            if not os.path.exists(averageFolder):
+                logger.info(f"The directory {averageFolder} does not exist.")
+                return
+            for filename in os.listdir(averageFolder):
+                if filename.endswith(".mrc"):
+                    file_path = os.path.join(averageFolder, filename)
+                    os.remove(file_path)
+
+            logger.info("All .mrc files have been deleted.")
+
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
 
     def createOutputCTF(self):
         self.info(">>> Generating outputs...")

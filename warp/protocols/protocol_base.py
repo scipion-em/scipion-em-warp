@@ -186,12 +186,12 @@ class ProtWarpBase(EMProtocol):
         """Creates the setting file that will be used by the different programs.
            It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
            the tiltimages."""
-        time.sleep(10)
         plugin = self.getPlugin()
         starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
         pwutils.makePath(starFolder)
         isTiltSeries = isinstance(objSet, SetOfTiltSeries)
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER) if isTiltSeries else self._getExtraPath(FRAMES_FOLDER)
+        invertTiltAngle = -1 if isTiltSeries else 1
         pwutils.makePath(imagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
@@ -219,12 +219,10 @@ class ProtWarpBase(EMProtocol):
                         fileName = ti.getFileName()
                         newBinaryName = tsId + f'_TO_%02d.mrc' % ti.getAcquisitionOrder()
                         if isTiltSeries:
-                            invertTiltAngle = -1
                             newFrame = ImageStack(properties=properties)
                             newFrame.append(ImageReadersRegistry.open(str(ti.getIndex()) + '@' + ti.getFileName()))
                             ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
                             # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
-
                             if hasAlignment:
                                 transform = ti.getTransform()
                                 matrix = transform.getMatrix()
@@ -238,7 +236,6 @@ class ProtWarpBase(EMProtocol):
                                 shiftX = multShift[0] * sr
                                 shiftY = multShift[1] * sr
                         else:
-                            invertTiltAngle = 1
                             newBinaryName = os.path.basename(fileName)
                             os.symlink(os.path.abspath(fileName), os.path.join(imagesFolder, os.path.basename(fileName)))
 
@@ -246,7 +243,7 @@ class ProtWarpBase(EMProtocol):
                                                                          axisAngle, shiftX, shiftY, dose,
                                                                          amplitudeContrast, maskedFraction]
 
-                self.tomoStarGenerate(tsId, tiValues, starFolder)
+                self.tomoStarGenerate(tsId, tiValues, starFolder, isTiltSeries)
 
         # 2. Create symbolic links from tiltseries folder to average folder
         #    We need to do this because warp needs both folders: The tiltimages folder to get
@@ -289,7 +286,7 @@ class ProtWarpBase(EMProtocol):
             self.runJob(plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     @staticmethod
-    def tomoStarGenerate(tsId, tiValues, otputFolder):
+    def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries):
         """Generate the .tomostar files from TS"""
         _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
         _file = open(_fileName, 'a+')
@@ -309,10 +306,10 @@ _wrpMaskedFraction #8
         _file.write(header)
 
         sortedTiValues = sorted(tiValues)
-
+        imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
         for acqOrder in sortedTiValues:
             value = tiValues[acqOrder]
-            tiPath = '../%s/' % TILTIMAGES_FOLDER + value[0]
+            tiPath = '../%s/' % imagesFolder + value[0]
             angleTilt = value[1]
             axisAngle = value[2]
             shiftX = f"{value[3]:.6f}"

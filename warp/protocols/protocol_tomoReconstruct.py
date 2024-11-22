@@ -26,7 +26,6 @@
 # **************************************************************************
 
 import os.path
-from email.policy import default
 
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
@@ -37,10 +36,9 @@ from warp import TILTSERIE_SETTINGS, TILTSERIES_FOLDER
 from warp.constants import TS_CTF, OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME, \
     RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import parseCtfXMLFile
 
 
-class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
+class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     """
     CTF estimation of a set of input tilt-series and reconstruct tomograms for various tasks and, optionally,
     half-tomograms for denoiser training using the Warp procedure.
@@ -49,7 +47,7 @@ class ProtWarpTSCtfEstimationTomoReconstruct(ProtWarpBase, ProtTomoBase):
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-reconstruct-tomograms
     """
 
-    _label = 'Tomo reconstruction'
+    _label = 'tomo reconstruction'
     _possibleOutputs = {OUTPUT_CTF_SERIE: tomoObj.SetOfCTFTomoSeries,
                         OUTPUT_TOMOGRAMS_NAME: tomoObj.SetOfTomograms}
     _devStatus = BETA
