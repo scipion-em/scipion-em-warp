@@ -44,6 +44,7 @@ WARP_FORCE_MRC_FLOAT32 = 'WARP_FORCE_MRC_FLOAT32'
 OUTPUT_CTF_SERIE = "CTFTomoSeries"
 OUTPUT_TOMOGRAMS_NAME = "Tomograms"
 OUTPUT_TILTSERIES = 'TiltSeries'
+OUTPUT_HANDEDNESS = 'Handedness corrected'
 EXT_MRC_EVEN_NAME = "even.mrc"
 EXT_MRC_ODD_NAME = "odd.mrc"
 EVEN = 'even'
@@ -63,6 +64,7 @@ TS_DEFOCUS_HAND = 'ts_defocus_hand'
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
 TILTIMAGES_FOLDER = 'tiltimages'
+FRAMES_FOLDER = 'frames'
 AVERAGE_FOLDER = 'average'
 TILTSERIES_FOLDER = 'warp_tiltseries'
 TILTSERIE_SETTINGS = "warp_tiltseries.settings"

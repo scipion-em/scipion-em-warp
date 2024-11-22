@@ -31,7 +31,7 @@ from pyworkflow.utils import magentaStr
 
 from tomo.protocols import ProtImportTs, ProtImportTsCTF, ProtImportTsMovies
 from tomo.tests import DataSet
-from warp.protocols import (ProtWarpTSCtfEstimationTomoReconstruct, ProtWarpDeconvTomo,
+from warp.protocols import (ProtWarpTomoReconstruct, ProtWarpDeconvTomo,
                             ProtWarpDeconvTS, ProtWarpTSMotionCorr)
 
 
@@ -66,6 +66,8 @@ class TestWarpBase(BaseTest):
         cls.launchProtocol(cls.motioncorrTSMovieAligment)
         cls.assertIsNotNone(cls.motioncorrTSMovieAligment.TiltSeries,
                             "SetOfTiltSeries has not been produced.")
+        cls.assertIsNotNone(cls.motioncorrTSMovieAligment.CTFTomoSeries,
+                            "CTFTomoSeries has not been produced.")
         return cls.motioncorrTSMovieAligment
 
     @classmethod
@@ -79,11 +81,10 @@ class TestWarpBase(BaseTest):
 
     @classmethod
     def runWarpCTFEstimationTomoReconstruction(cls, **kwargs):
-        cls.ctfEstimationTomoReconstruct = cls.newProtocol(ProtWarpTSCtfEstimationTomoReconstruct, **kwargs)
-        cls.launchProtocol(cls.ctfEstimationTomoReconstruct)
-        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.CTFTomoSeries, "CTFTomoSeries has not been produced.")
-        cls.assertIsNotNone(cls.ctfEstimationTomoReconstruct.Tomograms, "SetOfTomograms has not been produced.")
-        return cls.ctfEstimationTomoReconstruct
+        cls.tomoReconstruct = cls.newProtocol(ProtWarpTomoReconstruct, **kwargs)
+        cls.launchProtocol(cls.tomoReconstruct)
+        cls.assertIsNotNone(cls.tomoReconstruct.Tomograms, "SetOfTomograms has not been produced.")
+        return cls.tomoReconstruct
 
     @classmethod
     def runImportCtf(cls, **kwargs):
@@ -165,51 +166,59 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
                                                   voltage=300,
                                                   samplingRate=0.79,
                                                   tiltAxisAngle=-85.6,
-                                                  dosePerFrame=0.88,
+                                                  dosePerFrame=2.64,
                                                   gainFile=os.path.join(self.tsm_path, 'gain_ref.mrc'))
 
-        print(magentaStr("\n==> Running Warp - align tiltseries movies "))
-        protImportCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
-                                                          binFactor=1, x=1, y=1, z=3, gainFlip=2)
+        print(magentaStr("\n==> Running Warp - align tiltseries movies and ctf estimation "))
+        protAlignAndCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
+                                                          binFactor=1,
+                                                          x=1, y=1, z=3,
+                                                          c_x=2, c_y=2, c_z=1,
+                                                          range_max=7,
+                                                          defocus_max=8,
+                                                          gainFlip=2)
 
         print(magentaStr("\n==> Running Imod - import transformation matrix "))
-        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protAlignAndCtf.TiltSeries,
                                                   filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
                                                   filesPattern='*.xf',
                                                   binningTM=13)
 
-        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction "))
+        print(magentaStr("\n==> Running Warp - Tomo Reconstruction "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
-                                                                                   reconstruct=True,
                                                                                    binFactor=13,
-                                                                                   range_high=1.68,
                                                                                    tomo_thickness=1000,
                                                                                    x_dimension=4400,
                                                                                    y_dimension=6000)
-        self.assertSetSize(ctfEstimationTomoReconstruct.CTFTomoSeries, 1)
-        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 40)
         setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
         self.assertSetSize(setOfTomogram, 1)
         self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
         self.assertTrue(setOfTomogram.getDim() == (348, 474, 80))
 
+        print(magentaStr("\n==> Running Warp - align tiltseries movies and ctf estimation "))
+        protAlignAndCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
+                                                            binFactor=1,
+                                                            x=1, y=1, z=3,
+                                                            c_x=2, c_y=2, c_z=1,
+                                                            range_max=7,
+                                                            defocus_max=8,
+                                                            gainFlip=2)
+
+        self._excludeTsSetViews(protAlignAndCtf.TiltSeries)
+
         print(magentaStr("\n==> Running Imod - import transformation matrix (Excluding views)"))
-        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protImportCtf.TiltSeries,
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protAlignAndCtf.TiltSeries,
                                                  filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
                                                  filesPattern='*.xf',
                                                  binningTM=13)
 
-        self._excludeTsSetViews(protImportTM.TiltSeries)
 
-        print(magentaStr("\n==> Running Warp - CTF estimation and Tomo Reconstruction (Excluding views) "))
+        print(magentaStr("\n==> Running Warp - Tomo Reconstruction (Excluding views) "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
-                                                                                   reconstruct=True,
                                                                                    binFactor=13,
-                                                                                   range_high=1.68,
                                                                                    tomo_thickness=1000,
                                                                                    x_dimension=4400,
                                                                                    y_dimension=6000)
-        self.assertTrue(ctfEstimationTomoReconstruct.CTFTomoSeries.getSize(), 35)
 
     @classmethod
     def _excludeTsSetViews(cls, tsSet):
