@@ -31,7 +31,7 @@ from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, log
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from pyworkflow.object import Set, String
+from pyworkflow.object import Set, String, Float, Boolean
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries, TiltImage, TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries, \
     CTFTomo
 from tomo.protocols import ProtTomoBase
@@ -39,7 +39,7 @@ from .protocol_base import ProtWarpBase
 
 from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER,
                 OUTPUT_TILTSERIES, FS_CTF, TILTSERIES_FOLDER, TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
-                TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF)
+                TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF, OUTPUT_HANDEDNESS)
 from ..utils import parseCtfXMLFile
 
 
@@ -161,6 +161,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
+        self.averageCorrelation = Float()
         inputTSMovies = self.inputTSMovies.get()
         self.samplingRate = inputTSMovies.getSamplingRate()
         self._insertFunctionStep(self.createFrameSeriesSettingStep, needsGPU=False)
@@ -444,20 +445,36 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         for line in reversed(lines):
             if 'Average correlation:' in line:
-                average = line.split()[-1]
-                outputAverage = String(average + " (defocus handedness should be set to 'no flip')")
-                if float(average) < 0:
-                    outputAverage = String(average + " (defocus handedness should be set to 'flip')")
+                self.averageCorrelation.set(float(line.split()[-1]))
+                outputAverage = Boolean(True)
+                if self.averageCorrelation.get() < 0:
+                    outputAverage = Boolean(False)
 
-                self._defineOutputs(**{'Average correlation': outputAverage})
+                self._defineOutputs(**{OUTPUT_HANDEDNESS: outputAverage})
                 break
+        self._store(self.averageCorrelation)
 
     def _summary(self):
         summary = []
+        tilseriesSize = 0
+        ctfSize = 0
         if self.hasAttribute(OUTPUT_TILTSERIES):
-            summary.append(f"Aligned tiltseries: {self.TiltSeries.getSize()} of {self.inputTSMovies.get().getSize()}\n")
+            tilseriesSize = self.TiltSeries.getSize()
+        summary.append(f"Aligned tiltseries: {tilseriesSize} of {self.inputTSMovies.get().getSize()}")
+
+        if self.hasAttribute(OUTPUT_CTF_SERIE):
+            ctfSize = self.CTFTomoSeries.getSize()
+        summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
+
+        if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
+            text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
+            flip = 'no flip'
+            if self.averageCorrelation.get() < 0:
+                flip = 'flip'
+            summary.append(f"Handedness: {self.averageCorrelation}  {text %flip}")
         else:
-            summary.append("Outputs are not ready yet.")
+            summary.append('Handedness: Not ready')
+
         return summary
 
     def getOutputSetOfTS(self, outputSetName):
