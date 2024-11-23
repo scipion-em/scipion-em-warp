@@ -30,7 +30,6 @@ import scipy.fft
 import xml.etree.ElementTree as eTree
 
 
-
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
     and https://github.com/Heng-Z/IsoNet
 

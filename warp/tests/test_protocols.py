@@ -109,11 +109,11 @@ class TestWarpMotionCorrection(BaseTest):
 
     def test_warpMotionCorrection(self):
         print(magentaStr("\n==> Importing movies:"))
-        protImport = self.runImportMovies(self.ds1.getFile('Falcon*.mrcs'),"mrcs",
-                                           samplingRate=1.1,
-                                           voltage=300,
-                                           sphericalAberration=2.7,
-                                           dosePerFrame=1.2)
+        protImport = self.runImportMovies(self.ds1.getFile('Falcon*.mrcs'), "mrcs",
+                                          samplingRate=1.1,
+                                          voltage=300,
+                                          sphericalAberration=2.7,
+                                          dosePerFrame=1.2)
         self.assertIsNotNone(protImport.outputMovies, msg='SetOfMovies has not been imported.')
         self.assertSetSize(protImport.outputMovies, 2)
 

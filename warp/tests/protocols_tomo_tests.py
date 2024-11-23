@@ -171,18 +171,18 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
 
         print(magentaStr("\n==> Running Warp - align tiltseries movies and ctf estimation "))
         protAlignAndCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
-                                                          binFactor=1,
-                                                          x=1, y=1, z=3,
-                                                          c_x=2, c_y=2, c_z=1,
-                                                          range_max=7,
-                                                          defocus_max=8,
-                                                          gainFlip=2)
+                                                            binFactor=1,
+                                                            x=1, y=1, z=3,
+                                                            c_x=2, c_y=2, c_z=1,
+                                                            range_max=7,
+                                                            defocus_max=8,
+                                                            gainFlip=2)
 
         print(magentaStr("\n==> Running Imod - import transformation matrix "))
         protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protAlignAndCtf.TiltSeries,
-                                                  filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
-                                                  filesPattern='*.xf',
-                                                  binningTM=13)
+                                                 filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                 filesPattern='*.xf',
+                                                 binningTM=13)
 
         print(magentaStr("\n==> Running Warp - Tomo Reconstruction "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
@@ -212,7 +212,6 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
                                                  filesPattern='*.xf',
                                                  binningTM=13)
 
-
         print(magentaStr("\n==> Running Warp - Tomo Reconstruction (Excluding views) "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
                                                                                    binFactor=13,
@@ -236,8 +235,3 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
         ts.write()
         tsSet.update(ts)
         tsSet.write()
-
-
-
-
-
