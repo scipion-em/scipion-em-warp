@@ -55,10 +55,10 @@ Verifying
 
 To check the installation, simply run one of the following Scipion tests:
 
-* scipion3 tests warp.tests.test_protocols.TestDeconvolveMics
-* scipion3 tests warp.tests.test_protocols_tomo.TestDeconvolveTomo
 * scipion3 tests warp.tests.protocols_tomo_tests.TestWarpEstimateCTFTomoReconstruction
+* scipion3 tests warp.tests.protocols_tomo_tests.TestDeconvolveTomo
 * scipion3 tests warp.tests.test_protocols.TestWarpMotionCorrection
+* scipion3 tests warp.tests.test_protocols.TestDeconvolveMics
 
 Protocols
 ----------
@@ -67,8 +67,8 @@ Protocols
 * deconvolve tomograms
 * deconvolve tilt-series
 * tomo reconstruction
-* motion correction for SPA
-* align tilt-series movies(include ctf estimation and defocus handedness)
+* motion correction (for SPA)
+* tilt-series motion and ctf estimation (includes ctf estimation and defocus handedness)
 
 References
 -----------

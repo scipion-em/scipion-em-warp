@@ -25,22 +25,24 @@
 # ******************************************************************************
 
 import os
-import time
 
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from pyworkflow.object import Set, String, Float, Boolean
-from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries, TiltImage, TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries, \
-    CTFTomo
+from pyworkflow.object import Set, Float, Boolean
+from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
+                          TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries,
+                          CTFTomo)
 from tomo.protocols import ProtTomoBase
-from .protocol_base import ProtWarpBase
 
-from .. import (Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER,
-                OUTPUT_TILTSERIES, FS_CTF, TILTSERIES_FOLDER, TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
-                TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF, OUTPUT_HANDEDNESS)
-from ..utils import parseCtfXMLFile
+from warp import Plugin
+from warp.protocols.protocol_base import ProtWarpBase
+from warp.constants import (CREATE_SETTINGS, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS,
+                            AVERAGE_FOLDER, OUTPUT_TILTSERIES, TILTSERIES_FOLDER,
+                            TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
+                            TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF, OUTPUT_HANDEDNESS)
+from warp.utils import parseCtfXMLFile
 
 
 class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
@@ -48,7 +50,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         Estimate motion in frame series, produce aligned averages, estimate CTF
     """
 
-    _label = 'tilteries motion and ctf estimation'
+    _label = 'tilt-series motion and ctf estimation'
     _devStatus = BETA
     evenOddCapable = True
     # -------------------------- DEFINE param functions -----------------------
@@ -156,8 +158,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label='Fit phase', help='Fit the phase shift of a phase plate')
 
         form.addParam('use_sum', params.BooleanParam, default=False,
-                      label='Use the movie average', help='Use the movie average spectrum instead of the average of individual '
-                                                           'frames spectra. Can help in the absence of an energy filter, or when signal is low')
+                      label='Use the movie average',
+                      help='Use the movie average spectrum instead of the average of individual '
+                           'frames spectra. Can help in the absence of an energy filter, or when signal is low')
 
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
@@ -500,7 +503,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             outputSetOfCTFTomoSeries.enableAppend()
         else:
             outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
-                                                                  template='CTFmodels%s.sqlite')
+                                                                 template='CTFmodels%s.sqlite')
             tsSet = self.inputTSMovies.get()
             outputSetOfCTFTomoSeries.setSetOfTiltSeries(self.inputTSMovies)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
@@ -512,21 +515,3 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -73,5 +73,3 @@ FRAMESERIES_SETTINGS = "warp_frameseries.settings"
 RECONSTRUCTION_FOLDER = 'reconstruction'
 RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
-
-

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,7 +16,7 @@ authors = [
 ]
 description = "Plugin to use Warp within the Scipion framework"
 readme = "README.rst"
-requires-python = ">=3.6"
+requires-python = ">=3.8"
 keywords = ["scipion electron-microscopy cryo-em structural-biology image-processing scipion-3.0"]
 license = {text = "GNU General Public License v3 (GPLv3)"}
 
