@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scipion-em-warp"
+dynamic = ["version"]
+dependencies = [
+    "scipion-em", "emtools"
+]
+
+authors = [
+    {name = "Grigory Sharov", email = "sharov.grigory@gmail.com"},
+    {name = "Yunior Fonseca", email = "cfonseca@cnb.csic.es"},
+    {name = "Pablo Conesa", email = "pconesa@cnb.csic.es"},
+]
+description = "Plugin to use Warp within the Scipion framework"
+readme = "README.rst"
+requires-python = ">=3.8"
+keywords = ["scipion electron-microscopy cryo-em structural-biology image-processing scipion-3.0"]
+license = {text = "GNU General Public License v3 (GPLv3)"}
+
+[project.urls]
+Homepage = "https://github.com/scipion-em/scipion-em-warp"
+Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "warp.__version__"}
+
+[project.entry-points."pyworkflow.plugin"]
+warp = "warp"

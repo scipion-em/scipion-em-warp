@@ -76,7 +76,6 @@ class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
         self.defineProcessParams(form)
         form.addParallelSection(threads=8, mpi=0)
         
-
     # --------------------------- STEPS functions -----------------------------
     def deconvolveStep(self):
         """ Load CTF and tomograms sets, match by tsId before processing. """

@@ -23,12 +23,6 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-from pyworkflow.utils import weakImport
-
-from .test_protocols import ProtWarpDeconvMics
-
-with weakImport('tomo'):
-    from .test_protocols_tomo import ProtWarpDeconvTomo
 
 from pyworkflow.tests import DataSet
 

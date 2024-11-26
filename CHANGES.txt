@@ -1,3 +1,7 @@
+3.4: Adding motion correction protocol for SPA
+     Adding align tilt-series movies (include ctf estimation and defocus handedness)
+     Adding tomo reconstruction protocol
+3.3: adding first Warp 2.0.0 tools
 3.2.4: fix ambiguity with mrc format
 3.2.3: Deconvolution filter options are now exposed to user as advanced input parameters
 3.2.2: bugfix wrong snr calculation

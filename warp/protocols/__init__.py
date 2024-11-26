@@ -26,7 +26,10 @@
 from pyworkflow.utils import weakImport
 
 from .protocol_deconv_mics import ProtWarpDeconvMics
+from .protocol_motion_ctf import ProtWarpMotionCorr
 
 with weakImport('tomo'):
     from .protocol_deconv_tomo import ProtWarpDeconvTomo
     from .protocol_deconv_ts import ProtWarpDeconvTS
+    from .protocol_tomoReconstruct import ProtWarpTomoReconstruct
+    from .protocol_ts_motion_ctf import ProtWarpTSMotionCorr
