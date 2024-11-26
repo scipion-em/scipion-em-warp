@@ -200,4 +200,3 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
-        return math.floor(math.log2(self.binFactor.get()))
