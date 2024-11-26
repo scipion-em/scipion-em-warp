@@ -24,10 +24,10 @@ Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
 [tool.setuptools.dynamic]
+packages = ["warp"]
 version = {attr = "warp.__version__"}
 
-[tool.setuptools.dynamic]
-packages = ["warp"]
+
 
 [project.optional-dependencies]
 dev = ["check-manifest"]
