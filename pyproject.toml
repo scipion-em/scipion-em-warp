@@ -4,8 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-version = {attr = "warp.__version__"}
-
 dependencies = [
     "scipion-em", "emtools"
 ]
@@ -24,6 +22,9 @@ license = {text = "GNU General Public License v3 (GPLv3)"}
 [project.urls]
 Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "warp.__version__"}
 
 [tool.setuptools.dynamic]
 packages = ["warp"]
