@@ -165,7 +165,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             "--bfac": self.bfactor.get(),
             "--input_data": warpMoviesNamesList
         }
-        gpuList = self.getGpuList()
+        gpuList = self._stepsExecutor.getGpuList()
         if gpuList:
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
 
@@ -196,21 +196,3 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

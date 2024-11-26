@@ -122,9 +122,10 @@ class TestWarpMotionCorrection(BaseTest):
         self.assertIsNotNone(protMotion.Micrographs)
         self.assertSetSize(protMotion.Micrographs, 2)
 
-        print(magentaStr("\n==> Testing motioncor - bining factor 1"))
+        print(magentaStr("\n==> Testing motioncor - bining factor 2"))
         protMotion = self.runMotioncorr(inputMovies=protImport.outputMovies,
-                                        binFactor=1.0
+                                        binFactor=2.0,
+                                        streamingBatchSize=2
                                         )
         self.assertIsNotNone(protMotion.Micrographs)
         self.assertSetSize(protMotion.Micrographs, 2)

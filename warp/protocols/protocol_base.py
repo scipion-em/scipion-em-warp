@@ -437,19 +437,20 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             - micNameList (list): List of micrograph names to get the associated movie
             - micLocations (list): List of locations corresponding to each micrograph.
             """
-        output = self.getOutputSet()
-        for index, micName in enumerate(micNameList):
-            movie = self.getInputMovies().getItem(self.MIC_NAME_ATTR, micName)
-            newMic = Micrograph(location=micLocations[index])
-            newMic.copyInfo(movie)
-            output.append(newMic)
-            movieAcq = movie.getAcquisition()
-            newMic.getAcquisition().setDosePerFrame(movieAcq.getDosePerFrame() * movie.getNumberOfFrames() +
-                                                    movieAcq.getDoseInitial())
-            newMic.getAcquisition().setDoseInitial(0)
-            output.update(newMic)
-            output.write()
-            self._store(output)
+        with self._lock:
+            output = self.getOutputSet()
+            for index, micName in enumerate(micNameList):
+                movie = self.getInputMovies().getItem(self.MIC_NAME_ATTR, micName)
+                newMic = Micrograph(location=micLocations[index])
+                newMic.copyInfo(movie)
+                output.append(newMic)
+                movieAcq = movie.getAcquisition()
+                newMic.getAcquisition().setDosePerFrame(movieAcq.getDosePerFrame() * movie.getNumberOfFrames() +
+                                                        movieAcq.getDoseInitial())
+                newMic.getAcquisition().setDoseInitial(0)
+                output.update(newMic)
+                output.write()
+                self._store(output)
 
     def removeDoneMics(self, micNameList) -> None:
         """Moves the micNames from `_moviesToProcess`to `_moviesInProcess`,
@@ -511,7 +512,7 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             outputSet.setStreamState(outputSet.STREAM_OPEN)
             inputMovies = self.getInputMovies()
             outputSet.copyInfo(inputMovies)
-            outputSet.setSamplingRate(inputMovies.getSamplingRate())
+            outputSet.setSamplingRate(inputMovies.getSamplingRate() * self.binFactor.get())
 
             self._defineOutputs(**{self.OUT_MICS: outputSet})
             self._defineSourceRelation(self.getInputMovies(), outputSet)
