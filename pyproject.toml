@@ -1,11 +1,15 @@
 [build-system]
-requires = ["setuptools>54.0"]
+requires = ["setuptools>54.0", 'scipion-em']
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-version = "3.4"  
-dependencies = ["emtools"]
+dynamic = ["version"]
+
+dependencies = [
+    "scipion-em", "emtools"
+]
+
 authors = [
     {name = "Grigory Sharov", email = "sharov.grigory@gmail.com"},
     {name = "Yunior Fonseca", email = "cfonseca@cnb.csic.es"},
@@ -21,8 +25,8 @@ license = {text = "GNU General Public License v3 (GPLv3)"}
 Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
-[tool.setuptools]
-package-data = {"warp" = ["warp_logo.png", "protocols.conf"]}
-
 [project.entry-points."pyworkflow.plugin"]
 warp = "warp"
+
+[tool.setuptools.dynamic]
+version = {attr = "warp.__version__"}
