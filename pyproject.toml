@@ -4,13 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-
-[project.entry-points."pyworkflow.plugin"]
-warp = "warp"
-
-packages = ["warp"]
-
-[tool.setuptools.dynamic]
 version = {attr = "warp.__version__"}
 
 dependencies = [
@@ -32,10 +25,12 @@ license = {text = "GNU General Public License v3 (GPLv3)"}
 Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
+[tool.setuptools.dynamic]
+packages = ["warp"]
+
 [project.optional-dependencies]
 dev = ["check-manifest"]
 test = ["coverage"]
-
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -44,4 +39,5 @@ exclude = ["contrib", "docs"]
 [tool.setuptools]
 package-data = {"warp" = ["warp_logo.png", "protocols.conf"]}
 
-
+[project.entry-points."pyworkflow.plugin"]
+warp = "warp"
