@@ -7,7 +7,7 @@
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
-# * the Free Software Foundation; either version 2 of the License, or
+# * the Free Software Foundation; either version 3 of the License, or
 # * (at your option) any later version.
 # *
 # * This program is distributed in the hope that it will be useful,
@@ -29,12 +29,13 @@ import os.path
 
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
-import tomo.objects as tomoObj
 from pyworkflow.object import Set
+import tomo.objects as tomoObj
 from tomo.protocols import ProtTomoBase
-from warp import TILTSERIE_SETTINGS, TILTSERIES_FOLDER
-from warp.constants import TS_CTF, OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME, \
-    RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER
+
+from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
+                            OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
+                            RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER)
 from warp.protocols.protocol_base import ProtWarpBase
 
 
@@ -131,8 +132,8 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                """
 
         form.addHidden(params.GPU_LIST, params.StringParam, default='0',
-                      label='Choose GPU IDs:', validators=[params.NonEmpty],
-                      help="Space-separated list of GPU IDs to use for processing. Default: all GPUs in the system."
+                       label='Choose GPU IDs:', validators=[params.NonEmpty],
+                       help="Space-separated list of GPU IDs to use for processing. Default: all GPUs in the system."
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
@@ -259,12 +260,3 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
-
-
-
-
-
-
-
-
-

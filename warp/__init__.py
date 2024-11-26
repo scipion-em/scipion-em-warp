@@ -54,7 +54,7 @@ class Plugin(pwem.Plugin):
             # this is required for python virtual env to work
             del environ['PYTHONPATH']
 
-        environ[WARP_FORCE_MRC_FLOAT32]=cls.getVar(WARP_FORCE_MRC_FLOAT32)
+        environ[WARP_FORCE_MRC_FLOAT32] = cls.getVar(WARP_FORCE_MRC_FLOAT32)
         return environ
 
     @classmethod
@@ -112,4 +112,3 @@ class Plugin(pwem.Plugin):
     def getProgram(cls, program):
         """ Create Warp command line. """
         return f"{cls.getActivationCmd()} && WarpTools {program}"
-

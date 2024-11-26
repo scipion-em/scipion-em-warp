@@ -28,20 +28,20 @@ import os
 import time
 import mrcfile
 import glob
-
 import numpy
 
-from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
-from pyworkflow import ID_ATTRIBUTE
-from pyworkflow.protocol import (FloatParam, Positive, LEVEL_ADVANCED, ProtStreamingBase, PointerParam, IntParam)
+from pyworkflow.constants import ID_ATTRIBUTE
+from pyworkflow.protocol import ProtStreamingBase
+from pyworkflow.protocol.params import (FloatParam, Positive, LEVEL_ADVANCED, PointerParam, IntParam)
 import pyworkflow.utils as pwutils
+from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
 from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import TiltSeries, SetOfTiltSeries
-from warp import CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER, AVERAGE_FOLDER, TILTSERIES_FOLDER, \
-    TILTSERIE_SETTINGS, FRAMES_FOLDER, FRAMESERIES_FOLDER
-
+from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
+                            AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
+                            FRAMES_FOLDER, FRAMESERIES_FOLDER)
 from warp.utils import tom_deconv
 
 
@@ -212,7 +212,7 @@ class ProtWarpBase(EMProtocol):
                         amplitudeContrast = 0
 
                         if ts.hasAcquisition():
-                            axisAngle = ts._acquisition.getTiltAxisAngle()
+                            axisAngle = ts.getAcquisition().getTiltAxisAngle()
                         if ti.getAcquisition():
                             amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
                             dose = ti.getAcquisition().getAccumDose()
@@ -352,10 +352,10 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
     def _defineStreamingParams(self, form):
         """ This function can be called during the _defineParams method
         of some protocols that support stream processing.
-        It will add an Streaming section together with the following
+        It will add a Streaming section together with the following
         params:
             streamingSleepOnWait: Some streaming protocols are quite fast,
-                so, checking input/ouput updates creates an IO overhead.
+                so, checking input/output updates creates an IO overhead.
                 This params allows them to sleep (without consuming resources)
                 to wait for new work to be done.
             streamingBatchSize: For some programs it is more efficient to process
@@ -478,7 +478,8 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             - removeDone (bool): if True, excludes micrographs that have already been processed (present in the output set).
             """
         inputSet = self.getInputMovies()
-        results = inputSet.getUniqueValues([self.MIC_NAME_ATTR, ID_ATTRIBUTE, self.IMAGE_FILENAME_ATTR], '%s > %s' % (ID_ATTRIBUTE, self._lastInputId))
+        results = inputSet.getUniqueValues([self.MIC_NAME_ATTR, ID_ATTRIBUTE, self.IMAGE_FILENAME_ATTR],
+                                           '%s > %s' % (ID_ATTRIBUTE, self._lastInputId))
         newIds = results[ID_ATTRIBUTE]
         if newIds:
             self._lastInputId = max(results[ID_ATTRIBUTE])
@@ -554,4 +555,3 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
         if micName in self._moviesInProcess:
             return self._moviesInProcess[micName]
         return None
-

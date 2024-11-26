@@ -5,7 +5,8 @@ from warp.protocols import ProtWarpTSMotionCorr
 class ProtWarpMaxResolutionWizard(Wizard):
     _targets = [(ProtWarpTSMotionCorr, ['range_max'])]
 
-    def _getRangeHighResolution(self, protocol):
+    @staticmethod
+    def _getRangeHighResolution(protocol):
         range_high = 4
 
         if protocol.inputTSMovies.hasValue():

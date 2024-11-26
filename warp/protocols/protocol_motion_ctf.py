@@ -27,12 +27,15 @@
 # ******************************************************************************
 
 import os
+
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from .protocol_base import ProtMovieAlignBase
 
-from .. import Plugin, CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS, AVERAGE_FOLDER
+from warp.protocols.protocol_base import ProtMovieAlignBase
+from warp import Plugin
+from warp.constants import (CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER,
+                            FRAMESERIES_SETTINGS, AVERAGE_FOLDER)
 
 
 class ProtWarpMotionCorr(ProtMovieAlignBase):
@@ -40,7 +43,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         Estimate motion in frame series, produce aligned averages
     """
 
-    _label = 'motioncorr'
+    _label = 'motion correction'
     _devStatus = BETA
     evenOddCapable = True
 
@@ -112,7 +115,8 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
     # --------------------------- STEPS functions -----------------------------
     def insertInitialSteps(self):
         self.samplingRate = self.getInputMovies().getSamplingRate()
-        createSettingStep = self._insertFunctionStep(self.createSettingStep, prerequisites=[], needsGPU=False)
+        createSettingStep = self._insertFunctionStep(self.createSettingStep,
+                                                     prerequisites=[], needsGPU=False)
         return [createSettingStep]
 
     def createSettingStep(self):
@@ -195,4 +199,5 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
 
     def getBinFactor(self):
         import math
+        return math.floor(math.log2(self.binFactor.get()))
         return math.floor(math.log2(self.binFactor.get()))
