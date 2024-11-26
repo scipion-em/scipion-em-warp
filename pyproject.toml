@@ -7,6 +7,8 @@ name = "scipion-em-warp"
 
 [tool.setuptools.dynamic]
 packages = ["warp"]
+
+[tool.setuptools.dynamic]
 version = {attr = "warp.__version__"}
 
 dependencies = [
