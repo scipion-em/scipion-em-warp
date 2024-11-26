@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-dynamic = ["version"]
+version="3.4"
 
 dependencies = [
     "scipion-em", "emtools"
@@ -30,6 +30,3 @@ package-data = {"warp" = ["warp_logo.png", "protocols.conf"]}
 
 [project.entry-points."pyworkflow.plugin"]
 warp = "warp"
-
-[tool.setuptools.dynamic]
-version = {attr = "warp.__version__"}
