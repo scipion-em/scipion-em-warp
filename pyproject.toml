@@ -5,8 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scipion-em-warp"
 
-[tool.setuptools.dynamic]
+[project.entry-points."pyworkflow.plugin"]
+warp = "warp"
+
 packages = ["warp"]
+
+[tool.setuptools.dynamic]
 version = {attr = "warp.__version__"}
 
 dependencies = [
@@ -40,5 +44,4 @@ exclude = ["contrib", "docs"]
 [tool.setuptools]
 package-data = {"warp" = ["warp_logo.png", "protocols.conf"]}
 
-[project.entry-points."pyworkflow.plugin"]
-warp = "warp"
+
