@@ -197,6 +197,12 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             summary.append("Outputs are not ready yet.")
         return summary
 
+    def _validate(self):
+        errors = []
+        if self.streamingBatchSize.get() < 1:
+            errors.append('The batch size value must be greater than 1')
+        return errors
+
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
