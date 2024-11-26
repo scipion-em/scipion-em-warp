@@ -1,15 +1,11 @@
 [build-system]
-requires = ["setuptools>54.0", 'scipion-em']
+requires = ["setuptools>54.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-version="3.4"
-
-dependencies = [
-    "scipion-em", "emtools"
-]
-
+version = "3.4"  
+dependencies = ["emtools"]
 authors = [
     {name = "Grigory Sharov", email = "sharov.grigory@gmail.com"},
     {name = "Yunior Fonseca", email = "cfonseca@cnb.csic.es"},
