@@ -25,12 +25,11 @@ license = {text = "GNU General Public License v3 (GPLv3)"}
 Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
-
-[tool.setuptools.dynamic]
-version = {attr = "warp.__version__"}
-
 [tool.setuptools]
 package-data = {"warp" = ["warp_logo.png", "protocols.conf"]}
 
 [project.entry-points."pyworkflow.plugin"]
 warp = "warp"
+
+[tool.setuptools.dynamic]
+version = {attr = "warp.__version__"}
