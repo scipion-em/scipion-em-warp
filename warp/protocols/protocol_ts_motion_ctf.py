@@ -136,8 +136,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label="Max",
                       help="Highest (best) resolution in Angstrom to consider in fit")
 
-        line = form.addLine('Defocus search range (Å)',
-                            help='Defocus values in um to explore during fitting (positive = underfocus)')
+        line = form.addLine('Defocus search range (um)',
+                            help='Defocus values in um to explore during fitting (positive = underfocus). '
+                                 'The units are microns!!')
         line.addParam('defocus_min', params.FloatParam, default=0.5,
                       label='Min', help='Minimum defocus value in um to explore during fitting (positive = underfocus)')
         line.addParam('defocus_max', params.FloatParam, default=5,

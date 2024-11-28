@@ -43,7 +43,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         Estimate motion in frame series, produce aligned averages
     """
 
-    _label = 'motion correction and ctf'
+    _label = 'motion correction'
     _devStatus = BETA
     evenOddCapable = True
 
@@ -82,7 +82,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         line.addParam('range_max', params.FloatParam, default=10,
                       label='Max')
 
-        form.addParam('bfactor', params.IntParam, default=-500,
+        form.addParam('bfactor', params.FloatParam, default=-500,
                       label="B-factor",
                       help="Downweight higher spatial frequencies using a "
                            "B-factor, in Angstrom^2")
