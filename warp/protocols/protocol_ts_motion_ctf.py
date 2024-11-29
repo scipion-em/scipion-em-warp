@@ -72,7 +72,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        form.addParam('binFactor', params.IntParam, default=1,
+        form.addParam('binFactor', params.FloatParam, default=1,
                       label="Binning factor",
                       help="Binning factor, applied in Fourier "
                            "space when loading raw data. 1 = no binning, "
@@ -81,12 +81,12 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         line = form.addLine('Resolution to fit',
                             help='Resolution in Angstrom to consider in fit.')
-        line.addParam('m_range_min', params.IntParam, default=500,
+        line.addParam('m_range_min', params.FloatParam, default=500,
                       label='Min', help='Minimum resolution in Angstrom to consider in fit')
-        line.addParam('m_range_max', params.IntParam, default=10,
+        line.addParam('m_range_max', params.FloatParam, default=10,
                       label='Max', help='Maximun resolution in Angstrom to consider in fit')
 
-        form.addParam('bfactor', params.IntParam, default=-500,
+        form.addParam('bfactor', params.FloatParam, default=-500,
                       label="B-factor",
                       help="Downweight higher spatial frequencies using a "
                            "B-factor, in Angstrom^2")
@@ -136,8 +136,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label="Max",
                       help="Highest (best) resolution in Angstrom to consider in fit")
 
-        line = form.addLine('Defocus search range (Å)',
-                            help='Defocus values in um to explore during fitting (positive = underfocus)')
+        line = form.addLine('Defocus search range (um)',
+                            help='Defocus values in um to explore during fitting (positive = underfocus). '
+                                 'The units are microns!!')
         line.addParam('defocus_min', params.FloatParam, default=0.5,
                       label='Min', help='Minimum defocus value in um to explore during fitting (positive = underfocus)')
         line.addParam('defocus_max', params.FloatParam, default=5,
