@@ -38,10 +38,7 @@ from tomo.protocols import ProtTomoBase
 
 from warp import Plugin
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.constants import (CREATE_SETTINGS, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS,
-                            AVERAGE_FOLDER, OUTPUT_TILTSERIES, TILTSERIES_FOLDER,
-                            TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
-                            TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF, OUTPUT_HANDEDNESS)
+from warp.constants import *
 from warp.utils import parseCtfXMLFile
 
 
@@ -470,11 +467,12 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
-            text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
-            flip = 'no flip'
-            if self.averageCorrelation.get() < 0:
-                flip = 'flip'
-            summary.append(f"Handedness: {self.averageCorrelation}  {text %flip}")
+            # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
+            # flip = 'no flip'
+            # if self.averageCorrelation.get() < 0:
+            #     flip = 'flip'
+            text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
+            summary.append(f"Handedness: {self.averageCorrelation}  {text}")
         else:
             summary.append('Handedness: Not ready')
 

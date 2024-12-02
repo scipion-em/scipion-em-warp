@@ -1,3 +1,5 @@
+import math
+
 from pyworkflow.wizard import Wizard
 from warp.protocols import ProtWarpTSMotionCorr
 
@@ -11,7 +13,7 @@ class ProtWarpMaxResolutionWizard(Wizard):
 
         if protocol.inputTSMovies.hasValue():
             sr = protocol.inputTSMovies.get().getSamplingRate()
-            return round(sr * 2 + 0.1, 2)
+            return math.ceil(sr * 2)
 
         return range_high
 
