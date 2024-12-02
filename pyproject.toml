@@ -23,7 +23,7 @@ license = {text = "GNU General Public License v3 (GPLv3)"}
 url = "https://github.com/scipion-em/scipion-em-warp"
 
 [project.urls]
-#Homepage = "https://github.com/scipion-em/scipion-em-warp"
+Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
 [project.entry-points."pyworkflow.plugin"]
