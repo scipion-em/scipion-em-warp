@@ -38,10 +38,7 @@ from tomo.protocols import ProtTomoBase
 
 from warp import Plugin
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.constants import (CREATE_SETTINGS, FRAMESERIES_FOLDER, FRAMESERIES_SETTINGS,
-                            AVERAGE_FOLDER, OUTPUT_TILTSERIES, TILTSERIES_FOLDER,
-                            TOMOSTAR_FOLDER, TILTSERIE_SETTINGS, FS_MOTION_AND_CTF,
-                            TS_DEFOCUS_HAND, OUTPUT_CTF_SERIE, TS_CTF, OUTPUT_HANDEDNESS)
+from warp.constants import *
 from warp.utils import parseCtfXMLFile
 
 
@@ -72,7 +69,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        form.addParam('binFactor', params.IntParam, default=1,
+        form.addParam('binFactor', params.FloatParam, default=1,
                       label="Binning factor",
                       help="Binning factor, applied in Fourier "
                            "space when loading raw data. 1 = no binning, "
@@ -81,12 +78,12 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         line = form.addLine('Resolution to fit',
                             help='Resolution in Angstrom to consider in fit.')
-        line.addParam('m_range_min', params.IntParam, default=500,
+        line.addParam('m_range_min', params.FloatParam, default=500,
                       label='Min', help='Minimum resolution in Angstrom to consider in fit')
-        line.addParam('m_range_max', params.IntParam, default=10,
+        line.addParam('m_range_max', params.FloatParam, default=10,
                       label='Max', help='Maximun resolution in Angstrom to consider in fit')
 
-        form.addParam('bfactor', params.IntParam, default=-500,
+        form.addParam('bfactor', params.FloatParam, default=-500,
                       label="B-factor",
                       help="Downweight higher spatial frequencies using a "
                            "B-factor, in Angstrom^2")
@@ -136,8 +133,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label="Max",
                       help="Highest (best) resolution in Angstrom to consider in fit")
 
-        line = form.addLine('Defocus search range (Å)',
-                            help='Defocus values in um to explore during fitting (positive = underfocus)')
+        line = form.addLine('Defocus search range (um)',
+                            help='Defocus values in um to explore during fitting (positive = underfocus). '
+                                 'The units are microns!!')
         line.addParam('defocus_min', params.FloatParam, default=0.5,
                       label='Min', help='Minimum defocus value in um to explore during fitting (positive = underfocus)')
         line.addParam('defocus_max', params.FloatParam, default=5,
@@ -470,11 +468,12 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
-            text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
-            flip = 'no flip'
-            if self.averageCorrelation.get() < 0:
-                flip = 'flip'
-            summary.append(f"Handedness: {self.averageCorrelation}  {text %flip}")
+            # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
+            # flip = 'no flip'
+            # if self.averageCorrelation.get() < 0:
+            #     flip = 'flip'
+            text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
+            summary.append(f"Handedness: {self.averageCorrelation}  {text}")
         else:
             summary.append('Handedness: Not ready')
 

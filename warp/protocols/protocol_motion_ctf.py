@@ -68,7 +68,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        form.addParam('binFactor', params.IntParam, default=1,
+        form.addParam('binFactor', params.FloatParam, default=1,
                       label="Binning factor",
                       help="Binning factor, applied in Fourier "
                            "space when loading raw data. 1 = no binning, "
@@ -77,12 +77,12 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
 
         line = form.addLine('Resolution to fit',
                             help='Resolution in Angstrom to consider in fit.')
-        line.addParam('range_min', params.IntParam, default=500,
+        line.addParam('range_min', params.FloatParam, default=500,
                       label='Min')
-        line.addParam('range_max', params.IntParam, default=10,
+        line.addParam('range_max', params.FloatParam, default=10,
                       label='Max')
 
-        form.addParam('bfactor', params.IntParam, default=-500,
+        form.addParam('bfactor', params.FloatParam, default=-500,
                       label="B-factor",
                       help="Downweight higher spatial frequencies using a "
                            "B-factor, in Angstrom^2")
