@@ -20,10 +20,10 @@ readme = "README.rst"
 requires-python = ">=3.8"
 keywords = ["scipion", "electron-microscopy", "cryo-em", "structural-biology", "image-processing", "scipion-3.0"]
 license = {text = "GNU General Public License v3 (GPLv3)"}
-url = "https://github.com/scipion-em/scipion-em-warp"
 
 [project.urls]
 Homepage = "https://github.com/scipion-em/scipion-em-warp"
+Repository = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
 [project.entry-points."pyworkflow.plugin"]
