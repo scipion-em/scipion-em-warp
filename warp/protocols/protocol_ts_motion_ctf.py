@@ -25,6 +25,7 @@
 # ******************************************************************************
 
 import os
+import time
 
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
@@ -169,9 +170,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self._insertFunctionStep(self.createTiltSeriesSettingStep, needsGPU=False)
         self._insertFunctionStep(self.dataPrepare, inputTSMovies, needsGPU=False)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
+        self._insertFunctionStep(self.tsDefocusHandStep, needsGPU=True)
         self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
-        self._insertFunctionStep(self.tsDefocusHandStep,  needsGPU=True)
-        self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
+        # self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
 
     def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
@@ -186,7 +187,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         pwutils.makePath(processingFolder)
         argsDict = {
             "--folder_data": folderData,
-            "--extension": "*%s" % extension,
+            "--extension": "'*%s'" % extension,
             "--folder_processing": processingFolder,
             "--bin": self.getBinFactor(),
             "--angpix": self.samplingRate,
@@ -217,6 +218,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
             "--extension": "*.tomostar",
             "--folder_processing": processingFolder,
+            "--bin": self.getBinFactor(),
             '--angpix': sr,
             "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
         }
@@ -383,7 +385,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                 logger.info(f"The directory {averageFolder} does not exist.")
                 return
             for filename in os.listdir(averageFolder):
-                if filename.endswith(".mrc"):
+                if filename.endswith(".mrc") or filename.endswith(".json"):
                     file_path = os.path.join(averageFolder, filename)
                     os.remove(file_path)
 
