@@ -161,6 +161,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       help='Use the movie average spectrum instead of the average of individual '
                            'frames spectra. Can help in the absence of an energy filter, or when signal is low')
 
+        form.addParam('handedness', params.BooleanParam, default=False,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      label='Check the handedness ?',
+                      help='Checking defocus handedness across a dataset ')
+
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
         self.averageCorrelation = Float()
@@ -170,9 +175,10 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self._insertFunctionStep(self.createTiltSeriesSettingStep, needsGPU=False)
         self._insertFunctionStep(self.dataPrepare, inputTSMovies, needsGPU=False)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
-        self._insertFunctionStep(self.tsDefocusHandStep, needsGPU=True)
         self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
-        # self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
+        if self.handedness.get():
+            self._insertFunctionStep(self.tsDefocusHandStep, needsGPU=True)
+        self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
 
     def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
