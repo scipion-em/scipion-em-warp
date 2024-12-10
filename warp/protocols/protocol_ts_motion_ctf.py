@@ -475,15 +475,16 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             ctfSize = self.CTFTomoSeries.getSize()
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
-        if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
-            # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
-            # flip = 'no flip'
-            # if self.averageCorrelation.get() < 0:
-            #     flip = 'flip'
-            text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
-            summary.append(f"Handedness: {self.averageCorrelation}  {text}")
-        else:
-            summary.append('Handedness: Not ready')
+        if self.handedness.get():
+            if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
+                # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
+                # flip = 'no flip'
+                # if self.averageCorrelation.get() < 0:
+                #     flip = 'flip'
+                text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
+                summary.append(f"Handedness: {self.averageCorrelation}  {text}")
+            else:
+                summary.append('Handedness: Not ready')
 
         return summary
 
