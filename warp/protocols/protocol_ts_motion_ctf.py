@@ -25,6 +25,7 @@
 # ******************************************************************************
 
 import os
+import time
 
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
@@ -160,6 +161,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       help='Use the movie average spectrum instead of the average of individual '
                            'frames spectra. Can help in the absence of an energy filter, or when signal is low')
 
+        form.addParam('handedness', params.BooleanParam, default=False,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      label='Check the handedness ?',
+                      help='Checking defocus handedness across a dataset ')
+
     # --------------------------- STEPS functions -----------------------------
     def _insertAllSteps(self):
         self.averageCorrelation = Float()
@@ -170,7 +176,8 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self._insertFunctionStep(self.dataPrepare, inputTSMovies, needsGPU=False)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
         self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
-        self._insertFunctionStep(self.tsDefocusHandStep,  needsGPU=True)
+        if self.handedness.get():
+            self._insertFunctionStep(self.tsDefocusHandStep, needsGPU=True)
         self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
 
     def createFrameSeriesSettingStep(self):
@@ -186,7 +193,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         pwutils.makePath(processingFolder)
         argsDict = {
             "--folder_data": folderData,
-            "--extension": "*%s" % extension,
+            "--extension": "'*%s'" % extension,
             "--folder_processing": processingFolder,
             "--bin": self.getBinFactor(),
             "--angpix": self.samplingRate,
@@ -217,6 +224,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
             "--extension": "*.tomostar",
             "--folder_processing": processingFolder,
+            "--bin": self.getBinFactor(),
             '--angpix': sr,
             "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
         }
@@ -383,7 +391,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                 logger.info(f"The directory {averageFolder} does not exist.")
                 return
             for filename in os.listdir(averageFolder):
-                if filename.endswith(".mrc"):
+                if filename.endswith(".mrc") or filename.endswith(".json"):
                     file_path = os.path.join(averageFolder, filename)
                     os.remove(file_path)
 
@@ -467,15 +475,16 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             ctfSize = self.CTFTomoSeries.getSize()
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
-        if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
-            # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
-            # flip = 'no flip'
-            # if self.averageCorrelation.get() < 0:
-            #     flip = 'flip'
-            text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
-            summary.append(f"Handedness: {self.averageCorrelation}  {text}")
-        else:
-            summary.append('Handedness: Not ready')
+        if self.handedness.get():
+            if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
+                # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
+                # flip = 'no flip'
+                # if self.averageCorrelation.get() < 0:
+                #     flip = 'flip'
+                text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
+                summary.append(f"Handedness: {self.averageCorrelation}  {text}")
+            else:
+                summary.append('Handedness: Not ready')
 
         return summary
 

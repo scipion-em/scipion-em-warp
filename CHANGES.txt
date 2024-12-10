@@ -1,3 +1,4 @@
+3.4.3: Fixing an error related wit the settings files creation
 3.4.2: Allowing floating point resolutions, b-factors and binning
 3.4: Adding motion correction protocol for SPA
      Adding align tilt-series movies (include ctf estimation and defocus handedness)

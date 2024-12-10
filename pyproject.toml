@@ -26,6 +26,9 @@ Homepage = "https://github.com/scipion-em/scipion-em-warp"
 Repository = "https://github.com/scipion-em/scipion-em-warp"
 Issues = "https://github.com/scipion-em/scipion-em-warp/issues"
 
+[tool.setuptools.package-data]
+"warp" = ["protocols.conf", "warp_logo.png"]
+
 [project.entry-points."pyworkflow.plugin"]
 warp = "warp"
 
