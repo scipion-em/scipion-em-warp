@@ -267,7 +267,6 @@ class ProtWarpBase(EMProtocol):
                 "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
                 "--extension": "*.tomostar",
                 "--folder_processing": processingFolder,
-                "--bin": self.getBinFactor(),
                 '--angpix': sr,
                 "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
             }
