@@ -204,7 +204,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
         folderData = os.path.abspath(os.path.dirname(fileName))
         processingFolder = os.path.abspath(self._getExtraPath(FRAMESERIES_FOLDER))
-        exposure = tsMovies.getAcquisition().getDosePerFrame()
+        exposure = -1 * tsMovies.getAcquisition().getDosePerFrame()
         gainPath = os.path.abspath(tsMovies.getGain()) if tsMovies.getGain() else None
         pwutils.makePath(processingFolder)
         argsDict = {
@@ -252,7 +252,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             }
 
             if exposure is not None:
-                argsDict['--exposure'] = exposure
+                argsDict['--exposure'] = -1 * exposure
 
             if hasattr(self, 'tomo_thickness'):
                 z = self.tomo_thickness.get()
