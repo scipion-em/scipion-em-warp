@@ -182,7 +182,7 @@ class ProtWarpBase(EMProtocol):
             cmd += ' %s' % othersCmds
         self.runJob(self.getPlugin().getProgram(program), cmd, executable='/bin/bash')
 
-    def dataPrepare(self, objSet):
+    def dataPrepare(self, objSet, createSetting=False):
         """Creates the setting file that will be used by the different programs.
            It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
            the tiltimages."""
@@ -249,7 +249,7 @@ class ProtWarpBase(EMProtocol):
         #    We need to do this because warp needs both folders: The tiltimages folder to get
         #    the header of the images (it only needs the first tiltimage of each tiltseries),
         #    and the averages folder to read them.
-        if isTiltSeries:
+        if isTiltSeries or createSetting:
             tiltSeriesFiles = glob.glob(os.path.join(imagesFolder, '*'))
             averagesFolder = os.path.join(imagesFolder, AVERAGE_FOLDER)
             pwutils.makePath(averagesFolder)

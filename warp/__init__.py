@@ -32,7 +32,7 @@ import pyworkflow.utils as pwutils
 from warp.constants import *
 
 
-__version__ = '3.4.4'
+__version__ = '3.5.0'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 
