@@ -158,9 +158,9 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             argsDict['--exposure'] = exposure
 
         if extension == '.eer':
-            argsDict[' --eer_ngroups'] = exposure
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
             if self.eer_groupexposure.get():
-                argsDict[' --eer_groupexposure'] = exposure
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if gainPath:
