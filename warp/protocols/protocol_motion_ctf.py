@@ -57,6 +57,21 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         super()._defineInputMoviesParam(form)
         form.addSection('Alignment')
         self._defineAlignmentParams(form)
+        form.addSection("EER")
+        form.addParam('EERtext', params.LabelParam,
+                      label="These options are ignored for non-EER movies.")
+        form.addParam('eer_ngroups', params.IntParam, default=16,
+                      label='EER fractionation',
+                      help="Number of groups to combine raw EER frames into, i.e. number of 'virtual' "
+                           "frames in resulting stack; use negative value to specify the number of "
+                           "frames per virtual frame instead")
+        form.addParam('eer_groupexposure', params.FloatParam, default=None,
+                      allowsNull=True,
+                      label='EER group exposure',
+                      help="As an alternative to EER fractionation, fractionate the frames so that a group will "
+                           "have this exposure in e-/A^2; this overrides EER fractionation"
+                           "\nFractionate such that each fraction "
+                           "has about 0.5 to 1.25 e/A2.")
         self._defineStreamingParams(form)
         form.addParallelSection(threads=3, mpi=0)
 
@@ -127,7 +142,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         folderData = os.path.abspath(os.path.dirname(fileName))
         processingFolder = os.path.abspath(self._getExtraPath(FRAMESERIES_FOLDER))
         sr = firstMovie.getSamplingRate()
-        exposure = movies.getAcquisition().getDosePerFrame()
+        exposure = -1 * movies.getAcquisition().getDosePerFrame()
         gainPath = os.path.abspath(movies.getGain()) if movies.getGain() else None
         pwutils.makePath(processingFolder)
         argsDict = {
@@ -141,6 +156,11 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
 
         if exposure is not None:
             argsDict['--exposure'] = exposure
+
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = exposure
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = exposure
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if gainPath:
