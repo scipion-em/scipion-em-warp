@@ -94,14 +94,14 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        ProtMovieAlignBase.motionGridParameters(form)
+        ProtMovieAlignBase.motionGridParameters(self, form)
 
         form.addParam('average_halves', params.BooleanParam,
                       default=False,
                       label='Do even and odd ?',
                       help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
 
-        ProtMovieAlignBase.gainParameters(form)
+        ProtMovieAlignBase.gainParameters(self, form)
 
         form.addSection(label="CTF")
 
