@@ -43,7 +43,7 @@ from warp.constants import *
 from warp.utils import parseCtfXMLFile
 
 
-class ProtWarpTSMotionCorr(ProtMovieAlignBase, ProtTomoBase):
+class ProtWarpTSMotionCorr(ProtWarpBase, ProtMovieAlignBase, ProtTomoBase):
     """
     Warp corrects images for global and local motion as well as it estimates the local defocus of the tilt images.
 
