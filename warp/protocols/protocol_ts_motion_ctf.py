@@ -38,7 +38,7 @@ from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
 from tomo.protocols import ProtTomoBase
 
 from warp import Plugin
-from warp.protocols.protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase, ProtMovieAlignBase
 from warp.constants import *
 from warp.utils import parseCtfXMLFile
 
@@ -94,14 +94,14 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        self.motionGridParameters(form)
+        ProtMovieAlignBase.motionGridParameters(form)
 
         form.addParam('average_halves', params.BooleanParam,
                       default=False,
                       label='Do even and odd ?',
                       help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
 
-        self.gainParameters(form)
+        ProtMovieAlignBase.gainParameters(form)
 
         form.addSection(label="CTF")
 
