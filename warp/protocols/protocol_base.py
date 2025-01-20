@@ -32,7 +32,7 @@ import numpy
 
 from pyworkflow.constants import ID_ATTRIBUTE
 from pyworkflow.protocol import ProtStreamingBase
-from pyworkflow.protocol.params import (FloatParam, Positive, LEVEL_ADVANCED, PointerParam, IntParam)
+from pyworkflow.protocol.params import (FloatParam, Positive, LEVEL_ADVANCED, PointerParam, IntParam, EnumParam)
 import pyworkflow.utils as pwutils
 from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
 from pwem.protocols import EMProtocol
@@ -387,6 +387,64 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
                            "this option.\n"
                            "*>1*   The number of items that will be grouped into "
                            "a step.")
+
+    def gainParameters(self, form):
+        form.addSection(label="Gain and defects")
+        form.addParam('gainSwap', EnumParam,
+                      choices=['no swap', 'transpose X/Y'],
+                      label="Transpose gain reference:",
+                      default=0,
+                      display=EnumParam.DISPLAY_COMBO)
+
+        form.addParam('gainFlip', EnumParam,
+                      choices=['no flip', 'flip X', 'flip Y'],
+                      label="Flip gain reference:", default=0,
+                      display=EnumParam.DISPLAY_COMBO)
+
+    def motionGridParameters(self, form):
+        form.addParam('binFactor', FloatParam, default=1,
+                      label="Binning factor",
+                      help="This is the shrinking factor of the images (downsampling)."
+                           "Binning factor, applied in Fourier space when loading raw data.\n"
+                           "1 = no binning, \n"
+                           "2 = 2x2 binning, \n"
+                           "4 = 4x4 binning, \n"
+                           "The protocol supports non-integer values.")
+
+        line = form.addLine('Resolution to fit',
+                            help='Resolution range for fitting the Thon rings (in Angstrom)')
+        line.addParam('range_min', FloatParam, default=500,
+                      label='Min')
+        line.addParam('range_max', FloatParam, default=10,
+                      label='Max')
+
+        form.addParam('bfactor', FloatParam, default=-500,
+                      label="B-factor",
+                      help="Downweight higher spatial frequencies using a "
+                           "B-factor, in Angstrom^2")
+
+        line = form.addLine('Motion model grid',
+                            help="Resolution of the motion model grid in "
+                                 "X, Y, and temporal dimensions, e.g. 5x5x40; "
+                                 "0 = auto\n"
+                                 "Two factors contribute to the translational shift observed between frames in a "
+                                 "dose-fractionated image sequence. The first is mechanical stage instability, "
+                                 "which causes rapid, uniform shifts across the entire frame. The second is "
+                                 "beam-induced motion (BIM), which leads to slower, localized movement. "
+                                 "Warp incorporates the physical characteristics of both factors in its "
+                                 "motion model, using two grid sets to parameterize frame shifts and sample "
+                                 "deformation. Global motion is represented by two grids, Xglobal and Yglobal,"
+                                 " which have high temporal but no spatial resolution. The temporal resolution "
+                                 "can either match the number of frames or, in cases of finer dose fractionation "
+                                 "to minimize intraframe motion, be lower to prevent overfitting the model. "
+                                 "BIM is modeled with two grids, Xlocal and Ylocal, having a temporal resolution "
+                                 "of up to 3 and a typical spatial resolution of 4–5 in both dimensions. "
+                                 "The total shifts needed to align the same object across all frames to a common "
+                                 "reference are then expressed as (Xglobal+Xlocal, Yglobal+Ylocal)."
+                                 "The form parameters are the local shifts.")
+        line.addParam('x', IntParam, default=2, label='X')
+        line.addParam('y', IntParam, default=2, label='Y')
+        line.addParam('z', IntParam, default=1, label='Temporal')
 
     def stepsGeneratorStep(self) -> None:
         """

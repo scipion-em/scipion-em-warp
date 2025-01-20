@@ -39,8 +39,18 @@ from warp.constants import (CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER,
 
 
 class ProtWarpMotionCorr(ProtMovieAlignBase):
-    """ This protocol wraps WarpTools programs.
-        Estimate motion in frame series, produce aligned averages
+    """
+    Warp corrects images for global and local motion as well as it estimates the local defocus of the tilt images.
+
+    The observed motion between frames, or translational shift, arises from two primary factors:
+    movement of the mechanical sample stage and beam-induced motion (BIM). Stage movement causes a global shift
+    across the entire field of view, while BIM results in shifts between neighboring micrograph patches.
+    Stage drift can cause rapid changes in shift between frames, whereas BIM occurs more gradually, after an
+    initial period of rapid relaxation during early exposure. Warp corrects both global drift and local BIM at
+    varying temporal resolutions. This approach is similar to that used by MotionCor2, but Warp does not impose
+    additional a priori assumptions about BIM beyond those dictated by the parameter grid resolution. Consequently,
+    Warp effectively and comprehensively corrects for both types of motion that occur during cryo-EM data
+    acquisition, regardless of sample morphology or orientation.
     """
 
     _label = 'motion correction'
@@ -83,49 +93,15 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        form.addParam('binFactor', params.FloatParam, default=1,
-                      label="Binning factor",
-                      help="Binning factor, applied in Fourier "
-                           "space when loading raw data. 1 = no binning, "
-                           "2 = 2x2 binning, 4 = 4x4 binning, supports "
-                           "non-integer values")
-
-        line = form.addLine('Resolution to fit',
-                            help='Resolution in Angstrom to consider in fit.')
-        line.addParam('range_min', params.FloatParam, default=500,
-                      label='Min')
-        line.addParam('range_max', params.FloatParam, default=10,
-                      label='Max')
-
-        form.addParam('bfactor', params.FloatParam, default=-500,
-                      label="B-factor",
-                      help="Downweight higher spatial frequencies using a "
-                           "B-factor, in Angstrom^2")
-
-        line = form.addLine('Motion model grid',
-                            help="Resolution of the motion model grid in "
-                                 "X, Y, and temporal dimensions, e.g. 5x5x40; "
-                                 "0 = auto")
-        line.addParam('x', params.IntParam, default=2, label='X')
-        line.addParam('y', params.IntParam, default=2, label='Y')
-        line.addParam('z', params.IntParam, default=1, label='Temporal')
+        self.motionGridParameters(form)
 
         # form.addParam('average_halves', params.BooleanParam,
         #               default=False,
         #               label='Do even and odd ?',
         #               help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
 
-        form.addSection(label="Gain and defects")
-        form.addParam('gainSwap', params.EnumParam,
-                      choices=['no swap', 'transpose X/Y'],
-                      label="Transpose gain reference:",
-                      default=0,
-                      display=params.EnumParam.DISPLAY_COMBO)
+        self.gainParameters(form)
 
-        form.addParam('gainFlip', params.EnumParam,
-                      choices=['no flip', 'flip X', 'flip Y'],
-                      label="Flip gain reference:", default=0,
-                      display=params.EnumParam.DISPLAY_COMBO)
 
     # --------------------------- STEPS functions -----------------------------
     def insertInitialSteps(self):
