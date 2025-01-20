@@ -43,7 +43,7 @@ from warp.constants import *
 from warp.utils import parseCtfXMLFile
 
 
-class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
+class ProtWarpTSMotionCorr(ProtMovieAlignBase, ProtTomoBase):
     """
     Warp corrects images for global and local motion as well as it estimates the local defocus of the tilt images.
 
@@ -94,14 +94,14 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        ProtMovieAlignBase.motionGridParameters(self, form)
+        self.motionGridParameters(form)
 
         form.addParam('average_halves', params.BooleanParam,
                       default=False,
                       label='Do even and odd ?',
                       help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
 
-        ProtMovieAlignBase.gainParameters(self, form)
+        self.gainParameters(form)
 
         form.addSection(label="CTF")
 
