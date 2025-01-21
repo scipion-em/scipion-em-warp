@@ -433,6 +433,9 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tsSet = self.TiltSeries
         if tsSet:
+            properties = {"sr": tsSet.getSamplingRate()}
+            psdStack = ImageStack(properties=properties)
+            newBinaryName = os.path.join(processingFolder, tsId + '_psd.mrcs')
             ts = self.TiltSeries.getItem(TiltSeries.TS_ID_FIELD, tsId)
             if ts.isEnabled():
                 tsId = ts.getTsId()
@@ -466,9 +469,13 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                         newCTFTomo.setResolution(0)
                         newCTFTomo.setFitQuality(0)
                         newCTFTomo.standardize()
+                        newCTFTomo.setPsdFile(f"{index + 1}@" + newBinaryName)
                         newCTFTomoSeries.append(newCTFTomo)
+                        psd = newCTFTomo.computePsd(ti)
+                        # psdStack.append(psd)
                         index += 1
 
+                ImageReadersRegistry.write(psdStack, newBinaryName, isStack=True)
                 outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
                 outputSetOfCTFTomoSeries.write()
                 self._store(outputSetOfCTFTomoSeries)
@@ -539,8 +546,8 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         else:
             outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
                                                                  template='CTFmodels%s.sqlite')
-            tsSet = self.inputTSMovies.get()
-            outputSetOfCTFTomoSeries.setSetOfTiltSeries(self.inputTSMovies)
+            tsSet = self.TiltSeries
+            outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
             self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
