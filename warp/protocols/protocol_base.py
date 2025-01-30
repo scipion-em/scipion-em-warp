@@ -249,7 +249,7 @@ class ProtWarpBase(EMProtocol):
         #    We need to do this because warp needs both folders: The tiltimages folder to get
         #    the header of the images (it only needs the first tiltimage of each tiltseries),
         #    and the averages folder to read them.
-        if isTiltSeries or createSetting:
+        if isTiltSeries:
             tiltSeriesFiles = glob.glob(os.path.join(imagesFolder, '*'))
             averagesFolder = os.path.join(imagesFolder, AVERAGE_FOLDER)
             pwutils.makePath(averagesFolder)
@@ -258,6 +258,7 @@ class ProtWarpBase(EMProtocol):
                 destFolder = os.path.join(averagesFolder, fileName)
                 os.symlink('../' + fileName, destFolder)
 
+        if createSetting:
             # 3. Create warp_tiltseries.settings file
             processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
             if isinstance(objSet, TiltSeries):
