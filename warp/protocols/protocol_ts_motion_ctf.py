@@ -120,6 +120,21 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       label="Flip gain reference:", default=0,
                       display=params.EnumParam.DISPLAY_COMBO)
 
+        form.addSection("EER")
+        form.addParam('EERtext', params.LabelParam,
+                      label="These options are ignored for non-EER movies.")
+        form.addParam('eer_ngroups', params.IntParam, default=16,
+                      label='EER fractionation',
+                      help="Number of groups to combine raw EER frames into, i.e. number of 'virtual' "
+                           "frames in resulting stack; use negative value to specify the number of "
+                           "frames per virtual frame instead")
+        form.addParam('eer_groupexposure', params.FloatParam, default=None,
+                      allowsNull=True,
+                      label='EER group exposure',
+                      help="As an alternative to EER fractionation, fractionate the frames so that a group will "
+                           "have this exposure in e-/A^2; this overrides EER fractionation"
+                           "\nFractionate such that each fraction "
+                           "has about 0.5 to 1.25 e/A2.")
         form.addSection(label="CTF")
 
         form.addParam('estimateCTF', params.BooleanParam, default=True,
@@ -192,7 +207,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self.samplingRate = inputTSMovies.getSamplingRate()
         self._insertFunctionStep(self.createFrameSeriesSettingStep, needsGPU=False)
         self._insertFunctionStep(self.createTiltSeriesSettingStep, needsGPU=False)
-        self._insertFunctionStep(self.dataPrepare, inputTSMovies, True, needsGPU=False)
+        self._insertFunctionStep(self.dataPrepare, inputTSMovies, False, needsGPU=False)
         self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
         self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
 
@@ -216,6 +231,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             "--exposure": exposure,
             "--output": os.path.abspath(self._getExtraPath(FRAMESERIES_SETTINGS)),
         }
+
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if gainPath:
@@ -433,9 +453,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tsSet = self.TiltSeries
         if tsSet:
-            properties = {"sr": tsSet.getSamplingRate()}
-            psdStack = ImageStack(properties=properties)
-            newBinaryName = os.path.join(processingFolder, tsId + '_psd.mrcs')
+            psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
             ts = self.TiltSeries.getItem(TiltSeries.TS_ID_FIELD, tsId)
             if ts.isEnabled():
                 tsId = ts.getTsId()
@@ -469,13 +487,10 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                         newCTFTomo.setResolution(0)
                         newCTFTomo.setFitQuality(0)
                         newCTFTomo.standardize()
-                        newCTFTomo.setPsdFile(f"{index + 1}@" + newBinaryName)
+                        newCTFTomo.setPsdFile(f"{index}@" + psdStack)
                         newCTFTomoSeries.append(newCTFTomo)
-                        psd = newCTFTomo.computePsd(ti)
-                        # psdStack.append(psd)
                         index += 1
 
-                ImageReadersRegistry.write(psdStack, newBinaryName, isStack=True)
                 outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
                 outputSetOfCTFTomoSeries.write()
                 self._store(outputSetOfCTFTomoSeries)

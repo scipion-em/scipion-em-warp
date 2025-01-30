@@ -70,6 +70,7 @@ AVERAGE_FOLDER = 'average'
 SETTINGS_FOLDER = 'settings'
 TILTSERIES_FOLDER = 'warp_tiltseries'
 TILTSERIE_SETTINGS = "warp_tiltseries.settings"
+POWERSPECTRUM_FOLDER = 'powerspectrum'
 FRAMESERIES_FOLDER = 'warp_frameseries'
 FRAMESERIES_SETTINGS = "warp_frameseries.settings"
 RECONSTRUCTION_FOLDER = 'reconstruction'
