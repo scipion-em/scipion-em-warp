@@ -138,10 +138,10 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                             " set to i.e. *0 1 2*.")
 
     def _insertAllSteps(self):
-        self._insertFunctionStep(self.dataPrepare, self.inputSet.get())
-        self._insertFunctionStep(self.tsCtfEstimationStep)
-        self._insertFunctionStep(self.tomoReconstructionStep)
-        self._insertFunctionStep(self.createOutputStep)
+        self._insertFunctionStep(self.dataPrepare, self.inputSet.get(), True, needsGPU=False)
+        self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
+        self._insertFunctionStep(self.tomoReconstructionStep, needsGPU=True)
+        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
 
     def tsCtfEstimationStep(self):
         """CTF estimation"""
