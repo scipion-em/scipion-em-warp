@@ -288,8 +288,13 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
     def tsDefocusHandStep(self):
         """Defocus handedness"""
         self.info(">>> Starting defocus handedness...")
+        objSet = self.inputTSMovies.get()
+        settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
+        tsId = objSet.getFirstItem().getTsId()
+        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
+            "--settings": tsSettingFilePath,
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --check'
