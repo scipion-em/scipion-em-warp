@@ -27,6 +27,7 @@
 
 import os.path
 
+from pwem.tests.protocols.test_projection_edit import samplingRate
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 from pyworkflow.object import Set
@@ -212,6 +213,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
                 # Set default tomogram origin
                 newTomogram.setOrigin(newOrigin=None)
+                newTomogram.fixMRCVolume(True)
                 outputSetOfTomograms.append(newTomogram)
                 outputSetOfTomograms.updateDim()
                 outputSetOfTomograms.update(newTomogram)
