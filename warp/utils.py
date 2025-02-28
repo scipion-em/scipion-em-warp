@@ -23,12 +23,14 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+import os
 
 import numpy as np
 import math
 import scipy.fft
 import xml.etree.ElementTree as eTree
 
+from warp import TILTIMAGES_FOLDER, FRAMESERIES_FOLDER
 
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
     and https://github.com/Heng-Z/IsoNet
@@ -175,3 +177,40 @@ def parseCtfXMLFile(defocusFilePath):
         gridCtfData["Nodes"][tiId] = defocusValue * 1e4
 
     return ctfData, gridCtfData
+
+
+def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries):
+        """Generate the .tomostar files from TS"""
+        _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
+        _file = open(_fileName, 'a+')
+        header = """
+data_
+
+loop_
+_wrpMovieName #1
+_wrpAngleTilt #2
+_wrpAxisAngle #3
+_wrpAxisOffsetX #4
+_wrpAxisOffsetY #5
+_wrpDose #6
+_wrpAverageIntensity #7  
+_wrpMaskedFraction #8
+"""
+        _file.write(header)
+
+        sortedTiValues = sorted(tiValues)
+        imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
+        for acqOrder in sortedTiValues:
+            value = tiValues[acqOrder]
+            tiPath = '../%s/' % imagesFolder + value[0]
+            angleTilt = value[1]
+            axisAngle = value[2]
+            shiftX = f"{value[3]:.6f}"
+            shiftY = f"{value[4]:.6f}"
+            dose = value[5]
+            averageIntensity = 3.721
+            maskedFraction = value[7]
+            _file.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
+                tiPath, angleTilt, axisAngle, shiftX, shiftY, dose, averageIntensity, maskedFraction))
+
+        _file.close()
