@@ -32,7 +32,7 @@ import numpy
 
 from pyworkflow.constants import ID_ATTRIBUTE
 from pyworkflow.protocol import ProtStreamingBase
-from pyworkflow.protocol.params import (FloatParam, Positive, LEVEL_ADVANCED, PointerParam, IntParam)
+from pyworkflow.protocol.params import (FloatParam, Positive, LEVEL_ADVANCED, PointerParam, IntParam, EnumParam)
 import pyworkflow.utils as pwutils
 from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
 from pwem.protocols import EMProtocol
