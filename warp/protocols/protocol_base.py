@@ -474,13 +474,6 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
 
         return outputSet
 
-    def _getStreamingSleepOnWait(self):
-        """ Retrieves the configured sleep duration for waiting during streaming.
-            Returns:
-            - int: The sleep duration in seconds during streaming wait.
-            """
-        return self.getAttributeValue('streamingSleepOnWait', 0)
-
     def _getStreamingBatchSize(self):
         """
             Retrieves the configured batch size for streaming operations.
@@ -488,15 +481,6 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             - int: The batch size for streaming operations.
             """
         return self.getAttributeValue('streamingBatchSize', 1)
-
-    def _streamingSleepOnWait(self):
-        """ This method should be used by protocols that want to sleep
-        when there is not more work to do.
-        """
-        sleepOnWait = self._getStreamingSleepOnWait()
-        if sleepOnWait > 0:
-            self.info("Not much work to do now, sleeping %s seconds." % sleepOnWait)
-            time.sleep(sleepOnWait)
 
     def getFileName(self, micName):
         """ Retrieves the file name associated with a given micrograph name.
