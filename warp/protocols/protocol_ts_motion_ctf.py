@@ -25,8 +25,6 @@
 # ******************************************************************************
 
 import os
-import time
-
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
