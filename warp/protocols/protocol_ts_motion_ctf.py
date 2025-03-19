@@ -130,6 +130,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         form.addParam('EERtext', params.LabelParam,
                       label="These options are ignored for non-EER movies.")
         form.addParam('eer_ngroups', params.IntParam, default=16,
+                      allowsNull=True,
                       label='EER fractionation',
                       help="Number of groups to combine raw EER frames into, i.e. number of 'virtual' "
                            "frames in resulting stack; use negative value to specify the number of "
@@ -236,7 +237,8 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         }
 
         if extension == '.eer':
-            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_ngroups.get() is not None:
+                argsDict['--eer_ngroups'] = self.eer_ngroups.get()
             if self.eer_groupexposure.get():
                 argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
@@ -257,6 +259,8 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         setOfTSMovies = self.inputTSMovies.get()
         sr = setOfTSMovies.getSamplingRate()
         exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
+        firstTSMovie = setOfTSMovies.getFirstItem()
+        fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
         settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
         pwutils.makePath(settingsFolder)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
@@ -281,6 +285,11 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
             y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
 
             argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
@@ -337,8 +346,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --check'
         self.runJob(self.getPlugin().getProgram(TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
-        with self._lock:
-            self.createOutputDefocusHand()
+        self.createOutputDefocusHand()
 
     def proccessTSMoviesStep(self, tsId) -> None:
         """Estimate motion in frame series, produce aligned averages and register the output"""
@@ -556,7 +564,6 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         stdoutFile = os.path.abspath(os.path.join(self.getPath(), 'logs', 'run.stdout'))
         with open(stdoutFile, 'r', encoding='utf-8') as file:
             lines = file.readlines()
-        time.sleep(10)
         for line in reversed(lines):
             if 'Average correlation:' in line:
                 self.averageCorrelation.set(float(line.split()[-1]))
@@ -574,6 +581,8 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         ctfSize = 0
         if self.hasAttribute(OUTPUT_TILTSERIES):
             tilseriesSize = self.TiltSeries.getSize()
+        else:
+            self.averageCorrelation = Float()
         summary.append(f"Aligned tiltseries: {tilseriesSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.hasAttribute(OUTPUT_CTF_SERIE):
@@ -581,7 +590,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.handedness.get():
-            if self.averageCorrelation is not None:
+            if self.averageCorrelation.get():
                 text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
                 summary.append(f"Handedness: {self.averageCorrelation}  {text}")
             else:

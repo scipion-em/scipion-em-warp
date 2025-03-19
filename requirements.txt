@@ -1,0 +1,4 @@
+scipion-em>=3.9.3
+scipion-pyworkflow>=3.10.6
+emtable
+cryosparc-tools==4.5.0

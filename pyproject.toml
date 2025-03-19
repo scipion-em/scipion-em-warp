@@ -4,11 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scipion-em-warp"
-dynamic = ["version"]
-
-dependencies = [
-    "scipion-em", "emtools"
-]
+dynamic = ["version", "dependencies"]
 
 authors = [
     {name = "Grigory Sharov", email = "sharov.grigory@gmail.com"},
@@ -34,3 +30,4 @@ warp = "warp"
 
 [tool.setuptools.dynamic]
 version = {attr = "warp.__version__"}
+dependencies = {file = ["requirements.txt"]}
