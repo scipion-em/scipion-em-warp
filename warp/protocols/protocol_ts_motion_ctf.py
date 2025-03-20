@@ -25,8 +25,6 @@
 # ******************************************************************************
 
 import os
-import time
-
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, logger
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
@@ -38,12 +36,12 @@ from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
 from tomo.protocols import ProtTomoBase
 
 from warp import Plugin
-from warp.protocols.protocol_base import ProtWarpBase
+from warp.protocols.protocol_base import ProtWarpBase, ProtTSMovieAlignBase
 from warp.constants import *
-from warp.utils import parseCtfXMLFile
+from warp.utils import parseCtfXMLFile, tomoStarGenerate
 
 
-class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
+class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
     """ This protocol wraps WarpTools programs.
         Estimate motion in frame series, produce aligned averages, estimate CTF
     """
@@ -51,6 +49,11 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
     _label = 'tilt-series motion and ctf estimation'
     _devStatus = BETA
     evenOddCapable = True
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.averageCorrelation = Float()
+
     # -------------------------- DEFINE param functions -----------------------
 
     def _defineParams(self, form):
@@ -61,6 +64,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       help='Select a set of previously imported tilt series movies.')
         form.addSection('Alignment')
         self._defineAlignmentParams(form)
+        ProtTSMovieAlignBase._defineStreamingParams(self, form)
 
     def _defineAlignmentParams(self, form):
         form.addHidden(params.GPU_LIST, params.StringParam, default='0',
@@ -124,6 +128,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         form.addParam('EERtext', params.LabelParam,
                       label="These options are ignored for non-EER movies.")
         form.addParam('eer_ngroups', params.IntParam, default=16,
+                      allowsNull=True,
                       label='EER fractionation',
                       help="Number of groups to combine raw EER frames into, i.e. number of 'virtual' "
                            "frames in resulting stack; use negative value to specify the number of "
@@ -199,22 +204,20 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
                       expertLevel=params.LEVEL_ADVANCED,
                       label='Check the handedness ?',
                       help='Checking defocus handedness across a dataset ')
+        form.addParallelSection(threads=2, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
-    def _insertAllSteps(self):
-        self.averageCorrelation = Float()
-        inputTSMovies = self.inputTSMovies.get()
-        self.samplingRate = inputTSMovies.getSamplingRate()
-        self._insertFunctionStep(self.createFrameSeriesSettingStep, needsGPU=False)
-        self._insertFunctionStep(self.createTiltSeriesSettingStep, needsGPU=False)
-        self._insertFunctionStep(self.dataPrepare, inputTSMovies, False, needsGPU=False)
-        self._insertFunctionStep(self.proccessMoviesStep,  needsGPU=True)
-        self._insertFunctionStep(self.deleteIntermediateOutputsStep, needsGPU=False)
+
+    def insertInitialSteps(self):
+        self.samplingRate = self.getInputTSMovies().getSamplingRate()
+        createSettingStep = self._insertFunctionStep(self.createFrameSeriesSettingStep,
+                                                     prerequisites=[], needsGPU=False)
+        return [createSettingStep]
 
     def createFrameSeriesSettingStep(self):
         """ Create a settings file. """
         self.info(">>> Starting frame series settings creation...")
-        tsMovies = self.inputTSMovies.get()
+        tsMovies = self.getInputTSMovies()
         firstTSMovie = tsMovies.getFirstItem()
         fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
         folderData = os.path.abspath(os.path.dirname(fileName))
@@ -233,7 +236,8 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         }
 
         if extension == '.eer':
-            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_ngroups.get() is not None:
+                argsDict['--eer_ngroups'] = self.eer_ngroups.get()
             if self.eer_groupexposure.get():
                 argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
@@ -249,41 +253,83 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
         self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
-    def createTiltSeriesSettingStep(self):
-        self.info(">>> Starting tilt-series settings creation...")
-        objSet = self.inputTSMovies.get()
-        sr = objSet.getSamplingRate()
-        exposure = objSet.getAcquisition().getDosePerFrame()
+    def createTiltSeriesSettingStep(self, tsId):
+        self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
+        setOfTSMovies = self.inputTSMovies.get()
+        sr = setOfTSMovies.getSamplingRate()
+        exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
+        firstTSMovie = setOfTSMovies.getFirstItem()
+        fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
         settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
         pwutils.makePath(settingsFolder)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         pwutils.makePath(processingFolder)
-        for ts in objSet:
-            tsId = ts.getTsId()
-            tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
-            tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
-            argsDict = {
-                "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-                "--extension": "%s.tomostar" % tsId,
-                "--folder_processing": processingFolder,
-                "--bin": self.getBinFactor(),
-                '--angpix': sr,
-                "--output": tsSettingFilePath
-            }
+        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
+        argsDict = {
+            "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
+            "--extension": "%s.tomostar" % tsId,
+            "--folder_processing": processingFolder,
+            "--bin": self.getBinFactor(),
+            '--angpix': sr,
+            "--output": tsSettingFilePath
+        }
 
-            if exposure is not None:
-                argsDict['--exposure'] = -1 * exposure
+        if exposure is not None:
+            argsDict['--exposure'] = -1 * exposure
 
-            if hasattr(self, 'tomo_thickness'):
-                z = self.tomo_thickness.get()
-                x = self.x_dimension.get() or objSet.getDimensions()[0]
-                y = self.y_dimension.get() or objSet.getDimensions()[1]
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
+            y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
 
-                argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
 
-            cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
-            self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
+        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+
+    def dataPrepare(self, tsMovie):
+        """Creates the setting file that will be used by the different programs.
+           It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
+           the tiltimages."""
+        starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
+        pwutils.makePath(starFolder)
+        imagesFolder = self._getExtraPath(FRAMES_FOLDER)
+        invertTiltAngle = 1
+        pwutils.makePath(imagesFolder)
+
+        if tsMovie.isEnabled():
+            tsId = tsMovie.getTsId()
+            tiValues = {}
+            for ti in tsMovie.iterItems():
+                if ti.isEnabled():  # Excluding views
+                    dose = 0
+                    maskedFraction = 0
+                    shiftX = 0
+                    shiftY = 0
+                    axisAngle = 0
+                    amplitudeContrast = 0
+
+                    if tsMovie.hasAcquisition():
+                        axisAngle = tsMovie.getAcquisition().getTiltAxisAngle()
+                    if ti.getAcquisition():
+                        amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
+                        dose = ti.getAcquisition().getAccumDose()
+                    fileName = ti.getFileName()
+                    newBinaryName = os.path.basename(fileName)
+                    os.symlink(os.path.abspath(fileName), os.path.join(imagesFolder, os.path.basename(fileName)))
+
+                    tiValues[ti.getTiltAngle() * invertTiltAngle] = [newBinaryName, ti.getTiltAngle() * invertTiltAngle,
+                                                                     axisAngle, shiftX, shiftY, dose,
+                                                                     amplitudeContrast, maskedFraction]
+
+            tomoStarGenerate(tsId, tiValues, starFolder, 0)
 
     def tsDefocusHandStep(self):
         """Defocus handedness"""
@@ -301,30 +347,36 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         self.runJob(self.getPlugin().getProgram(TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
         self.createOutputDefocusHand()
 
-    def proccessMoviesStep(self) -> None:
+    def proccessTSMoviesStep(self, tsId) -> None:
         """Estimate motion in frame series, produce aligned averages and register the output"""
-        inputTSMovies = self.inputTSMovies.get()
-        for tsMovie in inputTSMovies.iterItems(iterate=False):
-            tsId = tsMovie.getTsId()
-            warpMoviesNamesList = [os.path.abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
-            warpMoviesNamesList = " ".join(warpMoviesNamesList)
-            self.info(">>> Starting estimate motion for %s..." % tsId)
-            self.fsMotionAndCTF(tsMovie, warpMoviesNamesList)
+        tsMovie = self.getInputTSMovies().getItem(TiltSeries.TS_ID_FIELD, tsId)
+        warpMoviesNamesList = [os.path.abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
+        warpMoviesNamesList = " ".join(warpMoviesNamesList)
+        self.info(">>> Starting estimate motion for %s..." % tsId)
+        self.fsMotionAndCTF(tsMovie, warpMoviesNamesList)
+        if self.estimateCTF.get():
+            self.createTiltSeriesSettingStep(tsId)
+            self.dataPrepare(tsMovie)
+            self.tsCtfEstimationStep(tsId)
+        with self._lock:
             self.createOutputTS(tsMovie)
             if self.estimateCTF.get():
-                self.tsCtfEstimationStep(tsId)
                 self.createOutputCTF(tsId)
 
-        if self.estimateCTF.get() and self.handedness.get():
-            self.tsDefocusHandStep()
-
-        self._closeOutputSet()
+    def insertFinalSteps(self, proccessTSMoviesSteps) -> list:
+        """The final steps inserted into the protocol"""
+        finalSteps = []
+        if self.handedness.get():
+            finalStep = self._insertFunctionStep(self.tsDefocusHandStep, prerequisites=proccessTSMoviesSteps,
+                                                 needsGPU=True)
+            finalSteps.append(finalStep)
+        return finalSteps
 
     def fsMotionAndCTF(self, tsMovie, warpMoviesNamesList):
         # Prepare a list of absolute paths for the movies to process
         # Each movie name in micNamesList is converted to an absolute path and join them into a
         # single string separated by spaces (warp specification)
-        self.info(">>> Starting align motion process...")
+        self.info(">>> Starting align motion process (%s) ..." % tsMovie.getTsId())
         inputTSAdquisition = tsMovie.getFirstItem().getAcquisition()
         outputProcessingFolder = os.path.abspath(os.path.join(self._getExtraPath(FRAMESERIES_FOLDER)))
         argsDict = {
@@ -368,7 +420,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
 
     def tsCtfEstimationStep(self, tsId):
         """CTF estimation"""
-        self.info(">>> Starting ctf estimation to %s" %tsId)
+        self.info(">>> Starting ctf estimation to %s" % tsId)
         inputTSAdquisition = self.inputTSMovies.get().getFirstItem().getAcquisition()
         settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIE_SETTINGS)
         argsDict = {
@@ -382,7 +434,13 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
             "--cs": inputTSAdquisition.getSphericalAberration(),
             "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
         }
-        self.runProgram(argsDict, TS_CTF)
+
+        gpuList = self.getGpuList()
+        if gpuList:
+            argsDict['--device_list'] = ' '.join(map(str, gpuList))
+
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        self.runJob(self.getPlugin().getProgram(TS_CTF), cmd, executable='/bin/bash')
 
     def createOutputTS(self, tsMovie):
         self.info(">>> Generating output for %s..." % tsMovie.getTsId())
@@ -505,7 +563,6 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         stdoutFile = os.path.abspath(os.path.join(self.getPath(), 'logs', 'run.stdout'))
         with open(stdoutFile, 'r', encoding='utf-8') as file:
             lines = file.readlines()
-
         for line in reversed(lines):
             if 'Average correlation:' in line:
                 self.averageCorrelation.set(float(line.split()[-1]))
@@ -523,6 +580,8 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         ctfSize = 0
         if self.hasAttribute(OUTPUT_TILTSERIES):
             tilseriesSize = self.TiltSeries.getSize()
+        else:
+            self.averageCorrelation = Float()
         summary.append(f"Aligned tiltseries: {tilseriesSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.hasAttribute(OUTPUT_CTF_SERIE):
@@ -530,11 +589,7 @@ class ProtWarpTSMotionCorr(ProtWarpBase, ProtTomoBase):
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.handedness.get():
-            if self.hasAttribute('averageCorrelation') and self.averageCorrelation.get():
-                # text = " (The average correlation is positive, which means that the defocus handedness should be set to '%s')"
-                # flip = 'no flip'
-                # if self.averageCorrelation.get() < 0:
-                #     flip = 'flip'
+            if self.averageCorrelation.get():
                 text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
                 summary.append(f"Handedness: {self.averageCorrelation}  {text}")
             else:

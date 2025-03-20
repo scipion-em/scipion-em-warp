@@ -38,11 +38,11 @@ from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
 from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
-from tomo.objects import TiltSeries, SetOfTiltSeries
+from tomo.objects import TiltSeries, SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
                             FRAMES_FOLDER, FRAMESERIES_FOLDER)
-from warp.utils import tom_deconv
+from warp.utils import tom_deconv, tomoStarGenerate
 
 
 class ProtWarpBase(EMProtocol):
@@ -243,7 +243,7 @@ class ProtWarpBase(EMProtocol):
                                                                          axisAngle, shiftX, shiftY, dose,
                                                                          amplitudeContrast, maskedFraction]
 
-                self.tomoStarGenerate(tsId, tiValues, starFolder, isTiltSeries)
+                tomoStarGenerate(tsId, tiValues, starFolder, isTiltSeries)
 
         # 2. Create symbolic links from tiltseries folder to average folder
         #    We need to do this because warp needs both folders: The tiltimages folder to get
@@ -286,43 +286,6 @@ class ProtWarpBase(EMProtocol):
 
             self.runJob(plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
-    @staticmethod
-    def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries):
-        """Generate the .tomostar files from TS"""
-        _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
-        _file = open(_fileName, 'a+')
-        header = """
-data_
-
-loop_
-_wrpMovieName #1
-_wrpAngleTilt #2
-_wrpAxisAngle #3
-_wrpAxisOffsetX #4
-_wrpAxisOffsetY #5
-_wrpDose #6
-_wrpAverageIntensity #7  
-_wrpMaskedFraction #8
-"""
-        _file.write(header)
-
-        sortedTiValues = sorted(tiValues)
-        imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
-        for acqOrder in sortedTiValues:
-            value = tiValues[acqOrder]
-            tiPath = '../%s/' % imagesFolder + value[0]
-            angleTilt = value[1]
-            axisAngle = value[2]
-            shiftX = f"{value[3]:.6f}"
-            shiftY = f"{value[4]:.6f}"
-            dose = value[5]
-            averageIntensity = 3.721
-            maskedFraction = value[7]
-            _file.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                tiPath, angleTilt, axisAngle, shiftX, shiftY, dose, averageIntensity, maskedFraction))
-
-        _file.close()
-
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
     """
@@ -355,24 +318,14 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
         of some protocols that support stream processing.
         It will add a Streaming section together with the following
         params:
-            streamingSleepOnWait: Some streaming protocols are quite fast,
-                so, checking input/output updates creates an IO overhead.
-                This params allows them to sleep (without consuming resources)
-                to wait for new work to be done.
             streamingBatchSize: For some programs it is more efficient to process
                 many items at once and not one by one. So this parameter will
                 allow to group a number of items to be processed in the same
                 protocol step. This can also reduce some IO overhead and spawning
                 new OS processes.
         """
-        form.addSection("Streaming")
-
-        form.addParam("streamingSleepOnWait", IntParam, default=10,
-                      label="Sleep when waiting (secs)",
-                      help="If you specify a value greater than zero, "
-                           "it will be the number of seconds that the "
-                           "protocol will sleep when waiting for new "
-                           "input data in streaming mode. ")
+        ProtStreamingBase._defineStreamingParams(self, form)
+        form.getSection("Streaming")
         form.addParam("streamingBatchSize", IntParam, default=1,
                       label="Batch size",
                       help="This value allows to group several items to be "
@@ -521,13 +474,6 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
 
         return outputSet
 
-    def _getStreamingSleepOnWait(self):
-        """ Retrieves the configured sleep duration for waiting during streaming.
-            Returns:
-            - int: The sleep duration in seconds during streaming wait.
-            """
-        return self.getAttributeValue('streamingSleepOnWait', 0)
-
     def _getStreamingBatchSize(self):
         """
             Retrieves the configured batch size for streaming operations.
@@ -535,15 +481,6 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
             - int: The batch size for streaming operations.
             """
         return self.getAttributeValue('streamingBatchSize', 1)
-
-    def _streamingSleepOnWait(self):
-        """ This method should be used by protocols that want to sleep
-        when there is not more work to do.
-        """
-        sleepOnWait = self._getStreamingSleepOnWait()
-        if sleepOnWait > 0:
-            self.info("Not much work to do now, sleeping %s seconds." % sleepOnWait)
-            time.sleep(sleepOnWait)
 
     def getFileName(self, micName):
         """ Retrieves the file name associated with a given micrograph name.
@@ -556,3 +493,136 @@ class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
         if micName in self._moviesInProcess:
             return self._moviesInProcess[micName]
         return None
+
+
+class ProtTSMovieAlignBase(EMProtocol, ProtStreamingBase):
+    """
+    Protocol base to use in streaming ts motion correction protocols
+    """
+    OUT_TS = 'TiltSeries'
+    OUT_CTFTOMO = 'CTFTomoSeries'
+    _possibleOutputs = {OUT_TS: SetOfTiltSeries,
+                        OUT_CTFTOMO: SetOfCTFTomoSeries}
+    _lastInputId = 0
+    TS_ID_ATTR = '_tsId'
+
+    def __init__(self, **kwargs):
+        EMProtocol.__init__(self, **kwargs)
+        ProtStreamingBase.__init__(self, **kwargs)
+        self._moviesToProcess = {}
+        self._moviesInProcess = {}
+
+    def _defineStreamingParams(self, form):
+        """ This function can be called during the _defineParams method
+        of some protocols that support stream processing.
+        It will add a Streaming section together with the following
+        params:
+            streamingSleepOnWait: Some streaming protocols are quite fast,
+                so, checking input/output updates creates an IO overhead.
+                This params allows them to sleep (without consuming resources)
+                to wait for new work to be done.
+        """
+        ProtStreamingBase._defineStreamingParams(self, form)
+
+    def stepsGeneratorStep(self) -> None:
+        """
+        Generates and inserts processing steps for streaming input tiltseries movies, processing them in batches.
+        This step should be implemented by any streaming protocol.
+        It should check its input and when ready conditions are met, call the self._insertFunctionStep method.
+        The method repeatedly checks for new input movies, processes them in batches, and ensures
+        that all steps are completed before closing the output.
+        """
+        self.getNewInputTSMovies(removeDone=True)
+        batches = self._getStreamingBatchSize()  # The number of tilt images movies processed(per tiltseies movies) in each batch
+        alive = True  # indicate whether the streaming input is still active.
+
+        initialSteps = self.insertInitialSteps()  # the initial steps inserted into the protocol(must be re-implemented in the plugin).
+        proccessTSMoviesSteps = []  # list that stores the processing steps for each batch of movies
+        while alive:
+            if self.getInputTSMovies(loadProperties=True).isStreamClosed():
+                alive = False
+            tsToProcess = list(self._moviesToProcess.keys())
+            # move into the list and launch steps with tiltseries movies.
+            # we assume that the last sublist may be incomplete(remnant).
+            for tsId in tsToProcess:
+                self.removeDoneTS(tsId)
+                proccessTSMoviesStep = self._insertFunctionStep(self.proccessTSMoviesStep, tsId,
+                                                                prerequisites=initialSteps, needsGPU=self.usesGpu())
+                proccessTSMoviesSteps.append(proccessTSMoviesStep)
+
+            if not alive:
+                break
+            self._streamingSleepOnWait()
+            self.getNewInputTSMovies()
+        finalSteps = self.insertFinalSteps(proccessTSMoviesSteps)
+        self._insertFunctionStep(self.closeOutputStep, prerequisites=proccessTSMoviesSteps + finalSteps, needsGPU=False)
+
+    def insertInitialSteps(self) -> list:
+        """The initial steps inserted into the protocol"""
+        return []
+
+    def insertFinalSteps(self, proccessTSMoviesSteps) -> list:
+        """The final steps inserted into the protocol"""
+        return []
+
+    def proccessTSMoviesStep(self, tsId) -> None:
+        pass
+
+    def removeDoneTS(self, tsId) -> None:
+        """Moves the micNames from `_moviesToProcess`to `_moviesInProcess`,
+           indicating that it has been processed."""
+        self._moviesInProcess[tsId] = self._moviesToProcess[tsId]
+        self._moviesToProcess.pop(tsId)
+
+    def getOutputTS(self):
+        """ Retrieves the unique names of the TS from the output set.
+            Returns:
+            - list: A list of unique TS ids, or an empty list if the output set is not available.
+            """
+        outputSet = self.getOutputSet(createSet=False)
+        if outputSet is not None:
+            return outputSet.getUniqueValues(self.TS_ID_ATTR)  #TODO When pwem is released, use Micrograph.MIC_NAME
+        return []
+
+    def getNewInputTSMovies(self, removeDone=False):
+        """ Retrieves new tiltseries movies from the input set, with an option to exclude already processed ones.
+            This method fetches unique tiltseries names, IDs, and file paths from the input tilt series movie set,
+            where the IDs are greater than the last processed input ID (`self._lastInputId`).
+
+            Parameters:
+            - removeDone (bool): if True, excludes tilt series movies that have already been processed (present in the output set).
+            """
+        inputSet = self.getInputTSMovies()
+        results = inputSet.getUniqueValues([self.TS_ID_ATTR, ID_ATTRIBUTE],
+                                           '%s > %s' % (ID_ATTRIBUTE, self._lastInputId))
+        newIds = results[ID_ATTRIBUTE]
+        if newIds:
+            self._lastInputId = max(results[ID_ATTRIBUTE])
+            outputTS = self.getOutputTS() if removeDone else []
+            for index, tsId in enumerate(results[self.TS_ID_ATTR]):
+                if not removeDone or tsId not in outputTS:
+                    self._moviesToProcess[tsId] = results[self.TS_ID_ATTR][index]
+
+    def closeOutputStep(self):
+        """Finalizes and closes the output sets. """
+        self._closeOutputSet()
+
+    def getInputTSMovies(self, loadProperties=False) -> SetOfTiltSeriesM:
+        """ Retrieves the set of input ts movies.
+            Returns:
+            - SetOfTSMovies: The set of input tilt series movies to be processed.  """
+        if loadProperties:
+            self.inputTSMovies.get().loadAllProperties()
+        return self.inputTSMovies.get()
+
+    def getOutputSet(self, createSet=True) -> SetOfTiltSeries:
+        """ Retrieves the output set of TS, creating it if necessary.
+            Parameters:
+            - createSet (bool): If True, a new output set will be created if it doesn't already exist.
+            Returns:
+            - SetOfTiltSeries: The output set of TS, either existing or newly created.
+            """
+        outputSet = getattr(self, self.OUT_TS, None)
+        return outputSet
+
+
