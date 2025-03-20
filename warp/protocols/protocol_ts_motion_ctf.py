@@ -204,6 +204,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                       expertLevel=params.LEVEL_ADVANCED,
                       label='Check the handedness ?',
                       help='Checking defocus handedness across a dataset ')
+        form.addParallelSection(threads=2, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
 
