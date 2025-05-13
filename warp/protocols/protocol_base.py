@@ -36,11 +36,11 @@ from pwem.objects import SetOfMicrographs, SetOfMovies, Micrograph
 from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
-from tomo.objects import TiltSeries, SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
+from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
 from warp import Plugin
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
-                            FRAMES_FOLDER, FRAMESERIES_FOLDER, SETTINGS_FOLDER)
+                            SETTINGS_FOLDER)
 from warp.utils import tom_deconv, tomoStarGenerate
 
 

@@ -36,7 +36,7 @@ from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
 from tomo.protocols import ProtTomoBase
 
 from warp import Plugin
-from warp.protocols.protocol_base import ProtWarpBase, ProtTSMovieAlignBase
+from warp.protocols.protocol_base import ProtTSMovieAlignBase
 from warp.constants import *
 from warp.utils import parseCtfXMLFile, tomoStarGenerate
 

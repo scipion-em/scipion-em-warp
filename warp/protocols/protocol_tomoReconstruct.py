@@ -26,12 +26,6 @@
 # **************************************************************************
 
 import os.path
-import time
-
-import numpy as np
-
-from imod.protocols.protocol_base import IN_CTF_TOMO_SET
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 from pyworkflow.object import Set
@@ -39,14 +33,12 @@ import pyworkflow.utils as pwutils
 import tomo.objects as tomoObj
 from tomo.protocols import ProtTomoBase
 
-from warp import Plugin
 from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
                             OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
                             RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
-                            TOMOSTAR_FOLDER, TILTIMAGES_FOLDER, SETTINGS_FOLDER, CREATE_SETTINGS, AVERAGE_FOLDER,
-                            TS_IMPORT_ALIGNMENTS)
+                            TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS)
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import tomoStarGenerate, parseCtfXMLFile, updateCtFXMLFile
+from warp.utils import updateCtFXMLFile
 
 
 class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):

@@ -24,13 +24,8 @@
 # *
 # ******************************************************************************
 import os
-import time
-
 import emtable
-import numpy as np
 
-
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
@@ -240,10 +235,10 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             "--settings": os.path.abspath(settingFile),
             # "--window": 512,
             # "--range_low": 30,
-            "--range_high": 7,
+            # "--range_high": 7,
             # # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
             # "--defocus_min": 0.5,
-            "--defocus_max": 8,
+            # "--defocus_max": 8,
             # "--voltage": int(inputTSAdquisition.getVoltage()),
             # "--cs": inputTSAdquisition.getSphericalAberration(),
             # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
