@@ -1,4 +1,6 @@
 3.5.0: Procesing TiltSerieMovies one by one(motioncorr and ctf estimation) in streaming
+       Big code refactoring
+       Processing Tiltseries one by one(reconstruction) and eliminating intermediate results
 
 3.4.3: Fixing an error related wit the settings files creation
 3.4.2: Allowing floating point resolutions, b-factors and binning

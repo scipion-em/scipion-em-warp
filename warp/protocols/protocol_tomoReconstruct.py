@@ -26,18 +26,27 @@
 # **************************************************************************
 
 import os.path
+import time
 
-from pwem.tests.protocols.test_projection_edit import samplingRate
+import numpy as np
+
+from imod.protocols.protocol_base import IN_CTF_TOMO_SET
+from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 from pyworkflow.object import Set
+import pyworkflow.utils as pwutils
 import tomo.objects as tomoObj
 from tomo.protocols import ProtTomoBase
 
+from warp import Plugin
 from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
                             OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
-                            RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER)
+                            RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
+                            TOMOSTAR_FOLDER, TILTIMAGES_FOLDER, SETTINGS_FOLDER, CREATE_SETTINGS, AVERAGE_FOLDER,
+                            TS_IMPORT_ALIGNMENTS)
 from warp.protocols.protocol_base import ProtWarpBase
+from warp.utils import tomoStarGenerate, parseCtfXMLFile, updateCtFXMLFile
 
 
 class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
@@ -61,6 +70,12 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                       pointerClass='SetOfTiltSeries',
                       label='Input set of tilt-series',
                       help='Input set of tilt-series')
+        form.addParam('inputSetOfCtfTomoSeries',
+                      params.PointerParam,
+                      label="Input CTF estimation",
+                      pointerClass='SetOfCTFTomoSeries',
+                      help='Select the CTF estimation for the set '
+                           'of tilt-series.')
 
         form.addSection(label="Reconstruction")
 
@@ -139,35 +154,69 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                             " set to i.e. *0 1 2*.")
 
     def _insertAllSteps(self):
-        self._insertFunctionStep(self.dataPrepare, self.inputSet.get(), True, needsGPU=False)
-        self._insertFunctionStep(self.tsCtfEstimationStep, needsGPU=True)
-        self._insertFunctionStep(self.tomoReconstructionStep, needsGPU=True)
-        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
+        inputTs = self.inputSet.get()
+        for ts in inputTs.iterItems(iterate=False):
+            if not ts.isEnabled():
+                continue
+            self._insertFunctionStep(self.tomoReconstructionStep, ts, needsGPU=True)
+            self._insertFunctionStep(self.createOutput, ts, needsGPU=False)
+            self.cleanIntermediateResults()
 
-    def tsCtfEstimationStep(self):
+        self._insertFunctionStep(self._closeOutputSet, needsGPU=False)
+
+    def tsCtfEstimation(self, ts):
         """CTF estimation"""
-        self.info(">>> Starting ctf estimation...")
-        inputTSAdquisition = self.inputSet.get().getFirstItem().getAcquisition()
+        self.info(">>> Generating ctf estimation file fo %s ..." % ts.getTsId())
+        inputTSAdquisition = ts.getAcquisition()
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
-            "--window": 512,
-            "--range_low": 30,
-            "--range_high": 8,
-            # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
-            "--defocus_min": 0.5,
-            "--defocus_max": 5,
-            "--voltage": int(inputTSAdquisition.getVoltage()),
-            "--cs": inputTSAdquisition.getSphericalAberration(),
-            "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
+            "--settings": os.path.abspath(settingFile),
+            # "--window": 512,
+            # "--range_low": 30,
+            # "--range_high": 8,
+            # # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
+            # "--defocus_min": 0.5,
+            # "--defocus_max": 5,
+            # "--voltage": int(inputTSAdquisition.getVoltage()),
+            # "--cs": inputTSAdquisition.getSphericalAberration(),
+            # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
         }
-        self.runProgram(argsDict, TS_CTF)
+        try:
+            self.runProgram(argsDict, TS_CTF)
+        except Exception:
+            self.info(">>> Error generating ctf estimation file...")
+        ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+        updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
 
-    def tomoReconstructionStep(self):
+    def tsImportAligments(self, ts):
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
+        pwutils.makePath(tiltstackFolder)
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ')
+        self.info(">>> Starting import aligments...")
+        angpix = ts.getSamplingRate()
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        argsDict = {
+            "--settings": os.path.abspath(settingFile),
+            '--alignments': os.path.abspath(tiltstackFolder),
+            "--alignment_angpix": angpix,
+        }
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        self.runJob(self.getPlugin().getProgram(TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+
+    def tomoReconstructionStep(self, ts):
         """Tomo Reconstruction"""
+        self.createTiltSeriesSetting(ts)
+        self.tsDataPrepare(ts)
+        self.tsCtfEstimation(ts)
+        self.tsImportAligments(ts)
         self.info(">>> Starting tomogram reconstruction...")
         angpix = self.getAngPix()
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS)),
+            "--settings": os.path.abspath(settingFile),
             "--angpix": angpix,
         }
 
@@ -183,48 +232,43 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
         self.runProgram(argsDict, TS_RECONSTRUCTION, othersCmds=cmd)
 
-    def createOutputStep(self):
+    def createOutput(self, ts):
         self.info(">>> Generating outputs...")
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tomogramFolder = os.path.join(processingFolder, RECONSTRUCTION_FOLDER)
         generateOutput = False
-        tsSet = self.inputSet.get()
+        tsId = ts.getTsId()
+        tomoLocation = os.path.join(tomogramFolder, self.getOutFile(tsId, ext=MRC_EXT))
+        if os.path.exists(tomoLocation):
+            generateOutput = True
 
-        for ts in tsSet.iterItems():
-            tsId = ts.getTsId()
-            tomoLocation = os.path.join(tomogramFolder, self.getOutFile(tsId, ext=MRC_EXT))
-            if os.path.exists(tomoLocation):
-                generateOutput = True
+        if generateOutput:
+            outputSetOfTomograms = self.getOutputSetOfTomograms(OUTPUT_TOMOGRAMS_NAME)
+            outputSetOfTomograms.setSamplingRate(self.getAngPix())
+            newTomogram = tomoObj.Tomogram(tsId=tsId)
+            newTomogram.copyInfo(ts)
+            newTomogram.setSamplingRate(self.getAngPix())
+            newTomogram.setLocation(tomoLocation)
 
-            if generateOutput:
-                outputSetOfTomograms = self.getOutputSetOfTomograms(OUTPUT_TOMOGRAMS_NAME)
-                outputSetOfTomograms.setSamplingRate(self.getAngPix())
-                newTomogram = tomoObj.Tomogram(tsId=tsId)
-                newTomogram.copyInfo(ts)
-                newTomogram.setSamplingRate(self.getAngPix())
-                newTomogram.setLocation(tomoLocation)
+            if self.halfmap_tilts.get():
+                halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER,
+                                self.getOutFile(tsId, ext=MRC_EXT)),
+                                os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER,
+                                self.getOutFile(tsId, ext=MRC_EXT))]
+                newTomogram.setHalfMaps(halfMapsList)
 
-                if self.halfmap_tilts.get():
-                    halfMapsList = [os.path.join(tomogramFolder, RECONSTRUCTION_ODD_FOLDER,
-                                    self.getOutFile(tsId, ext=MRC_EXT)),
-                                    os.path.join(tomogramFolder, RECONSTRUCTION_EVEN_FOLDER,
-                                    self.getOutFile(tsId, ext=MRC_EXT))]
-                    newTomogram.setHalfMaps(halfMapsList)
+            # Set default tomogram origin
+            newTomogram.setOrigin(newOrigin=None)
+            newTomogram.fixMRCVolume(True)
+            outputSetOfTomograms.append(newTomogram)
+            outputSetOfTomograms.updateDim()
+            outputSetOfTomograms.update(newTomogram)
+            outputSetOfTomograms.write()
+            self._store(outputSetOfTomograms)
 
-                # Set default tomogram origin
-                newTomogram.setOrigin(newOrigin=None)
-                newTomogram.fixMRCVolume(True)
-                outputSetOfTomograms.append(newTomogram)
-                outputSetOfTomograms.updateDim()
-                outputSetOfTomograms.update(newTomogram)
-                outputSetOfTomograms.write()
-                self._store(outputSetOfTomograms)
-
-            else:
-                self.error(">>> Some error occurred in the reconstruction process. Please go to the "
-                           "process log(.../extra/warp_tiltseries/logs)")
-
-        self._closeOutputSet()
+        else:
+            self.error(">>> Some error occurred in the reconstruction process. Please go to the "
+                       "process log(.../extra/warp_tiltseries/logs)")
 
     def getOutputSetOfTomograms(self, outputSetName):
         outputSetOfTomograms = getattr(self, outputSetName, None)
@@ -262,3 +306,8 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def getBinFactor(self):
         import math
         return math.floor(math.log2(self.binFactor.get()))
+
+    def cleanIntermediateResults(self):
+        self.info(">>> Cleaning intermediate results...")
+        imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
+        pwutils.cleanPath(imagesFolder)

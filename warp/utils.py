@@ -30,6 +30,7 @@ import math
 import scipy.fft
 import xml.etree.ElementTree as eTree
 
+from pwem.convert import transformations
 from warp import TILTIMAGES_FOLDER, FRAMESERIES_FOLDER
 
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
@@ -179,6 +180,48 @@ def parseCtfXMLFile(defocusFilePath):
     return ctfData, gridCtfData
 
 
+def updateCtFXMLFile(defocusFile, ctfTomoSeries):
+    tree = eTree.parse(defocusFile)
+    root = tree.getroot()
+    firstCtf = ctfTomoSeries.getFirstItem()
+    defocusU = firstCtf.getDefocusU()/1e4
+    defocusV = firstCtf.getDefocusV()/1e4
+    defocusDelta = abs((defocusU - defocusV))
+    ctfValues = []
+    ctfSum = 0
+    for ctf in ctfTomoSeries.iterItems(iterate=False):
+        ctfValue = (ctf.getDefocusU() / 1e4 - defocusDelta)
+        ctfSum += ctfValue
+        ctfValues.append(ctfValue)
+
+    defocusAve = ctfSum/ctfTomoSeries.getSize()
+
+    # for ctf in root.iter("OptionsCTF"):
+    #     for param in ctf.findall("Param"):
+    #         if param.attrib.get("Name") == "DosePerAngstromFrame":
+    #             param.set("Value", '-2.64')
+    #             break
+
+    for ctf in root.iter("CTF"):
+        for param in ctf.findall("Param"):
+            if param.attrib.get("Name") == "DefocusDelta":
+                param.set("Value", str(defocusDelta))
+            if param.attrib.get("Name") == "Defocus":
+                param.set("Value", str(defocusAve))
+
+    gridCtf = root.find('GridCTF')
+    nodes = gridCtf.findall("Node")
+    for index, node in enumerate(nodes):
+        node.set("Value", str(ctfValues[index]))
+
+    gridCtf = root.find('GridCTFDefocusDelta')
+    nodes = gridCtf.findall("Node")
+    for index, node in enumerate(nodes):
+        node.set("Value", str(defocusDelta))
+
+    tree.write(defocusFile, encoding="utf-8", xml_declaration=True)
+
+
 def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries):
         """Generate the .tomostar files from TS"""
         _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
@@ -214,3 +257,17 @@ _wrpMaskedFraction #8
                 tiPath, angleTilt, axisAngle, shiftX, shiftY, dose, averageIntensity, maskedFraction))
 
         _file.close()
+
+
+def genTransformMatrix(rot, tilt, psi):
+    angles = (float(rot), float(tilt), float(psi))
+    radAngles = -np.deg2rad(angles)
+    M = transformations.euler_matrix(radAngles[0], radAngles[1], radAngles[2], 'szyz')
+
+    # These 3 lines are the ones for "invert" flag.
+    M[0, 3] = 0
+    M[1, 3] = 0
+    M[2, 3] = 0
+    M = np.linalg.inv(M)
+
+    return M

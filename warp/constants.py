@@ -61,6 +61,9 @@ FS_MOTION = 'fs_motion'
 FS_MOTION_AND_CTF = 'fs_motion_and_ctf'
 TS_RECONSTRUCTION = 'ts_reconstruct'
 TS_DEFOCUS_HAND = 'ts_defocus_hand'
+TS_TEMPLATE_MATCH = 'ts_template_match'
+TS_THRESHOLD_PICKS = 'threshold_picks'
+TS_IMPORT_ALIGNMENTS = 'ts_import_alignments'
 
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
@@ -76,3 +79,13 @@ FRAMESERIES_SETTINGS = "warp_frameseries.settings"
 RECONSTRUCTION_FOLDER = 'reconstruction'
 RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
+MATCHING_FOLDER = 'matching'
+
+# RELION LABELS
+RLN_COORDINATE_X = 'rlnCoordinateX'
+RLN_COORDINATE_Y = 'rlnCoordinateY'
+RLN_COORDINATE_Z = 'rlnCoordinateZ'
+RLN_ANGLE_ROT = 'rlnAngleRot'
+RLN_ANGLE_TILT = 'rlnAngleTilt'
+RLN_ANGLE_PSI = 'rlnAnglePsi'
+RLN_AUTOPICK_FIGURE_OF_MERTI = 'rlnAutopickFigureOfMerit'

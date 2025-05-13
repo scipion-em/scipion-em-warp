@@ -25,10 +25,8 @@
 # **************************************************************************
 
 import os
-import time
 import mrcfile
-import glob
-import numpy
+import numpy as np
 
 from pyworkflow.constants import ID_ATTRIBUTE
 from pyworkflow.protocol import ProtStreamingBase
@@ -39,9 +37,10 @@ from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import TiltSeries, SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
+from warp import Plugin
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
-                            FRAMES_FOLDER, FRAMESERIES_FOLDER)
+                            FRAMES_FOLDER, FRAMESERIES_FOLDER, SETTINGS_FOLDER)
 from warp.utils import tom_deconv, tomoStarGenerate
 
 
@@ -182,109 +181,115 @@ class ProtWarpBase(EMProtocol):
             cmd += ' %s' % othersCmds
         self.runJob(self.getPlugin().getProgram(program), cmd, executable='/bin/bash')
 
-    def dataPrepare(self, objSet, createSetting=False):
+    def tsDataPrepare(self, ts):
         """Creates the setting file that will be used by the different programs.
            It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
            the tiltimages."""
-        plugin = self.getPlugin()
         starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
         pwutils.makePath(starFolder)
-        isTiltSeries = isinstance(objSet, SetOfTiltSeries)
-        imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER) if isTiltSeries else self._getExtraPath(FRAMES_FOLDER)
-        invertTiltAngle = -1 if isTiltSeries else 1
+        objSet = self.inputSet.get()
+        imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
+        invertTiltAngle = -1
         pwutils.makePath(imagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
-        exposure = objSet.getAcquisition().getDosePerFrame()
+        fileDict = []
 
-        for ts in objSet.iterItems():
-            if ts.isEnabled():
-                tsId = ts.getTsId()
-                properties = {"sr": sr}
-                tiValues = {}
-                for ti in ts.iterItems():
-                    if ti.isEnabled():  # Excluding views
-                        dose = 0
-                        maskedFraction = 0
-                        shiftX = 0
-                        shiftY = 0
-                        axisAngle = 0
-                        amplitudeContrast = 0
+        if ts.isEnabled():
+            tsId = ts.getTsId()
+            properties = {"sr": sr}
+            tiValues = {}
+            for ti in ts.iterItems():
+                if ti.isEnabled():  # Excluding views
+                    dose = 0
+                    maskedFraction = 0
+                    shiftX = 0
+                    shiftY = 0
+                    axisAngle = 0
+                    amplitudeContrast = 0
 
-                        if ts.hasAcquisition():
-                            axisAngle = ts.getAcquisition().getTiltAxisAngle()
-                        if ti.getAcquisition():
-                            amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-                            dose = ti.getAcquisition().getAccumDose()
-                        fileName = ti.getFileName()
-                        newBinaryName = tsId + f'_TO_%02d.mrc' % ti.getAcquisitionOrder()
-                        if isTiltSeries:
-                            newFrame = ImageStack(properties=properties)
-                            newFrame.append(ImageReadersRegistry.open(str(ti.getIndex()) + '@' + ti.getFileName()))
-                            ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
-                            # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
-                            if hasAlignment:
-                                transform = ti.getTransform()
-                                matrix = transform.getMatrix()
-                                newMatrix = numpy.zeros((3, 3), dtype=float)
-                                newMatrix[0, 0:2] = matrix[0, 0:2]
-                                newMatrix[1, 0:2] = matrix[1, 0:2]
-                                newMatrix[2, 2] = 1
-                                tiShift = [-1 * matrix[0, 2], -1 * matrix[1, 2], 0]
-                                transpose = numpy.transpose(newMatrix)
-                                multShift = numpy.dot(transpose, tiShift)
-                                shiftX = multShift[0] * sr
-                                shiftY = multShift[1] * sr
-                        else:
-                            newBinaryName = os.path.basename(fileName)
-                            os.symlink(os.path.abspath(fileName), os.path.join(imagesFolder, os.path.basename(fileName)))
+                    if ts.hasAcquisition():
+                        axisAngle = ts.getAcquisition().getTiltAxisAngle()
+                    if ti.getAcquisition():
+                        amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
+                        dose = ti.getAcquisition().getAccumDose()
+                    newBinaryName = tsId + f'_TO_%02d.mrc' % ti.getAcquisitionOrder()
+                    fileDict.append(newBinaryName)
+                    newFrame = ImageStack(properties=properties)
+                    newFrame.append(ImageReadersRegistry.open(str(ti.getIndex()) + '@' + ti.getFileName()))
+                    ImageReadersRegistry.write(newFrame, os.path.join(self._getExtraPath(TILTIMAGES_FOLDER), newBinaryName))
+                    # Taking angleTilt axisAngle Dose AverageIntensity MaskedFraction
+                    if hasAlignment:
+                        transform = ti.getTransform()
+                        matrix = transform.getMatrix()
+                        newMatrix = np.zeros((3, 3), dtype=float)
+                        newMatrix[0, 0:2] = matrix[0, 0:2]
+                        newMatrix[1, 0:2] = matrix[1, 0:2]
+                        newMatrix[2, 2] = 1
+                        tiShift = [-1 * matrix[0, 2], -1 * matrix[1, 2], 0]
+                        transpose = np.transpose(newMatrix)
+                        multShift = np.dot(transpose, tiShift)
+                        shiftX = multShift[0] * sr
+                        shiftY = multShift[1] * sr
 
-                        tiValues[ti.getTiltAngle() * invertTiltAngle] = [newBinaryName, ti.getTiltAngle() * invertTiltAngle,
-                                                                         axisAngle, shiftX, shiftY, dose,
-                                                                         amplitudeContrast, maskedFraction]
+                    tiValues[ti.getTiltAngle() * invertTiltAngle] = [newBinaryName,
+                                                                     ti.getTiltAngle() * invertTiltAngle,
+                                                                     axisAngle, shiftX, shiftY, dose,
+                                                                     amplitudeContrast, maskedFraction]
 
-                tomoStarGenerate(tsId, tiValues, starFolder, isTiltSeries)
+            tomoStarGenerate(tsId, tiValues, starFolder, True)
 
         # 2. Create symbolic links from tiltseries folder to average folder
         #    We need to do this because warp needs both folders: The tiltimages folder to get
         #    the header of the images (it only needs the first tiltimage of each tiltseries),
         #    and the averages folder to read them.
-        if isTiltSeries:
-            tiltSeriesFiles = glob.glob(os.path.join(imagesFolder, '*'))
-            averagesFolder = os.path.join(imagesFolder, AVERAGE_FOLDER)
-            pwutils.makePath(averagesFolder)
-            for file in tiltSeriesFiles:
-                fileName = os.path.basename(file)
-                destFolder = os.path.join(averagesFolder, fileName)
+        averagesFolder = os.path.join(imagesFolder, AVERAGE_FOLDER)
+        pwutils.makePath(averagesFolder)
+        for file in fileDict:
+            fileName = os.path.basename(file)
+            destFolder = os.path.join(averagesFolder, fileName)
+            if not os.path.exists(destFolder):
                 os.symlink('../' + fileName, destFolder)
 
-        if createSetting:
-            # 3. Create warp_tiltseries.settings file
-            processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-            if isinstance(objSet, TiltSeries):
-                processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-                pwutils.makePath(processingFolder)
-            argsDict = {
-                "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-                "--extension": "*.tomostar",
-                "--folder_processing": processingFolder,
-                '--angpix': sr,
-                "--output": os.path.abspath(self._getExtraPath(TILTSERIE_SETTINGS))
-            }
+    def createTiltSeriesSetting(self, ts):
+        tsId = ts.getTsId()
+        self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
+        setOfTS = self.inputSet.get()
+        sr = setOfTS.getSamplingRate()
+        exposure = setOfTS.getAcquisition().getDosePerFrame()
+        fileName, extension = os.path.splitext(ts.getFileName())
+        settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
+        pwutils.makePath(settingsFolder)
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        pwutils.makePath(processingFolder)
+        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
+        argsDict = {
+            "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
+            "--extension": "%s.tomostar" % tsId,
+            "--folder_processing": processingFolder,
+            '--angpix': sr,
+            "--output": tsSettingFilePath
+        }
 
-            if exposure is not None:
-                argsDict['--exposure'] = exposure
+        if exposure is not None:
+            argsDict['--exposure'] = -1 * exposure
 
-            if hasattr(self, 'tomo_thickness'):
-                z = self.tomo_thickness.get()
-                x = self.x_dimension.get() or objSet.getDimensions()[0]
-                y = self.y_dimension.get() or objSet.getDimensions()[1]
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or setOfTS.getDimensions()[0]
+            y = self.y_dimension.get() or setOfTS.getDimensions()[1]
 
-                argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
 
-            cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
 
-            self.runJob(plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
+        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
 
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
