@@ -44,7 +44,7 @@ WARP_FORCE_MRC_FLOAT32 = 'WARP_FORCE_MRC_FLOAT32'
 OUTPUT_CTF_SERIE = "CTFTomoSeries"
 OUTPUT_TOMOGRAMS_NAME = "Tomograms"
 OUTPUT_TILTSERIES = 'TiltSeries'
-OUTPUT_HANDEDNESS = 'Warp handedness'
+OUTPUT_HANDEDNESS = 'Handedness_OK'
 EXT_MRC_EVEN_NAME = "even.mrc"
 EXT_MRC_ODD_NAME = "odd.mrc"
 EVEN = 'even'
@@ -61,16 +61,31 @@ FS_MOTION = 'fs_motion'
 FS_MOTION_AND_CTF = 'fs_motion_and_ctf'
 TS_RECONSTRUCTION = 'ts_reconstruct'
 TS_DEFOCUS_HAND = 'ts_defocus_hand'
+TS_TEMPLATE_MATCH = 'ts_template_match'
+TS_THRESHOLD_PICKS = 'threshold_picks'
+TS_IMPORT_ALIGNMENTS = 'ts_import_alignments'
 
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
 TILTIMAGES_FOLDER = 'tiltimages'
 FRAMES_FOLDER = 'frames'
 AVERAGE_FOLDER = 'average'
+SETTINGS_FOLDER = 'settings'
 TILTSERIES_FOLDER = 'warp_tiltseries'
 TILTSERIE_SETTINGS = "warp_tiltseries.settings"
+POWERSPECTRUM_FOLDER = 'powerspectrum'
 FRAMESERIES_FOLDER = 'warp_frameseries'
 FRAMESERIES_SETTINGS = "warp_frameseries.settings"
 RECONSTRUCTION_FOLDER = 'reconstruction'
 RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
+MATCHING_FOLDER = 'matching'
+
+# RELION LABELS
+RLN_COORDINATE_X = 'rlnCoordinateX'
+RLN_COORDINATE_Y = 'rlnCoordinateY'
+RLN_COORDINATE_Z = 'rlnCoordinateZ'
+RLN_ANGLE_ROT = 'rlnAngleRot'
+RLN_ANGLE_TILT = 'rlnAngleTilt'
+RLN_ANGLE_PSI = 'rlnAnglePsi'
+RLN_AUTOPICK_FIGURE_OF_MERTI = 'rlnAutopickFigureOfMerit'
