@@ -53,6 +53,7 @@ MRC_EXT = 'mrc'
 
 
 # --------- [PROGRAMS] ---------------
+WARP_TOOLS = 'WarpTools'
 CREATE_SETTINGS = 'create_settings'
 FS_MOTION = 'fs_motion'
 TS_CTF = 'ts_ctf'

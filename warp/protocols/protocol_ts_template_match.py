@@ -241,7 +241,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
         }
         try:
-            self.runProgram(argsDict, TS_CTF)
+            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
         except Exception:
             self.info(">>> Error generating ctf estimation file...")
 
@@ -264,7 +264,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             "--alignment_angpix": angpix,
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
 
     def templateMatchStep(self, ts):
         """Particle Picking"""
@@ -305,7 +305,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         if self.reuse_results.get():
             cmd += " --reuse_results"
 
-        self.runProgram(argsDict, TS_TEMPLATE_MATCH, othersCmds=cmd)
+        self.runProgram(argsDict, WARP_TOOLS, TS_TEMPLATE_MATCH, othersCmds=cmd)
 
     def applyScoreStep(self, ts):
         """Apply a score threshold to particles picked through template-matching from tilt"""
@@ -318,7 +318,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             "--out_suffix": 'clean',
             "--minimum": self.minimum.get()
         }
-        self.runProgram(argsDict, TS_THRESHOLD_PICKS)
+        self.runProgram(argsDict, WARP_TOOLS, TS_THRESHOLD_PICKS)
 
     def getOutputSetOfCoordinates3D(self, outputSetName):
         suffix = self._getOutputSuffix(tomoObj.SetOfCoordinates3D)

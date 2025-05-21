@@ -37,7 +37,7 @@ from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
-from warp import Plugin
+from warp import Plugin, WARP_TOOLS
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
                             SETTINGS_FOLDER)
@@ -171,7 +171,7 @@ class ProtWarpBase(EMProtocol):
         """ Create data import settings"""
         pass
 
-    def runProgram(self, argsDict, program, othersCmds=None):
+    def runProgram(self, argsDict, program, algorithm, othersCmds=None):
         gpuList = self.getGpuList()
         if gpuList:
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
@@ -179,7 +179,7 @@ class ProtWarpBase(EMProtocol):
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if othersCmds:
             cmd += ' %s' % othersCmds
-        self.runJob(self.getPlugin().getProgram(program), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(program, algorithm), cmd, executable='/bin/bash')
 
     def tsDataPrepare(self, ts):
         """Creates the setting file that will be used by the different programs.
@@ -289,7 +289,7 @@ class ProtWarpBase(EMProtocol):
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
-        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
 
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):

@@ -36,7 +36,7 @@ from tomo.protocols import ProtTomoBase
 from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
                             OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
                             RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
-                            TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS)
+                            TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS, WARP_TOOLS)
 from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import updateCtFXMLFile
 
@@ -174,7 +174,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
             # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
         }
         try:
-            self.runProgram(argsDict, TS_CTF)
+            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
         except Exception:
             self.info(">>> Error generating ctf estimation file...")
         ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
@@ -196,7 +196,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
             "--alignment_angpix": angpix,
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
 
     def tomoReconstructionStep(self, ts):
         """Tomo Reconstruction"""
@@ -222,7 +222,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         if not self.normalize.get():
             cmd += " --dont_normalize"
 
-        self.runProgram(argsDict, TS_RECONSTRUCTION, othersCmds=cmd)
+        self.runProgram(argsDict, WARP_TOOLS, TS_RECONSTRUCTION, othersCmds=cmd)
 
     def createOutput(self, ts):
         self.info(">>> Generating outputs...")
