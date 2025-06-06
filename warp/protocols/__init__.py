@@ -34,3 +34,5 @@ with weakImport('tomo'):
     from .protocol_tomoReconstruct import ProtWarpTomoReconstruct
     from .protocol_ts_motion_ctf import ProtWarpTSMotionCorr
     from .protocol_ts_template_match import ProtWarpTSTemplateMatch
+    from .protocol_m_high_resolution_refinements import ProtWarpMHigResolutionRefinement
+    from .protocol_tomo_export_particles import ProtWarpExportParticles

@@ -45,7 +45,6 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
     Note: The contrast of the tomograms and the reference volume should be the same
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
-        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
     """
 
     _label = 'tomo picking'

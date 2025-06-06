@@ -31,6 +31,8 @@ import scipy.fft
 import xml.etree.ElementTree as eTree
 
 from pwem.convert import transformations
+from pwem.convert.transformations import translation_from_matrix, euler_from_matrix
+from tomo.constants import TR_RELION
 from warp import TILTIMAGES_FOLDER, FRAMESERIES_FOLDER
 
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
@@ -222,7 +224,7 @@ def updateCtFXMLFile(defocusFile, ctfTomoSeries):
     tree.write(defocusFile, encoding="utf-8", xml_declaration=True)
 
 
-def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries):
+def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries, perTs=False):
         """Generate the .tomostar files from TS"""
         _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
         _file = open(_fileName, 'a+')
@@ -240,12 +242,11 @@ _wrpAverageIntensity #7
 _wrpMaskedFraction #8
 """
         _file.write(header)
-
         sortedTiValues = sorted(tiValues)
         imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
         for acqOrder in sortedTiValues:
             value = tiValues[acqOrder]
-            tiPath = '../%s/' % imagesFolder + value[0]
+            tiPath = '../%s/' % imagesFolder + value[0] if not perTs else '../../%s/' % imagesFolder + value[0]
             angleTilt = value[1]
             axisAngle = value[2]
             shiftX = f"{value[3]:.6f}"
@@ -271,3 +272,15 @@ def genTransformMatrix(rot, tilt, psi):
     M = np.linalg.inv(M)
 
     return M
+
+
+def getTransformInfoFromCoordOrSubtomo(coord, samplingRate):
+    M = coord.getMatrix(convention=TR_RELION)
+    shifts = translation_from_matrix(M)
+    # These 2 lines below were done when inverting, which is now what we always do.
+    shifts = -shifts
+    M = np.linalg.inv(M)
+    angles = -np.rad2deg(euler_from_matrix(M, axes='szyz'))
+    shifts *= samplingRate
+
+    return angles, shifts

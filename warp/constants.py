@@ -52,7 +52,7 @@ ODD = 'odd'
 MRC_EXT = 'mrc'
 
 
-# --------- [PROGRAMS] ---------------
+# --------- [WARPPTOOLS PROGRAMS] ---------------
 WARP_TOOLS = 'WarpTools'
 CREATE_SETTINGS = 'create_settings'
 FS_MOTION = 'fs_motion'
@@ -65,6 +65,14 @@ TS_DEFOCUS_HAND = 'ts_defocus_hand'
 TS_TEMPLATE_MATCH = 'ts_template_match'
 TS_THRESHOLD_PICKS = 'threshold_picks'
 TS_IMPORT_ALIGNMENTS = 'ts_import_alignments'
+TS_EXPORT_PARTICLES = 'ts_export_particles'
+
+# ---------[MTOOLS PROGRAMS]-------------------
+MTOOLS = 'MTools'
+CREATE_POPULATION = 'create_population'
+CREATE_SOURCES = 'create_source'
+CREATE_SPECIES = 'create_species'
+
 
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
@@ -81,6 +89,11 @@ RECONSTRUCTION_FOLDER = 'reconstruction'
 RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
 MATCHING_FOLDER = 'matching'
+RELION_FOLDER = 'relion'
+M_RESULT_FOLDER = 'M'
+OPTIMISATION_SET_STAR = 'matching_optimisation_set.star'
+MATCHING_PARTICLES_STAR = 'matching.star'
+MATCHING_TOMOGRAMS_STAR = 'matching_tomograms.star'
 
 # RELION LABELS
 RLN_COORDINATE_X = 'rlnCoordinateX'
@@ -90,3 +103,15 @@ RLN_ANGLE_ROT = 'rlnAngleRot'
 RLN_ANGLE_TILT = 'rlnAngleTilt'
 RLN_ANGLE_PSI = 'rlnAnglePsi'
 RLN_AUTOPICK_FIGURE_OF_MERIT = 'rlnAutopickFigureOfMerit'
+RLN_MICROGRAPH_NAME = 'rlnMicrographName'
+
+tomoStarFields = [
+    RLN_COORDINATE_X,
+    RLN_COORDINATE_Y,
+    RLN_COORDINATE_Z,
+    RLN_ANGLE_ROT,
+    RLN_ANGLE_TILT,
+    RLN_ANGLE_PSI,
+    RLN_MICROGRAPH_NAME,
+    RLN_AUTOPICK_FIGURE_OF_MERIT,
+]
