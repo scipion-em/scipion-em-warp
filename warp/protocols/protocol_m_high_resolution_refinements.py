@@ -160,6 +160,12 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def refinementStep(self):
         self.info(">>> Starting refinement with M...")
+        populationPath = os.path.join(self._getExtraPath('m'))
+        argsDict = {
+            "--population": os.path.join(populationPath, 'processing.population'),
+            "--iter": 0
+        }
+        self.runProgram(argsDict, MCORE, None)
 
     def tsCtfEstimation(self):
         """CTF estimation"""

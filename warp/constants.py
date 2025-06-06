@@ -72,6 +72,7 @@ MTOOLS = 'MTools'
 CREATE_POPULATION = 'create_population'
 CREATE_SOURCES = 'create_source'
 CREATE_SPECIES = 'create_species'
+MCORE = 'MCore'
 
 
 # -------------[LABELS]----------------
