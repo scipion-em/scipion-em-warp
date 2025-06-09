@@ -175,8 +175,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--refine_imagewarp": '6x4',
-            "--perdevice_refine": 4
+            "--refine_imagewarp": '6x4'
         }
         cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
         self.runProgram(argsDict, MCORE, None, cmd)
