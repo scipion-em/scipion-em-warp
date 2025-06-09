@@ -159,13 +159,27 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.runProgram(argsDict, MTOOLS, CREATE_SPECIES)
 
     def refinementStep(self):
-        self.info(">>> Starting refinement with M...")
         populationPath = os.path.join(self._getExtraPath('m'))
+        self.checkSetup(populationPath)
+        self.firstRefinement(populationPath)
+
+    def checkSetup(self, populationPath):
+        self.info(">>> Running M to check setup...")
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
             "--iter": 0
         }
         self.runProgram(argsDict, MCORE, None)
+
+    def firstRefinement(self, populationPath):
+        self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
+        argsDict = {
+            "--population": os.path.join(populationPath, 'processing.population'),
+            "--refine_imagewarp": '6x4',
+            "--perdevice_refine": 4
+        }
+        cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
+        self.runProgram(argsDict, MCORE, None, cmd)
 
     def tsCtfEstimation(self):
         """CTF estimation"""
