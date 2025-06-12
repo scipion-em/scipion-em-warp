@@ -148,7 +148,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                 continue
             self._insertFunctionStep(self.tomoReconstructionStep, ts, needsGPU=True)
             self._insertFunctionStep(self.createOutput, ts, needsGPU=False)
-            self.cleanIntermediateResults()
+            self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
 
         self._insertFunctionStep(self._closeOutputSet, needsGPU=False)
 
