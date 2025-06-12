@@ -235,11 +235,9 @@ loop_
 _wrpMovieName #1
 _wrpAngleTilt #2
 _wrpAxisAngle #3
-_wrpAxisOffsetX #4
-_wrpAxisOffsetY #5
-_wrpDose #6
-_wrpAverageIntensity #7  
-_wrpMaskedFraction #8
+_wrpDose #4
+_wrpAverageIntensity #5  
+_wrpMaskedFraction #6
 """
         _file.write(header)
         sortedTiValues = sorted(tiValues)
@@ -254,8 +252,8 @@ _wrpMaskedFraction #8
             dose = value[5]
             averageIntensity = 3.721
             maskedFraction = value[7]
-            _file.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                tiPath, angleTilt, axisAngle, shiftX, shiftY, dose, averageIntensity, maskedFraction))
+            _file.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (
+                tiPath, angleTilt, axisAngle, dose, averageIntensity, maskedFraction))
 
         _file.close()
 

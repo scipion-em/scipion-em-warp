@@ -30,6 +30,7 @@ import mrcfile
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
+from pyworkflow.object import Integer
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
@@ -88,9 +89,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       label='Angpix resample',
                       help="Resample half-maps and masks to this pixel size.")
         form.addParam('lowpass', params.FloatParam, default=None,
-                      expertLevel=params.LEVEL_ADVANCED,
                       label='Gaussian low-pass filter',
                       help="Optional low-pass filter (in Å), applied to both half-maps")
+
+        # form.addSection("Refinement")
 
     def _insertAllSteps(self):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
@@ -178,7 +180,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             "--refine_imagewarp": '6x4'
         }
         cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
-        self.runProgram(argsDict, MCORE, None, cmd)
+        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
     def tsCtfEstimation(self):
         """CTF estimation"""

@@ -281,7 +281,7 @@ class ProtWarpBase(EMProtocol):
         }
 
         if exposure is not None:
-            argsDict['--exposure'] = -1 * exposure
+            argsDict['--exposure'] = exposure
 
         if hasattr(self, 'tomo_thickness'):
             z = self.tomo_thickness.get()

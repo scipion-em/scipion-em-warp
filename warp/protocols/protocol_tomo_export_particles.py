@@ -35,6 +35,7 @@ from pwem import Domain
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
+from pyworkflow.object import Integer
 from pyworkflow.utils import Message
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
@@ -85,10 +86,10 @@ class ProtWarpExportParticles(ProtWarpBase):
 
         form.addSection(label='Reconstruct')
         form.addParam('output_angpix', params.FloatParam,
-                      label='Output binning factor',
+                      label='Output pixel size',
                       important=True,
                       default=None,
-                      help='Binning factor at which to export particles')
+                      help='Pixel size at which to export particles')
 
         form.addParam('box', params.IntParam,
                       label='Output box size',
@@ -101,10 +102,6 @@ class ProtWarpExportParticles(ProtWarpBase):
                       important=True,
                       default=None,
                       help='Particle diameter in angstroms')
-
-        form.addParam('normalized_coords', params.BooleanParam, default=True,
-                      label='Normalize coordinates?',
-                      help="Are coordinates normalised to the range [0, 1] (e.g. from Warp's template matching)")
 
         form.addParam('writeStacks', params.EnumParam,
                       label='Export type',
@@ -123,6 +120,15 @@ class ProtWarpExportParticles(ProtWarpBase):
     def prepareDataStep(self):
         inputTs = self.inputSet.get()
         coordSet = self.coordinates.get()
+
+        tsSr = inputTs.getSamplingRate()
+        tomoSr = coordSet.getSamplingRate()
+        tomo_dim = coordSet.getPrecedents().getDim()
+
+        scaleFactor = tomoSr / tsSr
+        self.tomo_thickness = Integer(round(tomo_dim[2] * scaleFactor))
+        self.x_dimension = Integer(round(tomo_dim[0] * scaleFactor))
+        self.y_dimension = Integer(round(tomo_dim[1] * scaleFactor))
 
         # Create the warp settings file and retrieve ctf and alignments values
         self.info(">>> Creating the warp settings file and retrieve ctf and alignments values...")
@@ -185,13 +191,11 @@ class ProtWarpExportParticles(ProtWarpBase):
             "--input_directory": matchinFolder,
             "--input_pattern": "*.star",
             "--output_star": os.path.join(output, 'matching.star'),
-            "--output_angpix": self.output_angpix.get() * self.inputSet.get().getSamplingRate(),
+            "--output_angpix": self.output_angpix.get(),
             "--box": self.box.get(),
             "--diameter": self.diameter.get(),
         }
-        cmd = '--relative_output_paths'
-        if self.normalized_coords.get():
-            cmd += ' --normalized_coords'
+        cmd = '--relative_output_paths --normalized_coords'
         if self.writeStacks.get() == 0:
             cmd += ' --2d'
         else:
@@ -212,7 +216,7 @@ class ProtWarpExportParticles(ProtWarpBase):
                                                      coordSet,
                                                      template='pseudosubtomograms%s.sqlite',
                                                      tsSamplingRate=tsSRate,
-                                                     relionBinning=self.output_angpix.get(),
+                                                     relionBinning=self.output_angpix.get()/tsSet.getSamplingRate(),
                                                      boxSize=boxSize,
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
@@ -262,7 +266,7 @@ class ProtWarpExportParticles(ProtWarpBase):
             updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
 
     def tsImportAligments(self):
-        self.info(">>> Starting import aligments...")
+        self.info(">>> Starting import alignments...")
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack')
         angpix = self.inputSet.get().getSamplingRate()
@@ -279,7 +283,7 @@ class ProtWarpExportParticles(ProtWarpBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
-        ts.writeImodFiles(tiltstackFolder, delimiter=' ')
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
 
     def modifyStarFileMultiTable(self, filePath, columnToModify, modifierFunc):
         """
