@@ -193,7 +193,7 @@ class ProtWarpBase(EMProtocol):
             pwutils.makePath(starFolder)
         objSet = self.inputSet.get()
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
-        invertTiltAngle = -1
+        invertTiltAngle = 1
         pwutils.makePath(imagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
