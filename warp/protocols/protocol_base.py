@@ -37,10 +37,10 @@ from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
-from warp import Plugin, WARP_TOOLS
+from warp import Plugin, WARP_TOOLS, MCORE
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
-                            SETTINGS_FOLDER)
+                            SETTINGS_FOLDER, WARP_TOOLS_GPU_ALGORITHMS)
 from warp.utils import tom_deconv, tomoStarGenerate
 
 
@@ -174,7 +174,11 @@ class ProtWarpBase(EMProtocol):
     def runProgram(self, argsDict, program, algorithm, othersCmds=None):
         gpuList = self.getGpuList()
         if gpuList:
-            argsDict['--device_list'] = ' '.join(map(str, gpuList))
+            deviceList = ' '.join(map(str, gpuList))
+            if algorithm in WARP_TOOLS_GPU_ALGORITHMS:
+                argsDict['--device_list'] = deviceList
+            elif program == MCORE:
+                argsDict['--devicelist'] = deviceList
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if othersCmds:

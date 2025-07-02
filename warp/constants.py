@@ -67,6 +67,9 @@ TS_THRESHOLD_PICKS = 'threshold_picks'
 TS_IMPORT_ALIGNMENTS = 'ts_import_alignments'
 TS_EXPORT_PARTICLES = 'ts_export_particles'
 
+WARP_TOOLS_GPU_ALGORITHMS = [FS_MOTION, TS_CTF, FS_MOTION, FS_MOTION_AND_CTF, TS_RECONSTRUCTION, TS_TEMPLATE_MATCH,
+                             TS_THRESHOLD_PICKS, TS_EXPORT_PARTICLES]
+
 # ---------[MTOOLS PROGRAMS]-------------------
 MTOOLS = 'MTools'
 CREATE_POPULATION = 'create_population'

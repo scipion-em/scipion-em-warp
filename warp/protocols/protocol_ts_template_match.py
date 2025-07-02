@@ -123,7 +123,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
                       label='Maximum number of peak',
                       help="Maximum number of peak positions to save")
 
-        form.addParam('dont_normalize', params.BooleanParam, default=False,
+        form.addParam('dont_normalize', params.BooleanParam, default=True,
                       expertLevel=params.LEVEL_ADVANCED,
                       label="Normalize?",
                       help="Set score distribution to median = 0, stddev = 1")

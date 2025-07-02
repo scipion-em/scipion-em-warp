@@ -25,12 +25,15 @@
 # ******************************************************************************
 
 import os
+import time
+
 import mrcfile
 
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
 from pyworkflow.object import Integer
+from pyworkflow.protocol import GPU_LIST
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
@@ -86,13 +89,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       label='Temporal samples',
                       help="Number of temporal samples in each particle pose's trajectory.")
         form.addParam('angpix_resample', params.FloatParam, default=None,
+                      allowsNull=True,
                       label='Angpix resample',
                       help="Resample half-maps and masks to this pixel size.")
         form.addParam('lowpass', params.FloatParam, default=None,
                       label='Gaussian low-pass filter',
                       help="Optional low-pass filter (in Å), applied to both half-maps")
 
-        # form.addSection("Refinement")
+        form.addSection("Refinement")
+
+        form.addHidden(GPU_LIST, params.StringParam, default='0',
+                       label='Choose GPU IDs:', validators=[params.NonEmpty],
+                       help='Space-separated list of GPU IDs to use for processing. '
+                            'Default: all GPUs in the system For example: "0 1 5"')
 
     def _insertAllSteps(self):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
@@ -134,14 +143,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def createSpeciesStep(self):
         relionProt = self.relionRefineProt.get()
         extraPath = relionProt._getExtraPath()
-        averageSubTomoHalfMaps = relionProt.average.getHalfMaps()
+        averageSubTomoHalfMaps = relionProt.average.getHalfMaps(asList=True)
         populationPath = os.path.join(self._getExtraPath('m'))
         mask = self.refMask.get().getFileName()
-        newMask = os.path.join(self._getExtraPath(), 'newMask.mrc')
         voxelSize = relionProt.average.getSamplingRate()
-        with mrcfile.open(mask, 'r') as mrc, mrcfile.new(newMask, overwrite=True) as mrc2:
-            mrc2.set_data(mrc.data)
-            mrc2._set_voxel_size(voxelSize, voxelSize, voxelSize)
 
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
@@ -149,24 +154,29 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             "--diameter": self.diameter.get(),
             "--sym": self.symmetry.get(),
             "--temporal_samples": self.temporal_samples.get(),
-            "--half1": os.path.join(extraPath, '_half1_class001_unfil.mrc'),
-            "--half2": os.path.join(extraPath, '_half2_class001_unfil.mrc'),
-            "--mask": newMask,
+            "--half1": averageSubTomoHalfMaps[0],
+            "--half2": averageSubTomoHalfMaps[1],
+            "--mask": mask,
             "--particles_relion": os.path.join(extraPath, '_data.star'),
-            "--angpix_resample": self.angpix_resample.get(),
             "--lowpass": self.lowpass.get(),
             "--angpix": voxelSize
 
         }
+        if self.angpix_resample.get() is not None:
+            argsDict["--angpix_resample"] = self.angpix_resample.get()
+
         self.runProgram(argsDict, MTOOLS, CREATE_SPECIES)
 
     def refinementStep(self):
         populationPath = os.path.join(self._getExtraPath('m'))
+        self.info(">>> Running M to check setup...")
         self.checkSetup(populationPath)
+        self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
         self.firstRefinement(populationPath)
+        self.info(">>> Stage Angle Refinement")
+        self.stageAngleRefinement(populationPath)
 
     def checkSetup(self, populationPath):
-        self.info(">>> Running M to check setup...")
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
             "--iter": 0
@@ -174,12 +184,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.runProgram(argsDict, MCORE, None)
 
     def firstRefinement(self, populationPath):
-        self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
             "--refine_imagewarp": '6x4'
         }
         cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
+        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
+
+    def stageAngleRefinement(self, populationPath):
+        argsDict = {
+            "--population": os.path.join(populationPath, 'processing.population'),
+            "--refine_imagewarp": '6x4'
+        }
+        cmd = '--refine_particles --refine_stageangles '
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
     def tsCtfEstimation(self):
@@ -211,7 +228,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
-            "--alignment_angpix": angpix,
+            "--alignment_angpix": angpix
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')

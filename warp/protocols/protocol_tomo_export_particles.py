@@ -25,13 +25,10 @@
 # ******************************************************************************
 
 import os
-import time
 from enum import Enum
 
-import mrcfile
 from emtable import Table
 
-from pwem import Domain
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
@@ -116,6 +113,8 @@ class ProtWarpExportParticles(ProtWarpBase):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
         self._insertFunctionStep(self.exportParticlesStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
+        self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
+
 
     def prepareDataStep(self):
         inputTs = self.inputSet.get()
@@ -344,6 +343,10 @@ class ProtWarpExportParticles(ProtWarpBase):
 
         os.replace(tempPath, filePath)
 
+    def cleanIntermediateResults(self):
+        self.info(">>> Cleaning intermediate results...")
+        imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
+        pwutils.cleanPath(imagesFolder)
 
 
 
