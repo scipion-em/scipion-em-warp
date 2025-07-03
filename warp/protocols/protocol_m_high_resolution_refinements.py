@@ -111,6 +111,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
 
     def prepareDataStep(self):
+        self.tomo_thickness = Integer(1013)
+        self.x_dimension = Integer(4405)
+        self.y_dimension = Integer(6000)
         inputTs = self.inputSet.get()
         self.createTiltSeriesSetting(None)
         for ts in inputTs.iterItems(iterate=False):
