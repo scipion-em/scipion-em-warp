@@ -115,19 +115,16 @@ class ProtWarpExportParticles(ProtWarpBase):
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
 
-
     def prepareDataStep(self):
         inputTs = self.inputSet.get()
         coordSet = self.coordinates.get()
-
         tsSr = inputTs.getSamplingRate()
         tomoSr = coordSet.getSamplingRate()
-        tomo_dim = coordSet.getPrecedents().getDim()
-
+        tomoDim = coordSet.getPrecedents().getDim()
         scaleFactor = tomoSr / tsSr
-        self.tomo_thickness = Integer(round(tomo_dim[2] * scaleFactor))
-        self.x_dimension = Integer(round(tomo_dim[0] * scaleFactor))
-        self.y_dimension = Integer(round(tomo_dim[1] * scaleFactor))
+        self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
+        self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
+        self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
 
         # Create the warp settings file and retrieve ctf and alignments values
         self.info(">>> Creating the warp settings file and retrieve ctf and alignments values...")

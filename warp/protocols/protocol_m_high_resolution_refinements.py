@@ -111,10 +111,17 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
 
     def prepareDataStep(self):
-        self.tomo_thickness = Integer(1013)
-        self.x_dimension = Integer(4405)
-        self.y_dimension = Integer(6000)
         inputTs = self.inputSet.get()
+        coordSet = self.relionRefineProt.get().inReParticles.get().getCoordinates3D()
+        tsSr = inputTs.getSamplingRate()
+        tomoSr = coordSet.getSamplingRate()
+        tomoDim = coordSet.getPrecedents().getDim()
+        scaleFactor = tomoSr / tsSr
+        self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
+        self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
+        self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
+        inputTs = self.inputSet.get()
+
         self.createTiltSeriesSetting(None)
         for ts in inputTs.iterItems(iterate=False):
             self.tsDataPrepare(ts)
