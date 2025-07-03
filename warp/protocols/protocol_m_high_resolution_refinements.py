@@ -100,7 +100,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       help="Optional low-pass filter (in Å), applied to both half-maps")
 
         form.addSection("Refinement")
-        form.addParam('iter', params.IntParam, default=3,
+        form.addParam('iter', params.IntParam, default=None,
+                      allowsNull=True,
                       label='Refinement sub-iterations',
                       help='Number of refinement sub-iterations')
 
@@ -213,8 +214,11 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def refinement(self, populationPath, step=1):
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--iter": self.iter.get()
+
         }
+        if self.iter.get() is not None:
+            argsDict["--iter"] = self.iter.get()
+
         if step == 1:
             cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
         elif step == 2:
@@ -225,34 +229,29 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def stageAngleRefinement(self, populationPath):
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--iter": self.iter.get()
         }
+        if self.iter.get() is not None:
+            argsDict["--iter"] = self.iter.get()
+
         if self.refine_imagewarp.get() is not None:
             argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
 
         cmd = '--refine_particles --refine_stageangles '
-        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
-
-    def secondRefinement(self, populationPath):
-        argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
-            "--iter": self.iter.get()
-        }
-
-        cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
     def stageAngleRefinement(self, populationPath):
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--iter": self.iter.get()
-        }
+            }
+
+        if self.iter.get() is not None:
+            argsDict["--iter"] = self.iter.get()
+
         if self.refine_imagewarp.get() is not None:
             argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
 
         cmd = '--refine_particles --refine_stageangles '
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
-
 
     def tsCtfEstimation(self):
         """CTF estimation"""
