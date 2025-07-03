@@ -25,15 +25,13 @@
 # ******************************************************************************
 
 import os
-import time
-
-import mrcfile
-
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
 from pyworkflow.object import Integer
 from pyworkflow.protocol import GPU_LIST
+
+from reliontomo.convert import convert50_tomo
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
@@ -67,10 +65,15 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       pointerClass='SetOfCTFTomoSeries',
                       help='Select the CTF estimation for the set '
                            'of tilt-series.')
-        form.addParam('relionRefineProt', params.PointerParam,
-                      pointerClass='ProtRelionRefineSubtomograms',
-                      label='Relion 3D refinement',
-                      help='Relion 3D refinement protocol')
+        form.addParam('inReParticles', params.PointerParam,
+                      pointerClass='RelionSetOfPseudoSubtomograms',
+                      label='Relion pseudosubtomograms',
+                      help='Relion set of pseudoSubtomograms')
+        form.addParam('averageSubtomogram', params.PointerParam, pointerClass='Volume',
+                      pointerCondition='hasHalfMaps',
+                      default=None,
+                      label='Reference volume',
+                      help='Average subtomogram with half maps')
         form.addParam('refMask', params.PointerParam, pointerClass='VolumeMask, Volume',
                       default=None,
                       label='Mask',
@@ -97,6 +100,15 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       help="Optional low-pass filter (in Å), applied to both half-maps")
 
         form.addSection("Refinement")
+        form.addParam('iter', params.IntParam, default=3,
+                      label='Refinement sub-iterations',
+                      help='Number of refinement sub-iterations')
+
+        form.addParam('refine_imagewarp', params.StringParam, default=None,
+                      allowsNull=True,
+                      label='Image warp grid',
+                      help="Refine image warp with a grid of XxY dimensions. "
+                           "Examples: leave blank = don't refine, '1x1', '6x4'")
 
         form.addHidden(GPU_LIST, params.StringParam, default='0',
                        label='Choose GPU IDs:', validators=[params.NonEmpty],
@@ -111,8 +123,13 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
 
     def prepareDataStep(self):
+
+        outPath = self._getExtraPath()
+        writer = convert50_tomo.Writer()
+        writer.pseudoSubtomograms2Star(self.inReParticles.get(), outPath)
+
         inputTs = self.inputSet.get()
-        coordSet = self.relionRefineProt.get().inReParticles.get().getCoordinates3D()
+        coordSet = self.inReParticles.get().getCoordinates3D()
         tsSr = inputTs.getSamplingRate()
         tomoSr = coordSet.getSamplingRate()
         tomoDim = coordSet.getPrecedents().getDim()
@@ -150,12 +167,11 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.runProgram(argsDict, MTOOLS, CREATE_SOURCES)
 
     def createSpeciesStep(self):
-        relionProt = self.relionRefineProt.get()
-        extraPath = relionProt._getExtraPath()
-        averageSubTomoHalfMaps = relionProt.average.getHalfMaps(asList=True)
+        extraPath = self._getExtraPath()
+        averageSubTomoHalfMaps = self.averageSubtomogram.get().getHalfMaps(asList=True)
         populationPath = os.path.join(self._getExtraPath('m'))
         mask = self.refMask.get().getFileName()
-        voxelSize = relionProt.average.getSamplingRate()
+        voxelSize = self.averageSubtomogram.get().getSamplingRate()
 
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
@@ -166,7 +182,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             "--half1": averageSubTomoHalfMaps[0],
             "--half2": averageSubTomoHalfMaps[1],
             "--mask": mask,
-            "--particles_relion": os.path.join(extraPath, '_data.star'),
+            "--particles_relion": os.path.join(extraPath, 'inParticles.star'),
             "--lowpass": self.lowpass.get(),
             "--angpix": voxelSize
 
@@ -181,7 +197,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.info(">>> Running M to check setup...")
         self.checkSetup(populationPath)
         self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
-        self.firstRefinement(populationPath)
+        self.refinement(populationPath, 1)
+        self.info(">>> Second M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
+        self.refinement(populationPath, 2)
         self.info(">>> Stage Angle Refinement")
         self.stageAngleRefinement(populationPath)
 
@@ -192,21 +210,49 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         }
         self.runProgram(argsDict, MCORE, None)
 
-    def firstRefinement(self, populationPath):
+    def refinement(self, populationPath, step=1):
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--refine_imagewarp": '6x4'
+            "--iter": self.iter.get()
         }
+        if step == 1:
+            cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
+        elif step == 2:
+            cmd = '--refine_particles --ctf_defocus'
+
+        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
+
+    def stageAngleRefinement(self, populationPath):
+        argsDict = {
+            "--population": os.path.join(populationPath, 'processing.population'),
+            "--iter": self.iter.get()
+        }
+        if self.refine_imagewarp.get() is not None:
+            argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
+
+        cmd = '--refine_particles --refine_stageangles '
+        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
+
+    def secondRefinement(self, populationPath):
+        argsDict = {
+            "--population": os.path.join(populationPath, 'processing.population'),
+            "--iter": self.iter.get()
+        }
+
         cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
     def stageAngleRefinement(self, populationPath):
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
-            "--refine_imagewarp": '6x4'
+            "--iter": self.iter.get()
         }
+        if self.refine_imagewarp.get() is not None:
+            argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
+
         cmd = '--refine_particles --refine_stageangles '
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
+
 
     def tsCtfEstimation(self):
         """CTF estimation"""
