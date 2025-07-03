@@ -120,7 +120,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
         self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
         self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
-        inputTs = self.inputSet.get()
 
         self.createTiltSeriesSetting(None)
         for ts in inputTs.iterItems(iterate=False):
