@@ -508,6 +508,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         """Finalizes and closes the output sets. """
         self._closeOutputSet()
 
+    def allowsDelete(self, obj):
+        return True
+
 
     # def createOutputTS(self, ts):
     #     time.sleep(5)
