@@ -426,7 +426,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         half1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
         half2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
 
-        setMRCSamplingRate([volName, half1, half2], aveSr)
+        # setMRCSamplingRate([volName, half1, half2], aveSr)
         fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
         fixVolume(half1)
         fixVolume(half2)
