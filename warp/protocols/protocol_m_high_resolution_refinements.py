@@ -171,10 +171,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def _insertAllSteps(self):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
-        # self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
-        # self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
-        # self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
-        # self._insertFunctionStep(self.refinementStep, needsGPU=True)
+        self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
+        self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
+        self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+        self._insertFunctionStep(self.refinementStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
 
@@ -365,7 +365,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inputTs = self.inputSet.get()
         for ts in inputTs.iterItems(iterate=False):
             self.createOutputCTF(ts)
-        time.sleep(5)
         self.createOutputAverage()
         self.createOutputParticles()
 
@@ -378,14 +377,14 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
         inParticles = self.inReParticles.get()
-        source_data = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
-        target_data = starfile.read(particlesPath)
+        sourceData = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
+        targetData = starfile.read(particlesPath)
 
-        source_df = source_data['particles']
-        target_df = target_data
+        sourceDF = sourceData['particles']
+        targetDF = targetData
 
-        # Define column mapping: source_column -> target_column
-        column_mapping = {
+        # Define column mapping: sourceColumn -> targetColumn
+        columnMapping = {
             # WRP_COORDINATE_X: RLN_COORDINATE_X,
             # WRP_COORDINATE_Y: RLN_COORDINATE_Y,
             # WRP_COORDINATE_Z: RLN_COORDINATE_Z,
@@ -393,19 +392,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             WRP_ANGLE_TILT: RLN_ANGLE_TILT,
             WRP_ANGLE_PSI: RLN_ANGLE_PSI,
         }
-        for source_col, target_col in column_mapping.items():
-            if target_col in source_df.columns and source_col in target_df.columns:
-                source_df[target_col] = target_df[source_col].values
+        for sourceCol, targetCol in columnMapping.items():
+            if targetCol in sourceDF.columns and sourceCol in targetDF.columns:
+                sourceDF[targetCol] = targetDF[sourceCol].values
             else:
-                print(f"Warning: Column {source_col} or {target_col} not found.")
+                print(f"Warning: Column {sourceCol} or {targetCol} not found.")
 
         # Write updated STAR file
-        starfile.write(source_df, self._getExtraPath('fileB_modified.star'))
+        starfile.write(sourceDF, self._getExtraPath('particles.star'))
 
         # Output Relion particles
         relionParticles = RelionSetOfPseudoSubtomograms.create(self.getPath(), template='pseudosubtomograms%s.sqlite')
         relionParticles.copyInfo(inParticles)
-        relionParticles.setParticles(self._getExtraPath('fileB_modified.star'))
+        relionParticles.setParticles(self._getExtraPath('particles.star'))
         relionParticles.setBoxSize(inParticles.getBoxSize())
         relionParticles.setRelionBinning(inParticles.getRelionBinning())
         relionParticles.setSamplingRate(inParticles.getSamplingRate())
