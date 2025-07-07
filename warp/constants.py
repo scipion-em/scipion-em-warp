@@ -42,6 +42,8 @@ WARP_FORCE_MRC_FLOAT32 = 'WARP_FORCE_MRC_FLOAT32'
 
 
 OUTPUT_CTF_SERIE = "CTFTomoSeries"
+OUPUT_AVERAGE_SUBTOMOGRAM = "AverageSubTomogram"
+OUTPUT_RELION_PARTICLES = "RelionParticles"
 OUTPUT_TOMOGRAMS_NAME = "Tomograms"
 OUTPUT_TILTSERIES = 'TiltSeries'
 OUTPUT_HANDEDNESS = 'Handedness_OK'
@@ -94,10 +96,17 @@ RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
 MATCHING_FOLDER = 'matching'
 RELION_FOLDER = 'relion'
-M_RESULT_FOLDER = 'M'
+M_RESULT_FOLDER = 'm'
+SPECIES_FOLDER = 'species'
 OPTIMISATION_SET_STAR = 'matching_optimisation_set.star'
 MATCHING_PARTICLES_STAR = 'matching.star'
+IN_PARTICLES_STAR = 'inParticles.star'
 MATCHING_TOMOGRAMS_STAR = 'matching_tomograms.star'
+MATCHING_PROCESSING_SPECIES_PATTERN = 'processing_species_*'
+PROCESSING_SPECIES_AVERAGE = 'processing_species_filt.mrc'
+PROCESSING_SPECIES_HALF1 = 'processing_species_half1.mrc'
+PROCESSING_SPECIES_HALF2 = 'processing_species_half2.mrc'
+PROCESSING_SPECIES_PARTICLES = 'processing_species_particles.star'
 
 # RELION LABELS
 RLN_COORDINATE_X = 'rlnCoordinateX'
@@ -108,6 +117,17 @@ RLN_ANGLE_TILT = 'rlnAngleTilt'
 RLN_ANGLE_PSI = 'rlnAnglePsi'
 RLN_AUTOPICK_FIGURE_OF_MERIT = 'rlnAutopickFigureOfMerit'
 RLN_MICROGRAPH_NAME = 'rlnMicrographName'
+
+# WARP_LABELS
+WRP_COORDINATE_X = 'wrpCoordinateX1'
+WRP_COORDINATE_Y = 'wrpCoordinateY1'
+WRP_COORDINATE_Z = 'wrpCoordinateZ1'
+WRP_ANGLE_ROT = 'wrpAngleRot1'
+WRP_ANGLE_TILT = 'wrpAngleTilt1'
+WRP_ANGLE_PSI = 'wrpAnglePsi1'
+WRP_RAMDOM_SUBSET = 'wrpRandomSubset'
+WRP_SOURCE_NAME = 'wrpSourceName'
+WRP_SOURCE_HASH = 'wrpSourceHash'
 
 tomoStarFields = [
     RLN_COORDINATE_X,

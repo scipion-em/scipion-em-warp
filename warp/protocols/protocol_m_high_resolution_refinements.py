@@ -23,19 +23,26 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # ******************************************************************************
-
+import glob
 import os
+import time
+
+import starfile
+
+from pwem.convert.headers import fixVolume
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
-from pyworkflow.object import Integer
+from pyworkflow.object import Integer, Set
 from pyworkflow.protocol import GPU_LIST
 
-from reliontomo.convert import convert50_tomo
+from reliontomo.convert import convert50_tomo, readSetOfPseudoSubtomograms
+from reliontomo.objects import  RelionSetOfPseudoSubtomograms
+from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries,  AverageSubTomogram
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile
+from warp.utils import updateCtFXMLFile, parseCtfXMLFile
 
 
 class ProtWarpMHigResolutionRefinement(ProtWarpBase):
@@ -53,7 +60,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
-        form.addSection("Import")
+        form.addSection("Input")
         form.addParam('inputSet',
                       params.PointerParam,
                       pointerClass='SetOfTiltSeries',
@@ -105,11 +112,57 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       label='Refinement sub-iterations',
                       help='Number of refinement sub-iterations')
 
+        form.addParam('refine_particles', params.BooleanParam, default=True,
+                      label='Refine particle poses',
+                      help="Refine particle poses")
+
         form.addParam('refine_imagewarp', params.StringParam, default=None,
                       allowsNull=True,
                       label='Image warp grid',
                       help="Refine image warp with a grid of XxY dimensions. "
                            "Examples: leave blank = don't refine, '1x1', '6x4'")
+
+        form.addParam('refine_stageangles', params.BooleanParam, default=True,
+                      label='Refine stage angles',
+                      help="Refine stage angles (tilt series only)")
+
+        form.addParam('refine_mag', params.BooleanParam, default=False,
+                      label='Refine anisotropic magnification',
+                      help="Refine anisotropic magnification")
+
+        form.addParam('ctf_defocus', params.BooleanParam, default=True,
+                      label='Refine defocus',
+                      help="Refine defocus using a local search")
+
+        form.addParam('ctf_defocusexhaustive', params.BooleanParam, default=True,
+                      label='Refine defocus more exhaustive',
+                      help="Refine defocus using a more exhaustive grid search in the first "
+                           "sub-iteration; only works in combination with ctf_defocus")
+
+        form.addParam('ctf_phase', params.BooleanParam, default=False,
+                      label='Refine phase shift',
+                      help="Refine phase shift (phase plate data only)")
+
+        form.addParam('ctf_cs', params.BooleanParam, default=False,
+                      label='Refine spherical aberration',
+                      help="Refine spherical aberration, which is also a proxy for pixel size")
+
+        form.addParam('ctf_zernike2', params.BooleanParam, default=False,
+                      label='Refine Zernike polynomials of 2nd order',
+                      help="Refine Zernike polynomials of 2nd order (slow)")
+
+        form.addParam('ctf_zernike3', params.BooleanParam, default=False,
+                      label='Refine Zernike polynomials of 3rd order',
+                      help="Refine Zernike polynomials of 3rd order (beam tilt, trefoil – fast)")
+
+        form.addParam('ctf_zernike4', params.BooleanParam, default=False,
+                      label='Refine Zernike polynomials of 4th order',
+                      help="Refine Zernike polynomials of 4th order (slow)")
+
+        form.addParam('ctf_zernike5', params.BooleanParam, default=False,
+                      label='Refine Zernike polynomials of 5th order',
+                      help="Refine Zernike polynomials of 5th order (fast)")
+
 
         form.addHidden(GPU_LIST, params.StringParam, default='0',
                        label='Choose GPU IDs:', validators=[params.NonEmpty],
@@ -118,10 +171,12 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def _insertAllSteps(self):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
-        self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
-        self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
-        self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
-        self._insertFunctionStep(self.refinementStep, needsGPU=True)
+        # self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
+        # self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
+        # self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+        # self._insertFunctionStep(self.refinementStep, needsGPU=True)
+        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
+        self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
 
     def prepareDataStep(self):
 
@@ -132,9 +187,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inputTs = self.inputSet.get()
         coordSet = self.inReParticles.get().getCoordinates3D()
         tsSr = inputTs.getSamplingRate()
-        tomoSr = coordSet.getSamplingRate()
+        coordSr = coordSet.getSamplingRate()
         tomoDim = coordSet.getPrecedents().getDim()
-        scaleFactor = tomoSr / tsSr
+        scaleFactor = coordSr / tsSr
         self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
         self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
         self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
@@ -170,7 +225,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def createSpeciesStep(self):
         extraPath = self._getExtraPath()
         averageSubTomoHalfMaps = self.averageSubtomogram.get().getHalfMaps(asList=True)
-        populationPath = os.path.join(self._getExtraPath('m'))
+        populationPath = os.path.join(self._getExtraPath(M_RESULT_FOLDER))
         mask = self.refMask.get().getFileName()
         voxelSize = self.averageSubtomogram.get().getSamplingRate()
 
@@ -197,12 +252,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         populationPath = os.path.join(self._getExtraPath('m'))
         self.info(">>> Running M to check setup...")
         self.checkSetup(populationPath)
-        self.info(">>> First M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
-        self.refinement(populationPath, 1)
-        self.info(">>> Second M Refinement with 2D Image Warp, Particle Poses Refinement and CTF Refinement")
-        self.refinement(populationPath, 2)
-        self.info(">>> Stage Angle Refinement")
-        self.stageAngleRefinement(populationPath)
+        self.refinement(populationPath)
 
     def checkSetup(self, populationPath):
         argsDict = {
@@ -211,46 +261,63 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         }
         self.runProgram(argsDict, MCORE, None)
 
-    def refinement(self, populationPath, step=1):
-        argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
-
-        }
-        if self.iter.get() is not None:
-            argsDict["--iter"] = self.iter.get()
-
-        if step == 1:
-            cmd = '--refine_particles --ctf_defocus --ctf_defocusexhaustive'
-        elif step == 2:
-            cmd = '--refine_particles --ctf_defocus'
-
-        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
-
-    def stageAngleRefinement(self, populationPath):
+    def refinement(self, populationPath):
+        msg = ">>>Refinement with 2D Image Warp: \n"
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
         }
-        if self.iter.get() is not None:
-            argsDict["--iter"] = self.iter.get()
 
-        if self.refine_imagewarp.get() is not None:
-            argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
-
-        cmd = '--refine_particles --refine_stageangles '
-        self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
-
-    def stageAngleRefinement(self, populationPath):
-        argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
-            }
+        cmd = ''
 
         if self.iter.get() is not None:
             argsDict["--iter"] = self.iter.get()
 
-        if self.refine_imagewarp.get() is not None:
-            argsDict["--refine_imagewarp"] = self.refine_imagewarp.get()
+        if self.refine_particles.get():
+            msg += "* Refinement Particles Poses \n"
+            cmd += '--refine_particles '
 
-        cmd = '--refine_particles --refine_stageangles '
+        if self.refine_mag.get():
+            msg += "* Refine anisotropic magnification \n"
+            cmd += '--refine_mag '
+
+        if self.refine_stageangles.get():
+            msg += "* Refine stage angles (tilt series only) \n"
+            cmd += '--refine_stageangles '
+
+        if self.ctf_defocus.get():
+            msg += "* Refine defocus using a local search \n"
+            cmd += '--ctf_defocus '
+
+        if self.ctf_defocusexhaustive.get():
+            msg += ("* Refine defocus using a more exhaustive grid search in the first sub-iteration; "
+                    "only works in combination with ctf_defocus \n")
+            cmd += '--ctf_defocusexhaustive '
+
+        if self.ctf_phase.get():
+            msg += "* Refine phase shift (phase plate data only) \n"
+            cmd += '--ctf_phase '
+
+        if self.ctf_cs.get():
+            msg += "* Refine spherical aberration, which is also a proxy for pixel size \n"
+            cmd += '--ctf_cs '
+
+        if self.ctf_zernike2.get():
+            msg += "* Refine Zernike polynomials of 2nd order (slow) \n"
+            cmd += '--ctf_zernike2 '
+
+        if self.ctf_zernike3.get():
+            msg += "* Refine Zernike polynomials of 3rd order (beam tilt, trefoil – fast) \n"
+            cmd += '--ctf_zernike3 '
+
+        if self.ctf_zernike4.get():
+            msg += "* Refine Zernike polynomials of 4th order (slow) \n"
+            cmd += '--ctf_zernike4 '
+
+        if self.ctf_zernike5.get():
+            msg += "* Refine Zernike polynomials of 5th order (fast) \n"
+            cmd += '--ctf_zernike5 '
+
+        self.info(msg)
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
     def tsCtfEstimation(self):
@@ -292,3 +359,196 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
         ts.writeImodFiles(tiltstackFolder, delimiter=' ')
+
+    def createOutputStep(self):
+        self.info(">>> Creating outputs...")
+        inputTs = self.inputSet.get()
+        for ts in inputTs.iterItems(iterate=False):
+            self.createOutputCTF(ts)
+        time.sleep(5)
+        self.createOutputAverage()
+        self.createOutputParticles()
+
+    def createOutputParticles(self):
+        processingFolder = self.getProcessingFolder()
+
+        if not processingFolder:
+            raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
+            # Use the first matching folder (you can modify this logic if needed)
+
+        particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
+        inParticles = self.inReParticles.get()
+        source_data = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
+        target_data = starfile.read(particlesPath)
+
+        source_df = source_data['particles']
+        target_df = target_data
+
+        # Define column mapping: source_column -> target_column
+        column_mapping = {
+            # WRP_COORDINATE_X: RLN_COORDINATE_X,
+            # WRP_COORDINATE_Y: RLN_COORDINATE_Y,
+            # WRP_COORDINATE_Z: RLN_COORDINATE_Z,
+            WRP_ANGLE_ROT: RLN_ANGLE_ROT,
+            WRP_ANGLE_TILT: RLN_ANGLE_TILT,
+            WRP_ANGLE_PSI: RLN_ANGLE_PSI,
+        }
+        for source_col, target_col in column_mapping.items():
+            if target_col in source_df.columns and source_col in target_df.columns:
+                source_df[target_col] = target_df[source_col].values
+            else:
+                print(f"Warning: Column {source_col} or {target_col} not found.")
+
+        # Write updated STAR file
+        starfile.write(source_df, self._getExtraPath('fileB_modified.star'))
+
+        # Output Relion particles
+        relionParticles = RelionSetOfPseudoSubtomograms.create(self.getPath(), template='pseudosubtomograms%s.sqlite')
+        relionParticles.copyInfo(inParticles)
+        relionParticles.setParticles(self._getExtraPath('fileB_modified.star'))
+        relionParticles.setBoxSize(inParticles.getBoxSize())
+        relionParticles.setRelionBinning(inParticles.getRelionBinning())
+        relionParticles.setSamplingRate(inParticles.getSamplingRate())
+        readSetOfPseudoSubtomograms(relionParticles, isRelion5=True)
+
+        self._defineOutputs(**{OUTPUT_RELION_PARTICLES: relionParticles})
+        self._defineSourceRelation(inParticles, relionParticles)
+
+    def createOutputAverage(self):
+        processingFolder = self.getProcessingFolder()
+
+        if not processingFolder:
+            raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
+
+        # Output volume
+        vol = AverageSubTomogram()
+        volName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
+        fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
+        vol.setFileName(volName)
+        vol.setSamplingRate(self.inReParticles.get().getCurrentSamplingRate())
+        half1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
+        half2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
+        vol.setHalfMaps([half1, half2])
+
+        self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
+
+    def getProcessingFolder(self):
+        # Return the first matching folder (you can modify this logic if needed)
+        mFolder = self._getExtraPath(M_RESULT_FOLDER)
+        speciesFolder = os.path.join(mFolder, SPECIES_FOLDER)
+
+        # Search for folder matching the pattern "processing_especies_*"
+        folderPattern = os.path.join(speciesFolder, MATCHING_PROCESSING_SPECIES_PATTERN)
+        matchingFolder = glob.glob(folderPattern)
+        return matchingFolder[0]
+
+    def createOutputCTF(self, ts):
+        tsId = ts.getTsId()
+        self.info(">>> Generating outputs to %s" % tsId)
+        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
+        if ts.isEnabled():
+            outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
+            # CTF outputs
+            newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
+            newCTFTomoSeries.copyInfo(ts)
+            newCTFTomoSeries.setTiltSeries(ts)
+            outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
+            defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+            ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+            defocusDelta = float(ctfData['DefocusDelta']) * 1e4
+            defocusAngle = float(ctfData['DefocusAngle'])
+
+            index = 0
+            for ti in ts.iterItems():
+                if ti.isEnabled():
+                    newCTFTomo = CTFTomo()
+                    newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
+                    newCTFTomo.setIndex(index)
+                    newCTFTomo.setObjId(index)
+                    defocusU = 0
+                    defocusV = 0
+                    if index in gridCtfData["Nodes"]:
+                        defocusU = gridCtfData["Nodes"][index] + defocusDelta
+                        defocusV = gridCtfData["Nodes"][index] - defocusAngle
+                    newCTFTomo.setDefocusU(defocusU)
+                    newCTFTomo.setDefocusV(defocusV)
+                    newCTFTomo.setDefocusAngle(defocusAngle)
+                    newCTFTomo.setResolution(0)
+                    newCTFTomo.setFitQuality(0)
+                    newCTFTomo.standardize()
+                    newCTFTomo.setPsdFile(f"{index}@" + psdStack)
+                    newCTFTomoSeries.append(newCTFTomo)
+                    index += 1
+
+            outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
+            outputSetOfCTFTomoSeries.write()
+            self._store(outputSetOfCTFTomoSeries)
+
+    def getOutputSetOfCTFTomoSeries(self, outputSetName):
+        outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
+
+        if outputSetOfCTFTomoSeries:
+            outputSetOfCTFTomoSeries.enableAppend()
+        else:
+            outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
+                                                                 template='CTFmodels%s.sqlite')
+            tsSet = self.inputSet
+            outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
+            outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
+            self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
+            self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
+
+        return outputSetOfCTFTomoSeries
+
+    def closeOutputStep(self):
+        """Finalizes and closes the output sets. """
+        self._closeOutputSet()
+
+
+    # def createOutputTS(self, ts):
+    #     time.sleep(5)
+    #     tsId = ts.getTsId()
+    #     processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
+    #     xmlFilePath = os.path.join(processingFolder, tsId + '.xml')
+    #     coordSet = self.inReParticles.get().getCoordinates3D()
+    #     tsSr = ts.getSamplingRate()
+    #     tomoSr = coordSet.getPrecedents().getSamplingRate()
+    #     scaleFactor = tomoSr / tsSr
+    #
+    #     outputTS = self.getOutputSetOfTS(OUTPUT_TILTSERIES)
+    #     newTs = TiltSeries(tsId=tsId)
+    #     newTs.copyInfo(ts)
+    #     outputTS.append(newTs)
+    #     axisOffsetX, axisOffsetY = extractAxisOffsets(xmlFilePath)
+    #
+    #     for index, ti in enumerate(ts):
+    #         newTi = TiltImage()
+    #         newTi.copyInfo(ti)
+    #         newTi.setAcquisition(ti.getAcquisition().clone())
+    #         newTi.setSamplingRate(ti.getSamplingRate())
+    #         transform = ti.getTransform().getMatrix()
+    #         transform[0, -1] = axisOffsetX[index] * scaleFactor
+    #         transform[1, -1] = axisOffsetY[index] * scaleFactor
+    #         newTi.setTransform(transform)
+    #
+    #     outputTS.update(newTs)
+    #     outputTS.write()
+    #     self._store(outputTS)
+    #
+    # def getOutputSetOfTS(self, outputSetName):
+    #     outputSetOfTiltSeries = getattr(self, outputSetName, None)
+    #
+    #     if outputSetOfTiltSeries:
+    #         outputSetOfTiltSeries.enableAppend()
+    #     else:
+    #         outputSetOfTiltSeries = SetOfTiltSeries.create(self._getPath(), template='tiltseries')
+    #         tsSet = self.inputSet.get()
+    #         outputSetOfTiltSeries.setSamplingRate(tsSet.getSamplingRate())
+    #         outputSetOfTiltSeries.setAcquisition(tsSet.getAcquisition())
+    #         outputSetOfTiltSeries.setStreamState(Set.STREAM_OPEN)
+    #         self._defineOutputs(**{outputSetName: outputSetOfTiltSeries})
+    #         self._defineSourceRelation(outputSetOfTiltSeries, tsSet)
+    #
+    #     return outputSetOfTiltSeries
+
