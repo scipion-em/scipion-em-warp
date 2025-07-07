@@ -29,7 +29,7 @@ import time
 
 import starfile
 
-from pwem.convert.headers import fixVolume
+from pwem.convert.headers import fixVolume, setMRCSamplingRate
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
@@ -422,11 +422,16 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         # Output volume
         vol = AverageSubTomogram()
         volName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
-        fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
-        vol.setFileName(volName)
-        vol.setSamplingRate(self.inReParticles.get().getCurrentSamplingRate())
+        aveSr = self.averageSubtomogram.get().getSamplingRate()
         half1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
         half2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
+
+        setMRCSamplingRate([volName, half1, half2], aveSr)
+        fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
+        fixVolume(half1)
+        fixVolume(half2)
+        vol.setFileName(volName)
+        vol.setSamplingRate(self.inReParticles.get().getCurrentSamplingRate())
         vol.setHalfMaps([half1, half2])
 
         self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
@@ -443,7 +448,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def createOutputCTF(self, ts):
         tsId = ts.getTsId()
-        self.info(">>> Generating outputs to %s" % tsId)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
         if ts.isEnabled():
