@@ -538,5 +538,5 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         if processingFolder:
             speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
             if os.path.exists(speciesFile):
-                summary.append("Global Resolution: %s " % extractGlobalResolution(speciesFile))
+                summary.append("* Global Resolution: %s Å" % extractGlobalResolution(speciesFile))
         return summary
