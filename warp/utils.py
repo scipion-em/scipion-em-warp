@@ -192,7 +192,7 @@ def extractGlobalResolution(xmlPath):
 
     for param in root.findall('Param'):
         if param.attrib.get('Name') == 'GlobalResolution':
-            globalResolution = param.attrib.get('Value')
+            globalResolution = f"{float(param.attrib.get('Value')):.2f}"
             break
     return globalResolution
 
