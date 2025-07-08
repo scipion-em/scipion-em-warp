@@ -107,6 +107,7 @@ PROCESSING_SPECIES_AVERAGE = 'processing_species_filt.mrc'
 PROCESSING_SPECIES_HALF1 = 'processing_species_half1.mrc'
 PROCESSING_SPECIES_HALF2 = 'processing_species_half2.mrc'
 PROCESSING_SPECIES_PARTICLES = 'processing_species_particles.star'
+PROCESSING_SPECIES_MASK = 'processing_species_mask.mrc'
 
 # RELION LABELS
 RLN_COORDINATE_X = 'rlnCoordinateX'

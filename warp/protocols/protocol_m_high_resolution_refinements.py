@@ -30,6 +30,7 @@ import time
 import starfile
 
 from pwem.convert.headers import fixVolume, setMRCSamplingRate
+from pwem.objects import VolumeMask
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
@@ -366,6 +367,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         for ts in inputTs.iterItems(iterate=False):
             self.createOutputCTF(ts)
         self.createOutputAverage()
+        self.createOutputMask()
         self.createOutputParticles()
 
     def createOutputParticles(self):
@@ -377,24 +379,29 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
         inParticles = self.inReParticles.get()
+        sr = inParticles.getSamplingRate()
         sourceData = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
         targetData = starfile.read(particlesPath)
 
         sourceDF = sourceData['particles']
         targetDF = targetData
 
-        # Define column mapping: sourceColumn -> targetColumn
+        # Define column mapping: targetColumn -> sourceColumn
         columnMapping = {
-            # WRP_COORDINATE_X: RLN_COORDINATE_X,
-            # WRP_COORDINATE_Y: RLN_COORDINATE_Y,
-            # WRP_COORDINATE_Z: RLN_COORDINATE_Z,
+            WRP_COORDINATE_X: RLN_COORDINATE_X,
+            WRP_COORDINATE_Y: RLN_COORDINATE_Y,
+            WRP_COORDINATE_Z: RLN_COORDINATE_Z,
             WRP_ANGLE_ROT: RLN_ANGLE_ROT,
             WRP_ANGLE_TILT: RLN_ANGLE_TILT,
             WRP_ANGLE_PSI: RLN_ANGLE_PSI,
         }
+
         for sourceCol, targetCol in columnMapping.items():
             if targetCol in sourceDF.columns and sourceCol in targetDF.columns:
-                sourceDF[targetCol] = targetDF[sourceCol].values
+                factor = 1
+                if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
+                    factor = sr
+                sourceDF[targetCol] = targetDF[sourceCol].values/factor
             else:
                 print(f"Warning: Column {sourceCol} or {targetCol} not found.")
 
@@ -431,10 +438,26 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         fixVolume(half1)
         fixVolume(half2)
         vol.setFileName(volName)
-        vol.setSamplingRate(self.inReParticles.get().getCurrentSamplingRate())
+        sr = self.angpix_resample.get()
+        vol.setSamplingRate(sr)
         vol.setHalfMaps([half1, half2])
 
         self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
+
+    def createOutputMask(self):
+        processingFolder = self.getProcessingFolder()
+        inParticles = self.inReParticles.get()
+
+        if not processingFolder:
+            raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
+
+        volMask = VolumeMask()
+        maskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
+        volMask.setFileName(maskFilePath)
+        sr = self.angpix_resample.get()
+        volMask.setSamplingRate(sr)
+        self._defineOutputs(solventMask=volMask)
+        self._defineSourceRelation(inParticles, volMask)
 
     def getProcessingFolder(self):
         # Return the first matching folder (you can modify this logic if needed)
