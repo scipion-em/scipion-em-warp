@@ -42,7 +42,7 @@ from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries,  AverageSub
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile, parseCtfXMLFile
+from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolution
 
 
 class ProtWarpMHigResolutionRefinement(ProtWarpBase):
@@ -428,11 +428,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         # Output volume
         vol = AverageSubTomogram()
         volName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
-        aveSr = self.averageSubtomogram.get().getSamplingRate()
         half1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
         half2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
 
-        # setMRCSamplingRate([volName, half1, half2], aveSr)
         fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
         fixVolume(half1)
         fixVolume(half2)
@@ -533,50 +531,12 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def allowsDelete(self, obj):
         return True
 
+    def _summary(self):
+        summary = []
+        processingFolder = self.getProcessingFolder()
 
-    # def createOutputTS(self, ts):
-    #     time.sleep(5)
-    #     tsId = ts.getTsId()
-    #     processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-    #     xmlFilePath = os.path.join(processingFolder, tsId + '.xml')
-    #     coordSet = self.inReParticles.get().getCoordinates3D()
-    #     tsSr = ts.getSamplingRate()
-    #     tomoSr = coordSet.getPrecedents().getSamplingRate()
-    #     scaleFactor = tomoSr / tsSr
-    #
-    #     outputTS = self.getOutputSetOfTS(OUTPUT_TILTSERIES)
-    #     newTs = TiltSeries(tsId=tsId)
-    #     newTs.copyInfo(ts)
-    #     outputTS.append(newTs)
-    #     axisOffsetX, axisOffsetY = extractAxisOffsets(xmlFilePath)
-    #
-    #     for index, ti in enumerate(ts):
-    #         newTi = TiltImage()
-    #         newTi.copyInfo(ti)
-    #         newTi.setAcquisition(ti.getAcquisition().clone())
-    #         newTi.setSamplingRate(ti.getSamplingRate())
-    #         transform = ti.getTransform().getMatrix()
-    #         transform[0, -1] = axisOffsetX[index] * scaleFactor
-    #         transform[1, -1] = axisOffsetY[index] * scaleFactor
-    #         newTi.setTransform(transform)
-    #
-    #     outputTS.update(newTs)
-    #     outputTS.write()
-    #     self._store(outputTS)
-    #
-    # def getOutputSetOfTS(self, outputSetName):
-    #     outputSetOfTiltSeries = getattr(self, outputSetName, None)
-    #
-    #     if outputSetOfTiltSeries:
-    #         outputSetOfTiltSeries.enableAppend()
-    #     else:
-    #         outputSetOfTiltSeries = SetOfTiltSeries.create(self._getPath(), template='tiltseries')
-    #         tsSet = self.inputSet.get()
-    #         outputSetOfTiltSeries.setSamplingRate(tsSet.getSamplingRate())
-    #         outputSetOfTiltSeries.setAcquisition(tsSet.getAcquisition())
-    #         outputSetOfTiltSeries.setStreamState(Set.STREAM_OPEN)
-    #         self._defineOutputs(**{outputSetName: outputSetOfTiltSeries})
-    #         self._defineSourceRelation(outputSetOfTiltSeries, tsSet)
-    #
-    #     return outputSetOfTiltSeries
-
+        if processingFolder:
+            speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
+            if os.path.exists(speciesFile):
+                summary.append("Global Resolution: %s " % extractGlobalResolution(speciesFile))
+        return summary

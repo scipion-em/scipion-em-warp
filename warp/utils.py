@@ -182,6 +182,21 @@ def parseCtfXMLFile(xmlPath):
     return ctfData, gridCtfData
 
 
+def extractGlobalResolution(xmlPath):
+    globalResolution = ''
+
+    with open(xmlPath, "r", encoding="utf-8") as f:
+        xml_data = f.read().lstrip()
+
+    root = eTree.fromstring(xml_data)
+
+    for param in root.findall('Param'):
+        if param.attrib.get('Name') == 'GlobalResolution':
+            globalResolution = param.attrib.get('Value')
+            break
+    return globalResolution
+
+
 def extractAxisOffsets(xmlPath):
     """
     Extracts AxisOffsetX and AxisOffsetY values from an XML file.
