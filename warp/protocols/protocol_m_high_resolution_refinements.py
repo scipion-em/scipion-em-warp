@@ -25,7 +25,6 @@
 # ******************************************************************************
 import glob
 import os
-import time
 
 import starfile
 
@@ -452,11 +451,11 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
 
         volMask = VolumeMask()
-        maskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
+        maskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_MASK)
         volMask.setFileName(maskFilePath)
         sr = self.angpix_resample.get()
         volMask.setSamplingRate(sr)
-        self._defineOutputs(solventMask=volMask)
+        self._defineOutputs(**{OUTPUT_MASK_SUBTOMOGRAM: volMask})
         self._defineSourceRelation(inParticles, volMask)
 
     def getProcessingFolder(self):
