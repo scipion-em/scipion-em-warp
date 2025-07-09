@@ -25,11 +25,10 @@
 # ******************************************************************************
 import glob
 import os
-import time
 
 import starfile
 
-from pwem.convert.headers import fixVolume, setMRCSamplingRate
+from pwem.convert.headers import fixVolume
 from pwem.objects import VolumeMask
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
@@ -188,6 +187,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
             self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
             self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+            self._insertFunctionStep(self.checkSetup, needsGPU=True)
         else:
             self._insertFunctionStep(self.prepareMDataStep, needsGPU=False)
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
@@ -232,7 +232,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         return refMask
 
     def prepareMDataStep(self):
-        time.sleep(10)
         mPrevProt = self.inputToMProtocol.get()
         mPrevProtExtraPath = mPrevProt._getExtraPath()
         pwutils.cleanPath(self._getExtraPath())
@@ -311,10 +310,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def refinementStep(self):
         populationPath = os.path.join(self._getExtraPath('m'))
         self.info(">>> Running M to check setup...")
-        self.checkSetup(populationPath)
         self.refinement(populationPath)
 
-    def checkSetup(self, populationPath):
+    def checkSetup(self):
+        populationPath = os.path.join(self._getExtraPath('m'))
         argsDict = {
             "--population": os.path.join(populationPath, 'processing.population'),
             "--iter": 0
