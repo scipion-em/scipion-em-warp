@@ -25,6 +25,7 @@
 # ******************************************************************************
 import glob
 import os
+import time
 
 import starfile
 
@@ -33,7 +34,7 @@ from pwem.objects import VolumeMask
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
-from pyworkflow.object import Integer, Set
+from pyworkflow.object import Integer, Set, Float
 from pyworkflow.protocol import GPU_LIST
 
 from reliontomo.convert import convert50_tomo, readSetOfPseudoSubtomograms
@@ -182,6 +183,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                             'Default: all GPUs in the system For example: "0 1 5"')
 
     def _insertAllSteps(self):
+        self.globalResolution = Float()
         if not self.inputFromMProtocol.get():
             self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
             self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
@@ -207,28 +209,28 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inputSetOfCtfTomoSeries = self.inputSetOfCtfTomoSeries.get()
         if self.inputFromMProtocol.get():
             mPrevProt = self.inputToMProtocol.get()
-            inputSetOfCtfTomoSeries = mPrevProt.CTFTomoSeries.get()
+            inputSetOfCtfTomoSeries = mPrevProt.CTFTomoSeries
         return inputSetOfCtfTomoSeries
 
     def getInputSetOfReParticles(self):
         inReParticles = self.inReParticles.get()
         if self.inputFromMProtocol.get():
             mPrevProt = self.inputToMProtocol.get()
-            inReParticles = mPrevProt.inReParticles.get()
+            inReParticles = mPrevProt.RelionParticles
         return inReParticles
 
     def getInputAverageSubtomogram(self):
         averageSubtomogram = self.averageSubtomogram.get()
         if self.inputFromMProtocol.get():
             mPrevProt = self.inputToMProtocol.get()
-            averageSubtomogram = mPrevProt.averageSubtomogram.get()
+            averageSubtomogram = mPrevProt.AverageSubTomogram
         return averageSubtomogram
 
     def getRefMask(self):
         refMask = self.refMask.get()
         if self.inputFromMProtocol.get():
             mPrevProt = self.inputToMProtocol.get()
-            refMask = mPrevProt.refMask.get()
+            refMask = mPrevProt.MaskSubTomogram
         return refMask
 
     def prepareMDataStep(self):
@@ -478,6 +480,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         self._defineOutputs(**{OUTPUT_RELION_PARTICLES: relionParticles})
         self._defineSourceRelation(inParticles, relionParticles)
+        processingFolder = self.getProcessingFolder()
+        speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
+        self.globalResolution.set(extractGlobalResolution(speciesFile))
 
     def createOutputAverage(self):
         processingFolder = self.getProcessingFolder()
@@ -601,12 +606,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def _summary(self):
         summary = []
-        processingFolder = self.getProcessingFolder()
-
-        if processingFolder:
-            speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
-            if os.path.exists(speciesFile):
-                summary.append("* Global Resolution: %s Å" % extractGlobalResolution(speciesFile))
+        if hasattr(self, 'globalResolution') and self.globalResolution.get() is not None:
+            summary.append("* Global Resolution: %s Å" % self.globalResolution.get())
         return summary
 
     def _cleanExtraFiles(self):
