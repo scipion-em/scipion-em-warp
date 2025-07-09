@@ -25,6 +25,7 @@
 # ******************************************************************************
 import glob
 import os
+import time
 
 import starfile
 
@@ -361,6 +362,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         ts.writeImodFiles(tiltstackFolder, delimiter=' ')
 
     def createOutputStep(self):
+        time.sleep(10)
         self.info(">>> Creating outputs...")
         inputTs = self.inputSet.get()
         for ts in inputTs.iterItems(iterate=False):
@@ -387,9 +389,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         # Define column mapping: targetColumn -> sourceColumn
         columnMapping = {
-            # WRP_COORDINATE_X: RLN_COORDINATE_X,
-            # WRP_COORDINATE_Y: RLN_COORDINATE_Y,
-            # WRP_COORDINATE_Z: RLN_COORDINATE_Z,
+            WRP_COORDINATE_X: RLN_COORDINATE_X,
+            WRP_COORDINATE_Y: RLN_COORDINATE_Y,
+            WRP_COORDINATE_Z: RLN_COORDINATE_Z,
             WRP_ANGLE_ROT: RLN_ANGLE_ROT,
             WRP_ANGLE_TILT: RLN_ANGLE_TILT,
             WRP_ANGLE_PSI: RLN_ANGLE_PSI,
@@ -398,19 +400,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         for sourceCol, targetCol in columnMapping.items():
             if targetCol in sourceDF.columns and sourceCol in targetDF.columns:
                 factor = 1
-                # if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
-                #     factor = sr
+                if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
+                    factor = sr
                 sourceDF[targetCol] = targetDF[sourceCol].values/factor
             else:
                 print(f"Warning: Column {sourceCol} or {targetCol} not found.")
 
         # Write updated STAR file
-        starfile.write(sourceDF, self._getExtraPath('particles.star'))
+        starfile.write(sourceDF, self._getPath('particles.star'))
 
         # Output Relion particles
         relionParticles = RelionSetOfPseudoSubtomograms.create(self.getPath(), template='pseudosubtomograms%s.sqlite')
         relionParticles.copyInfo(inParticles)
-        relionParticles.setParticles(self._getExtraPath('particles.star'))
+        relionParticles.setParticles(self._getPath('particles.star'))
         relionParticles.setBoxSize(inParticles.getBoxSize())
         relionParticles.setRelionBinning(inParticles.getRelionBinning())
         relionParticles.setSamplingRate(inParticles.getSamplingRate())
@@ -427,9 +429,16 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         # Output volume
         vol = AverageSubTomogram()
-        volName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
-        half1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
-        half2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
+        sourceVolName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
+        sourceHalf1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
+        sourceHalf2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
+        volName = self._getPath(PROCESSING_SPECIES_AVERAGE)
+        half1 = self._getPath(PROCESSING_SPECIES_HALF1)
+        half2 = self._getPath(PROCESSING_SPECIES_HALF2)
+
+        pwutils.copyFile(sourceVolName, volName)
+        pwutils.copyFile(sourceHalf1, half1)
+        pwutils.copyFile(sourceHalf2, half2)
 
         fixVolume(volName)  # Fix header for xmipp to consider it a volume instead of a stack
         fixVolume(half1)
@@ -449,7 +458,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
 
         volMask = VolumeMask()
-        maskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_MASK)
+        sourceMaskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_MASK)
+        maskFilePath = self._getPath(PROCESSING_SPECIES_MASK)
+        pwutils.copyFile(sourceMaskFilePath, maskFilePath)
+        fixVolume(maskFilePath)
         volMask.setFileName(maskFilePath)
         sr = self.angpix_resample.get()
         volMask.setSamplingRate(sr)
@@ -542,3 +554,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             if os.path.exists(speciesFile):
                 summary.append("* Global Resolution: %s Å" % extractGlobalResolution(speciesFile))
         return summary
+
+    def _cleanExtraFiles(self):
+        pass
