@@ -62,6 +62,14 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
         form.addSection("Input")
+        form.addParam("inputFromMProtocol", params.BooleanParam, default=False,
+                      label="Input from M protocol ?",
+                      help='Select a M high resolution refinement protocol or an input data')
+        form.addParam("inputToMProtocol", params.PointerParam, default=None,
+                      pointerClass="ProtWarpMHigResolutionRefinement",
+                      label="M protocol",
+                      help='M high resolution refinement protocol',
+                      condition='inputFromMProtocol')
         form.addParam('inputSet',
                       params.PointerParam,
                       pointerClass='SetOfTiltSeries',
@@ -69,20 +77,24 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       help='Input set of tilt-series')
         form.addParam('inputSetOfCtfTomoSeries',
                       params.PointerParam,
+                      condition='not inputFromMProtocol',
                       label="Input CTF estimation",
                       pointerClass='SetOfCTFTomoSeries',
                       help='Select the CTF estimation for the set '
                            'of tilt-series.')
         form.addParam('inReParticles', params.PointerParam,
+                      condition='not inputFromMProtocol',
                       pointerClass='RelionSetOfPseudoSubtomograms',
                       label='Relion pseudosubtomograms',
                       help='Relion set of pseudoSubtomograms')
         form.addParam('averageSubtomogram', params.PointerParam, pointerClass='Volume',
                       pointerCondition='hasHalfMaps',
+                      condition='not inputFromMProtocol',
                       default=None,
                       label='Reference volume',
                       help='Average subtomogram with half maps')
         form.addParam('refMask', params.PointerParam, pointerClass='VolumeMask, Volume',
+                      condition='not inputFromMProtocol',
                       default=None,
                       label='Mask',
                       help='Path to a tight binary mask file. M will automatically expand and smooth it based on '
@@ -171,22 +183,69 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                             'Default: all GPUs in the system For example: "0 1 5"')
 
     def _insertAllSteps(self):
-        self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
-        self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
-        self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
-        self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+        if not self.inputFromMProtocol.get():
+            self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
+            self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
+            self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
+            self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+        else:
+            self._insertFunctionStep(self.prepareMDataStep, needsGPU=False)
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
 
-    def prepareDataStep(self):
+    def getInputSetTS(self):
+        inputSet = self.inputSet.get()
+        if self.inputFromMProtocol.get():
+            mPrevProt = self.inputToMProtocol.get()
+            while mPrevProt.inputFromMProtocol != None:
+                mPrevProt = mPrevProt.inputFromMProtocol
+            inputSet = mPrevProt.inputSet.get()
+        return inputSet
 
+    def getInputSetOfCtfTomoSeries(self):
+        inputSetOfCtfTomoSeries = self.inputSetOfCtfTomoSeries.get()
+        if self.inputFromMProtocol.get():
+            mPrevProt = self.inputToMProtocol.get()
+            inputSetOfCtfTomoSeries = mPrevProt.CTFTomoSeries.get()
+        return inputSetOfCtfTomoSeries
+
+    def getInputSetOfReParticles(self):
+        inReParticles = self.inReParticles.get()
+        if self.inputFromMProtocol.get():
+            mPrevProt = self.inputToMProtocol.get()
+            inReParticles = mPrevProt.inReParticles.get()
+        return inReParticles
+
+    def getInputAverageSubtomogram(self):
+        averageSubtomogram = self.averageSubtomogram.get()
+        if self.inputFromMProtocol.get():
+            mPrevProt = self.inputToMProtocol.get()
+            averageSubtomogram = mPrevProt.averageSubtomogram.get()
+        return averageSubtomogram
+
+    def getRefMask(self):
+        refMask = self.refMask.get()
+        if self.inputFromMProtocol.get():
+            mPrevProt = self.inputToMProtocol.get()
+            refMask = mPrevProt.refMask.get()
+        return refMask
+
+    def prepareMDataStep(self):
+        time.sleep(10)
+        mPrevProt = self.inputToMProtocol.get()
+        mPrevProtExtraPath = mPrevProt._getExtraPath()
+        pwutils.cleanPath(self._getExtraPath())
+        pwutils.createLink(mPrevProtExtraPath, self.getPath('extra'))
+
+    def prepareDataStep(self):
+        inReParticles = self.getInputSetOfReParticles()
         outPath = self._getExtraPath()
         writer = convert50_tomo.Writer()
-        writer.pseudoSubtomograms2Star(self.inReParticles.get(), outPath)
+        writer.pseudoSubtomograms2Star(inReParticles, outPath)
 
-        inputTs = self.inputSet.get()
-        coordSet = self.inReParticles.get().getCoordinates3D()
+        inputTs = self.getInputSetTS()
+        coordSet = inReParticles.getCoordinates3D()
         tsSr = inputTs.getSamplingRate()
         coordSr = coordSet.getSamplingRate()
         tomoDim = coordSet.getPrecedents().getDim()
@@ -335,8 +394,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             self.info(">>> Error generating ctf estimation file...")
 
     def updateCTFValues(self):
-        for ts in self.inputSet.get().iterItems():
-            ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
+        inputTs = self.getInputSetTS()
+        for ts in inputTs.iterItems():
+            ctfTomoSeries = self.getInputSetOfCtfTomoSeries().getItem('_tsId', ts.getTsId())
             processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
             defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
             updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
@@ -362,9 +422,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         ts.writeImodFiles(tiltstackFolder, delimiter=' ')
 
     def createOutputStep(self):
-        time.sleep(10)
         self.info(">>> Creating outputs...")
-        inputTs = self.inputSet.get()
+        inputTs = self.getInputSetTS()
         for ts in inputTs.iterItems(iterate=False):
             self.createOutputCTF(ts)
         self.createOutputAverage()
@@ -379,7 +438,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             # Use the first matching folder (you can modify this logic if needed)
 
         particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
-        inParticles = self.inReParticles.get()
+        inParticles = self.getInputSetOfReParticles()
         sr = inParticles.getSamplingRate()
         sourceData = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
         targetData = starfile.read(particlesPath)
@@ -447,13 +506,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         sr = self.angpix_resample.get()
         vol.setSamplingRate(sr)
         vol.setHalfMaps([half1, half2])
-
         self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
 
     def createOutputMask(self):
         processingFolder = self.getProcessingFolder()
-        inParticles = self.inReParticles.get()
-
         if not processingFolder:
             raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
 
@@ -466,7 +522,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         sr = self.angpix_resample.get()
         volMask.setSamplingRate(sr)
         self._defineOutputs(**{OUTPUT_MASK_SUBTOMOGRAM: volMask})
-        self._defineSourceRelation(inParticles, volMask)
 
     def getProcessingFolder(self):
         # Return the first matching folder (you can modify this logic if needed)
