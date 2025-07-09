@@ -337,6 +337,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             msg += "* Refinement Particles Poses \n"
             cmd += '--refine_particles '
 
+        if self.refine_imagewarp.get() is not None:
+            msg += "* Refinement Image Warp \n"
+            cmd += '--refine_imagewarp '
+
         if self.refine_mag.get():
             msg += "* Refine anisotropic magnification \n"
             cmd += '--refine_mag '
