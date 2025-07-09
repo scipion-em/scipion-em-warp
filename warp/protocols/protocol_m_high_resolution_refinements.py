@@ -387,9 +387,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         # Define column mapping: targetColumn -> sourceColumn
         columnMapping = {
-            WRP_COORDINATE_X: RLN_COORDINATE_X,
-            WRP_COORDINATE_Y: RLN_COORDINATE_Y,
-            WRP_COORDINATE_Z: RLN_COORDINATE_Z,
+            # WRP_COORDINATE_X: RLN_COORDINATE_X,
+            # WRP_COORDINATE_Y: RLN_COORDINATE_Y,
+            # WRP_COORDINATE_Z: RLN_COORDINATE_Z,
             WRP_ANGLE_ROT: RLN_ANGLE_ROT,
             WRP_ANGLE_TILT: RLN_ANGLE_TILT,
             WRP_ANGLE_PSI: RLN_ANGLE_PSI,
@@ -398,8 +398,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         for sourceCol, targetCol in columnMapping.items():
             if targetCol in sourceDF.columns and sourceCol in targetDF.columns:
                 factor = 1
-                if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
-                    factor = sr
+                # if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
+                #     factor = sr
                 sourceDF[targetCol] = targetDF[sourceCol].values/factor
             else:
                 print(f"Warning: Column {sourceCol} or {targetCol} not found.")
@@ -458,13 +458,15 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def getProcessingFolder(self):
         # Return the first matching folder (you can modify this logic if needed)
+        matchingFolder = ''
         mFolder = self._getExtraPath(M_RESULT_FOLDER)
         speciesFolder = os.path.join(mFolder, SPECIES_FOLDER)
-
-        # Search for folder matching the pattern "processing_especies_*"
-        folderPattern = os.path.join(speciesFolder, MATCHING_PROCESSING_SPECIES_PATTERN)
-        matchingFolder = glob.glob(folderPattern)
-        return matchingFolder[0]
+        if os.path.exists(speciesFolder):
+            # Search for folder matching the pattern "processing_especies_*"
+            folderPattern = os.path.join(speciesFolder, MATCHING_PROCESSING_SPECIES_PATTERN)
+            matchingFolder = glob.glob(folderPattern)
+            matchingFolder = matchingFolder[0]
+        return matchingFolder
 
     def createOutputCTF(self, ts):
         tsId = ts.getTsId()
