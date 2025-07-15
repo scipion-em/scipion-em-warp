@@ -470,6 +470,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                 RLN_ANGLE_ROT,
                 RLN_ANGLE_TILT,
                 RLN_ANGLE_PSI,
+                RLN_RAMDOM_SUBSET,
                 RLN_MICROGRAPH_NAME,
                 RLN_SOURCE_HASH
             ]
