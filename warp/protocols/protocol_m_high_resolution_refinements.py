@@ -345,8 +345,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             msg += "* Refinement Particles Poses \n"
             cmd += '--refine_particles '
 
-
-
         if self.refine_mag.get():
             msg += "* Refine anisotropic magnification \n"
             cmd += '--refine_mag '
@@ -563,6 +561,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         vol.setSamplingRate(sr)
         vol.setHalfMaps([half1, half2])
         self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
+        processingFolder = self.getProcessingFolder()
+        speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
+        self.globalResolution.set(extractGlobalResolution(speciesFile))
 
     def createOutputMask(self):
         processingFolder = self.getProcessingFolder()
