@@ -444,7 +444,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.createOutputParticles()
 
     def createOutputParticles(self):
-        time.sleep(10)
         processingFolder = self.getProcessingFolder()
 
         if not processingFolder:
@@ -464,7 +463,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                    RLN_ANGLE_ROT,
                    RLN_ANGLE_TILT,
                    RLN_ANGLE_PSI,
-                   RLN_TOMO_NAME,
+                   RLN_MICROGRAPH_NAME,
                    RLN_SOURCE_HASH]
 
         targetData = emtools.metadata.Table(columns=columns)
@@ -512,14 +511,13 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def exportParticles(self):
         self.info(">>> Exporting particles...")
         settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
-        matchinFolder = self._getExtraPath(MATCHING_FOLDER)
+        matchinFolder = self._getExtraPath(MATCHING_FOLDER, 'particles.star')
         output = self._getExtraPath(RELION_FOLDER)
         pwutils.makePath(output)
         boxSixe = self.AverageSubTomogram.getDim()[0]
         argsDict = {
             "--settings": os.path.abspath(settingFile),
-            "--input_directory": matchinFolder,
-            "--input_pattern": "*.star",
+            "--input_star": matchinFolder,
             "--output_star": os.path.join(output, 'matching.star'),
             "--output_angpix": self.angpix_resample.get(),
             "--box": boxSixe,
