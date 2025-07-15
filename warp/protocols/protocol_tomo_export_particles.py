@@ -229,18 +229,6 @@ class ProtWarpExportParticles(ProtWarpBase):
         self._defineSourceRelation(self.inputSetOfCtfTomoSeries, psubtomoSet)
         self._defineSourceRelation(self.inputSet, psubtomoSet)
 
-    def normalizeParticlesPath(self, particleValue):
-        particleFile = particleValue
-        if not os.path.exists(particleFile):
-            particleFile = os.path.normpath(os.path.join(self._getExtraPath(TILTSERIES_FOLDER), particleValue))
-        return particleFile
-
-    def normalizeTomogramsPath(self, tomogramValue):
-        tomogramFile = tomogramValue
-        if not os.path.exists(tomogramFile):
-            tomogramFile = os.path.join(self._getExtraPath(RELION_FOLDER), tomogramValue)
-        return tomogramFile
-
     def tsCtfEstimation(self):
         """CTF estimation"""
 

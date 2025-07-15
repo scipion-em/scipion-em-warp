@@ -442,7 +442,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.createOutputParticles()
 
     def createOutputParticles(self):
-        time.sleep(10)
         processingFolder = self.getProcessingFolder()
 
         if not processingFolder:
@@ -494,33 +493,29 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inReParticles = self.getInputSetOfReParticles()
         coordSet = inReParticles.getCoordinates3D()
         tsSet = self.inputSet.get()
-        tsSRate = tsSet.getSamplingRate()
-        boxSize = self.box.get()
+        boxSize = self.AverageSubTomogram.getDim()[0]
         acq = tsSet.getAcquisition()
         relionFolder = self._getExtraPath(RELION_FOLDER)
-        are2dStacks = self.writeStacks.get() == 0
+        are2dStacks = True
 
         psubtomoSet = createSetOfRelionPSubtomograms(self._getPath(),
                                                      os.path.join(relionFolder, OPTIMISATION_SET_STAR),
                                                      coordSet,
                                                      template='pseudosubtomograms%s.sqlite',
-                                                     tsSamplingRate=tsSRate,
-                                                     relionBinning=self.output_angpix.get() / tsSet.getSamplingRate(),
+                                                     tsSamplingRate=angpix,
+                                                     relionBinning=angpix / tsSet.getSamplingRate(),
                                                      boxSize=boxSize,
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
 
         modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
-                                      '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
+                                 '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
         modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
-                                      '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
+                                 '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
         # Fill the set with the generated particles
         readSetOfPseudoSubtomograms(psubtomoSet)
         outDict = {'relionParticles': psubtomoSet}
         self._defineOutputs(**outDict)
-        self._defineSourceRelation(self.coordinates, psubtomoSet)
-        self._defineSourceRelation(self.inputSetOfCtfTomoSeries, psubtomoSet)
-        self._defineSourceRelation(self.inputSet, psubtomoSet)
 
     def exportParticles(self):
         self.info(">>> Exporting particles...")
@@ -536,7 +531,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             "--output_star": os.path.join(output, 'matching.star'),
             "--output_angpix": self.angpix_resample.get(),
             "--box": boxSixe,
-            "--diameter": boxSixe*2,
+            "--diameter": self.diameter.get(),
         }
         cmd = '--relative_output_paths --normalized_coords --2d'
         self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)

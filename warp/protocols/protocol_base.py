@@ -40,7 +40,7 @@ from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
 from warp import Plugin, WARP_TOOLS, MCORE
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
-                            SETTINGS_FOLDER, WARP_TOOLS_GPU_ALGORITHMS)
+                            SETTINGS_FOLDER, WARP_TOOLS_GPU_ALGORITHMS, RELION_FOLDER)
 from warp.utils import tom_deconv, tomoStarGenerate
 
 
@@ -302,6 +302,18 @@ class ProtWarpBase(EMProtocol):
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
         self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+
+    def normalizeParticlesPath(self, particleValue):
+        particleFile = particleValue
+        if not os.path.exists(particleFile):
+            particleFile = os.path.normpath(os.path.join(self._getExtraPath(TILTSERIES_FOLDER), particleValue))
+        return particleFile
+
+    def normalizeTomogramsPath(self, tomogramValue):
+        tomogramFile = tomogramValue
+        if not os.path.exists(tomogramFile):
+            tomogramFile = os.path.join(self._getExtraPath(RELION_FOLDER), tomogramValue)
+        return tomogramFile
 
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
