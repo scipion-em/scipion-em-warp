@@ -122,6 +122,7 @@ RLN_AUTOPICK_FIGURE_OF_MERIT = 'rlnAutopickFigureOfMerit'
 RLN_MICROGRAPH_NAME = 'rlnMicrographName'
 RLN_TOMO_NAME = 'rlnTomoName'
 RLN_SOURCE_HASH = 'rlnSourceHash'
+RLN_RAMDOM_SUBSET = 'rlnRamdomSubset'
 
 # WARP_LABELS
 WRP_COORDINATE_X = 'wrpCoordinateX1'
