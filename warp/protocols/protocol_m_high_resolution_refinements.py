@@ -478,12 +478,12 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             outputTable = emtools.metadata.Table(columns=columnNames)
             outputStar = emtools.metadata.StarFile(outputFilePath, 'w')
             outputStar.writeHeader('', outputTable)
-
+            angpix = self.angpix_resample.get()
             for row in rows:
                 rowValues = list(row._asdict().values())
-                rowValues[0] = rowValues[0] / self.x_dimension.get()
-                rowValues[1] = rowValues[1] / self.y_dimension.get()
-                rowValues[2] = rowValues[2] / self.tomo_thickness.get()
+                rowValues[0] = rowValues[0] / (angpix * self.x_dimension.get())
+                rowValues[1] = rowValues[1] / (angpix * self.y_dimension.get())
+                rowValues[2] = rowValues[2] / (angpix * self.tomo_thickness.get())
                 outputStar._writeRowValues(rowValues)
 
             outputStar.close()
@@ -491,7 +491,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.exportParticles()
 
         # Output Relion particles
-        coordSet = self.coordinates.get()
+        inReParticles = self.getInputSetOfReParticles()
+        coordSet = inReParticles.getCoordinates3D()
         tsSet = self.inputSet.get()
         tsSRate = tsSet.getSamplingRate()
         boxSize = self.box.get()
