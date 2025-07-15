@@ -40,7 +40,7 @@ from tomo.constants import BOTTOM_LEFT_CORNER
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo
+from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
 
 
 class outputObjects(Enum):
@@ -217,9 +217,9 @@ class ProtWarpExportParticles(ProtWarpBase):
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
 
-        self.modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
+        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
                                       '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
-        self.modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
+        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
                                       '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
         # Fill the set with the generated particles
         readSetOfPseudoSubtomograms(psubtomoSet)
@@ -280,65 +280,6 @@ class ProtWarpExportParticles(ProtWarpBase):
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
         ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
-
-    def modifyStarFileMultiTable(self, filePath, columnToModify, modifierFunc):
-        """
-        Modify a given column in all data blocks in a .star file that contain a loop_ table.
-        Keeps untouched blocks without loop_.
-        """
-        tempPath = filePath + '.tmp'
-
-        with open(filePath, 'r') as fin, open(tempPath, 'w') as fout:
-            inLoop = False
-            headers = []
-            colIndex = -1
-
-            for line in fin:
-                stripped = line.strip()
-
-                # Handle start of new data block
-                if stripped.startswith('data_'):
-                    inLoop = False
-                    headers = []
-                    colIndex = -1
-                    fout.write(line)
-                    continue
-
-                # Start of loop
-                if stripped.startswith('loop_'):
-                    inLoop = True
-                    headers = []
-                    colIndex = -1
-                    fout.write(line)
-                    continue
-
-                # Header lines
-                if inLoop and stripped.startswith('_'):
-                    headers.append(stripped)
-                    fout.write(line)
-                    if stripped.startswith(columnToModify):
-                        colIndex = len(headers) - 1  # 0-based
-                    continue
-
-                # Data line in a loop
-                if inLoop and stripped and not stripped.startswith('_'):
-                    if colIndex == -1:
-                        fout.write(line)  # Column not in this block
-                        continue
-
-                    parts = line.strip().split()
-                    try:
-                        oldValue = parts[colIndex]
-                        parts[colIndex] = str(modifierFunc(oldValue))
-                        fout.write(' '.join(parts) + '\n')
-                    except IndexError:
-                        fout.write(line)  # Malformed line; write as-is
-                    continue
-
-                # Any other line (outside of loop)
-                fout.write(line)
-
-        os.replace(tempPath, filePath)
 
     def cleanIntermediateResults(self):
         self.info(">>> Cleaning intermediate results...")

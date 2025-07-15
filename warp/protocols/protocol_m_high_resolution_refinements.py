@@ -27,6 +27,7 @@ import glob
 import os
 import time
 
+import emtools.metadata
 import starfile
 
 from pwem.convert.headers import fixVolume
@@ -38,12 +39,12 @@ from pyworkflow.object import Integer, Set, Float
 from pyworkflow.protocol import GPU_LIST
 
 from reliontomo.convert import convert50_tomo, readSetOfPseudoSubtomograms
-from reliontomo.objects import  RelionSetOfPseudoSubtomograms
+from reliontomo.objects import RelionSetOfPseudoSubtomograms, createSetOfRelionPSubtomograms
 from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries,  AverageSubTomogram
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolution
+from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolution, modifyStarFileMultiTable
 
 
 class ProtWarpMHigResolutionRefinement(ProtWarpBase):
@@ -176,7 +177,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       label='Refine Zernike polynomials of 5th order',
                       help="Refine Zernike polynomials of 5th order (fast)")
 
-
         form.addHidden(GPU_LIST, params.StringParam, default='0',
                        label='Choose GPU IDs:', validators=[params.NonEmpty],
                        help='Space-separated list of GPU IDs to use for processing. '
@@ -184,6 +184,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def _insertAllSteps(self):
         self.globalResolution = Float()
+        self._insertFunctionStep(self.initialize, needsGPU=False)
         if not self.inputFromMProtocol.get():
             self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
             self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
@@ -195,6 +196,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
+
+    def initialize(self):
+        inReParticles = self.getInputSetOfReParticles()
+        inputTs = self.getInputSetTS()
+        coordSet = inReParticles.getCoordinates3D()
+        tsSr = inputTs.getSamplingRate()
+        coordSr = coordSet.getSamplingRate()
+        tomoDim = coordSet.getPrecedents().getDim()
+        scaleFactor = coordSr / tsSr
+        self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
+        self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
+        self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
+
 
     def getInputSetTS(self):
         inputSet = self.inputSet.get()
@@ -246,14 +260,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         writer.pseudoSubtomograms2Star(inReParticles, outPath)
 
         inputTs = self.getInputSetTS()
-        coordSet = inReParticles.getCoordinates3D()
-        tsSr = inputTs.getSamplingRate()
-        coordSr = coordSet.getSamplingRate()
-        tomoDim = coordSet.getPrecedents().getDim()
-        scaleFactor = coordSr / tsSr
-        self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
-        self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
-        self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
 
         self.createTiltSeriesSetting(None)
         for ts in inputTs.iterItems(iterate=False):
@@ -438,6 +444,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.createOutputParticles()
 
     def createOutputParticles(self):
+        time.sleep(10)
         processingFolder = self.getProcessingFolder()
 
         if not processingFolder:
@@ -445,50 +452,81 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             # Use the first matching folder (you can modify this logic if needed)
 
         particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
-        inParticles = self.getInputSetOfReParticles()
-        sr = inParticles.getSamplingRate()
-        sourceData = starfile.read(self._getExtraPath(IN_PARTICLES_STAR))
-        targetData = starfile.read(particlesPath)
+        sourceData = emtools.metadata.StarFile(particlesPath).getTable('')
+        outPath = self._getExtraPath(MATCHING_FOLDER)
+        pwutils.makePath(outPath)
 
-        sourceDF = sourceData['particles']
-        targetDF = targetData
-
+        outputStar = emtools.metadata.StarFile(os.path.join(outPath, 'particles.star'), 'w')
         # Define column mapping: targetColumn -> sourceColumn
-        columnMapping = {
-            WRP_COORDINATE_X: RLN_COORDINATE_X,
-            WRP_COORDINATE_Y: RLN_COORDINATE_Y,
-            WRP_COORDINATE_Z: RLN_COORDINATE_Z,
-            WRP_ANGLE_ROT: RLN_ANGLE_ROT,
-            WRP_ANGLE_TILT: RLN_ANGLE_TILT,
-            WRP_ANGLE_PSI: RLN_ANGLE_PSI,
-        }
+        columns = [RLN_COORDINATE_X,
+                   RLN_COORDINATE_Y,
+                   RLN_COORDINATE_Z,
+                   RLN_ANGLE_ROT,
+                   RLN_ANGLE_TILT,
+                   RLN_ANGLE_PSI,
+                   RLN_TOMO_NAME,
+                   RLN_SOURCE_HASH]
 
-        for sourceCol, targetCol in columnMapping.items():
-            if targetCol in sourceDF.columns and sourceCol in targetDF.columns:
-                factor = 1
-                if sourceCol in [WRP_COORDINATE_X, WRP_COORDINATE_Y, WRP_COORDINATE_Z]:
-                    factor = sr
-                sourceDF[targetCol] = targetDF[sourceCol].values/factor
-            else:
-                print(f"Warning: Column {sourceCol} or {targetCol} not found.")
-
-        # Write updated STAR file
-        starfile.write(sourceDF, self._getPath('particles.star'))
+        targetData = emtools.metadata.Table(columns=columns)
+        outputStar.writeHeader('', targetData)
+        for row in sourceData.__iter__():
+            values = list(row._asdict().values())
+            values[0] = values[0] / self.x_dimension.get()
+            values[1] = values[1] / self.y_dimension.get()
+            values[2] = values[2] / self.tomo_thickness.get()
+            outputStar._writeRowValues(values)
+        outputStar.close()
+        self.exportParticles()
 
         # Output Relion particles
-        relionParticles = RelionSetOfPseudoSubtomograms.create(self.getPath(), template='pseudosubtomograms%s.sqlite')
-        relionParticles.copyInfo(inParticles)
-        relionParticles.setParticles(self._getPath('particles.star'))
-        relionParticles.setBoxSize(inParticles.getBoxSize())
-        relionParticles.setRelionBinning(inParticles.getRelionBinning())
-        relionParticles.setSamplingRate(inParticles.getSamplingRate())
-        readSetOfPseudoSubtomograms(relionParticles, isRelion5=True)
+        coordSet = self.coordinates.get()
+        tsSet = self.inputSet.get()
+        tsSRate = tsSet.getSamplingRate()
+        boxSize = self.box.get()
+        acq = tsSet.getAcquisition()
+        relionFolder = self._getExtraPath(RELION_FOLDER)
+        are2dStacks = self.writeStacks.get() == 0
 
-        self._defineOutputs(**{OUTPUT_RELION_PARTICLES: relionParticles})
-        self._defineSourceRelation(inParticles, relionParticles)
-        processingFolder = self.getProcessingFolder()
-        speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
-        self.globalResolution.set(extractGlobalResolution(speciesFile))
+        psubtomoSet = createSetOfRelionPSubtomograms(self._getPath(),
+                                                     os.path.join(relionFolder, OPTIMISATION_SET_STAR),
+                                                     coordSet,
+                                                     template='pseudosubtomograms%s.sqlite',
+                                                     tsSamplingRate=tsSRate,
+                                                     relionBinning=self.output_angpix.get() / tsSet.getSamplingRate(),
+                                                     boxSize=boxSize,
+                                                     are2dStacks=are2dStacks,
+                                                     acquisition=acq)
+
+        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
+                                      '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
+        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
+                                      '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
+        # Fill the set with the generated particles
+        readSetOfPseudoSubtomograms(psubtomoSet)
+        outDict = {'relionParticles': psubtomoSet}
+        self._defineOutputs(**outDict)
+        self._defineSourceRelation(self.coordinates, psubtomoSet)
+        self._defineSourceRelation(self.inputSetOfCtfTomoSeries, psubtomoSet)
+        self._defineSourceRelation(self.inputSet, psubtomoSet)
+
+    def exportParticles(self):
+        self.info(">>> Exporting particles...")
+        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        matchinFolder = self._getExtraPath(MATCHING_FOLDER)
+        output = self._getExtraPath(RELION_FOLDER)
+        pwutils.makePath(output)
+        boxSixe = self.AverageSubTomogram.getDim()[0]
+        argsDict = {
+            "--settings": os.path.abspath(settingFile),
+            "--input_directory": matchinFolder,
+            "--input_pattern": "*.star",
+            "--output_star": os.path.join(output, 'matching.star'),
+            "--output_angpix": self.angpix_resample.get(),
+            "--box": boxSixe,
+            "--diameter": boxSixe*2,
+        }
+        cmd = '--relative_output_paths --normalized_coords --2d'
+        self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
 
     def createOutputAverage(self):
         processingFolder = self.getProcessingFolder()

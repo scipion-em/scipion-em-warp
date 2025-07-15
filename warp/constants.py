@@ -120,6 +120,8 @@ RLN_ANGLE_TILT = 'rlnAngleTilt'
 RLN_ANGLE_PSI = 'rlnAnglePsi'
 RLN_AUTOPICK_FIGURE_OF_MERIT = 'rlnAutopickFigureOfMerit'
 RLN_MICROGRAPH_NAME = 'rlnMicrographName'
+RLN_TOMO_NAME = 'rlnTomoName'
+RLN_SOURCE_HASH = 'rlnSourceHash'
 
 # WARP_LABELS
 WRP_COORDINATE_X = 'wrpCoordinateX1'

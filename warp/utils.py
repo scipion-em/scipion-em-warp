@@ -319,3 +319,63 @@ def getTransformInfoFromCoordOrSubtomo(coord, samplingRate):
     shifts *= samplingRate
 
     return angles, shifts
+
+
+def modifyStarFileMultiTable(filePath, columnToModify, modifierFunc):
+    """
+    Modify a given column in all data blocks in a .star file that contain a loop_ table.
+    Keeps untouched blocks without loop_.
+    """
+    tempPath = filePath + '.tmp'
+
+    with open(filePath, 'r') as fin, open(tempPath, 'w') as fout:
+        inLoop = False
+        headers = []
+        colIndex = -1
+
+        for line in fin:
+            stripped = line.strip()
+
+            # Handle start of new data block
+            if stripped.startswith('data_'):
+                inLoop = False
+                headers = []
+                colIndex = -1
+                fout.write(line)
+                continue
+
+            # Start of loop
+            if stripped.startswith('loop_'):
+                inLoop = True
+                headers = []
+                colIndex = -1
+                fout.write(line)
+                continue
+
+            # Header lines
+            if inLoop and stripped.startswith('_'):
+                headers.append(stripped)
+                fout.write(line)
+                if stripped.startswith(columnToModify):
+                    colIndex = len(headers) - 1  # 0-based
+                continue
+
+            # Data line in a loop
+            if inLoop and stripped and not stripped.startswith('_'):
+                if colIndex == -1:
+                    fout.write(line)  # Column not in this block
+                    continue
+
+                parts = line.strip().split()
+                try:
+                    oldValue = parts[colIndex]
+                    parts[colIndex] = str(modifierFunc(oldValue))
+                    fout.write(' '.join(parts) + '\n')
+                except IndexError:
+                    fout.write(line)  # Malformed line; write as-is
+                continue
+
+            # Any other line (outside of loop)
+            fout.write(line)
+
+    os.replace(tempPath, filePath)
