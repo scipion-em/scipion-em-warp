@@ -26,6 +26,7 @@
 import glob
 import os
 import time
+from collections import defaultdict
 
 import emtools.metadata
 import starfile
@@ -184,20 +185,6 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def _insertAllSteps(self):
         self.globalResolution = Float()
-        self._insertFunctionStep(self.initialize, needsGPU=False)
-        if not self.inputFromMProtocol.get():
-            self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
-            self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
-            self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
-            self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
-            self._insertFunctionStep(self.checkSetup, needsGPU=True)
-        else:
-            self._insertFunctionStep(self.prepareMDataStep, needsGPU=False)
-        self._insertFunctionStep(self.refinementStep, needsGPU=True)
-        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
-        self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
-
-    def initialize(self):
         inReParticles = self.getInputSetOfReParticles()
         inputTs = self.getInputSetTS()
         coordSet = inReParticles.getCoordinates3D()
@@ -209,6 +196,17 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
         self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
 
+        if not self.inputFromMProtocol.get():
+            self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
+            self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
+            self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
+            self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
+            self._insertFunctionStep(self.checkSetup, needsGPU=True)
+        else:
+            self._insertFunctionStep(self.prepareMDataStep, needsGPU=False)
+        self._insertFunctionStep(self.refinementStep, needsGPU=True)
+        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
+        self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
 
     def getInputSetTS(self):
         inputSet = self.inputSet.get()
@@ -444,6 +442,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.createOutputParticles()
 
     def createOutputParticles(self):
+        time.sleep(10)
         processingFolder = self.getProcessingFolder()
 
         if not processingFolder:
@@ -451,30 +450,43 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             # Use the first matching folder (you can modify this logic if needed)
 
         particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
-        sourceData = emtools.metadata.StarFile(particlesPath).getTable('')
-        outPath = self._getExtraPath(MATCHING_FOLDER)
-        pwutils.makePath(outPath)
+        sourceTable = emtools.metadata.StarFile(particlesPath).getTable('')
+        outputFolder = self._getExtraPath(MATCHING_FOLDER)
+        pwutils.makePath(outputFolder)
 
-        outputStar = emtools.metadata.StarFile(os.path.join(outPath, 'particles.star'), 'w')
-        # Define column mapping: targetColumn -> sourceColumn
-        columns = [RLN_COORDINATE_X,
-                   RLN_COORDINATE_Y,
-                   RLN_COORDINATE_Z,
-                   RLN_ANGLE_ROT,
-                   RLN_ANGLE_TILT,
-                   RLN_ANGLE_PSI,
-                   RLN_MICROGRAPH_NAME,
-                   RLN_SOURCE_HASH]
+        groupedRows = defaultdict(list)
+        for row in sourceTable:
+            micrographName = row.wrpSourceName
+            groupedRows[micrographName].append(row)
 
-        targetData = emtools.metadata.Table(columns=columns)
-        outputStar.writeHeader('', targetData)
-        for row in sourceData.__iter__():
-            values = list(row._asdict().values())
-            values[0] = values[0] / self.x_dimension.get()
-            values[1] = values[1] / self.y_dimension.get()
-            values[2] = values[2] / self.tomo_thickness.get()
-            outputStar._writeRowValues(values)
-        outputStar.close()
+        for micrographName, rows in groupedRows.items():
+            cleanName = os.path.splitext(os.path.basename(micrographName))[0]
+            outputFilePath = os.path.join(outputFolder, f"{cleanName}.star")
+
+            columnNames = [
+                RLN_COORDINATE_X,
+                RLN_COORDINATE_Y,
+                RLN_COORDINATE_Z,
+                RLN_ANGLE_ROT,
+                RLN_ANGLE_TILT,
+                RLN_ANGLE_PSI,
+                RLN_MICROGRAPH_NAME,
+                RLN_SOURCE_HASH
+            ]
+
+            outputTable = emtools.metadata.Table(columns=columnNames)
+            outputStar = emtools.metadata.StarFile(outputFilePath, 'w')
+            outputStar.writeHeader('', outputTable)
+
+            for row in rows:
+                rowValues = list(row._asdict().values())
+                rowValues[0] = rowValues[0] / self.x_dimension.get()
+                rowValues[1] = rowValues[1] / self.y_dimension.get()
+                rowValues[2] = rowValues[2] / self.tomo_thickness.get()
+                outputStar._writeRowValues(rowValues)
+
+            outputStar.close()
+
         self.exportParticles()
 
         # Output Relion particles
