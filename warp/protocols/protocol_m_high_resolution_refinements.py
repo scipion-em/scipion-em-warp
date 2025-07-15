@@ -523,13 +523,14 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def exportParticles(self):
         self.info(">>> Exporting particles...")
         settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
-        matchinFolder = self._getExtraPath(MATCHING_FOLDER, 'particles.star')
+        matchinFolder = self._getExtraPath(MATCHING_FOLDER)
         output = self._getExtraPath(RELION_FOLDER)
         pwutils.makePath(output)
         boxSixe = self.AverageSubTomogram.getDim()[0]
         argsDict = {
             "--settings": os.path.abspath(settingFile),
-            "--input_star": matchinFolder,
+            "--input_directory": matchinFolder,
+            "--input_pattern": "*.star",
             "--output_star": os.path.join(output, 'matching.star'),
             "--output_angpix": self.angpix_resample.get(),
             "--box": boxSixe,
