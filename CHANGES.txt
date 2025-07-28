@@ -1,4 +1,6 @@
-3.6.0: Adding Template Matching protocol
+3.6.0: Adding M refinement protocol
+       Adding Extract Particles protocol
+       Adding Template Matching protocol
        Fixing an error importing alignments
        Fixing the test
 

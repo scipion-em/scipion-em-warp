@@ -25,11 +25,9 @@
 # ******************************************************************************
 import glob
 import os
-import time
 from collections import defaultdict
 
 import emtools.metadata
-import starfile
 
 from pwem.convert.headers import fixVolume
 from pwem.objects import VolumeMask
@@ -40,7 +38,7 @@ from pyworkflow.object import Integer, Set, Float
 from pyworkflow.protocol import GPU_LIST
 
 from reliontomo.convert import convert50_tomo, readSetOfPseudoSubtomograms
-from reliontomo.objects import RelionSetOfPseudoSubtomograms, createSetOfRelionPSubtomograms
+from reliontomo.objects import createSetOfRelionPSubtomograms
 from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries,  AverageSubTomogram
 
 from warp.constants import *
@@ -512,7 +510,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                                  '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
         # Fill the set with the generated particles
         readSetOfPseudoSubtomograms(psubtomoSet)
-        outDict = {'relionParticles': psubtomoSet}
+        outDict = {OUTPUT_RELION_PARTICLES: psubtomoSet}
         self._defineOutputs(**outDict)
 
     def exportParticles(self):
@@ -664,4 +662,5 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         return summary
 
     def _cleanExtraFiles(self):
-        pass
+        versionsFolder = os.path.join(self.getProcessingFolder(), 'versions')
+        pwutils.cleanPath(versionsFolder)
