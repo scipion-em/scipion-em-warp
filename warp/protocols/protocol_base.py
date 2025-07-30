@@ -37,10 +37,10 @@ from pwem.protocols import EMProtocol
 from pwem.emlib.image import ImageHandler
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
-from warp import Plugin
+from warp import Plugin, WARP_TOOLS, MCORE
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
                             AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
-                            SETTINGS_FOLDER)
+                            SETTINGS_FOLDER, WARP_TOOLS_GPU_ALGORITHMS, RELION_FOLDER)
 from warp.utils import tom_deconv, tomoStarGenerate
 
 
@@ -171,25 +171,33 @@ class ProtWarpBase(EMProtocol):
         """ Create data import settings"""
         pass
 
-    def runProgram(self, argsDict, program, othersCmds=None):
+    def runProgram(self, argsDict, program, algorithm, othersCmds=None):
         gpuList = self.getGpuList()
         if gpuList:
-            argsDict['--device_list'] = ' '.join(map(str, gpuList))
+            deviceList = ' '.join(map(str, gpuList))
+            if algorithm in WARP_TOOLS_GPU_ALGORITHMS:
+                argsDict['--device_list'] = deviceList
+            elif program == MCORE:
+                argsDict['--devicelist'] = deviceList
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         if othersCmds:
             cmd += ' %s' % othersCmds
-        self.runJob(self.getPlugin().getProgram(program), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(program, algorithm), cmd, executable='/bin/bash')
 
-    def tsDataPrepare(self, ts):
+    def tsDataPrepare(self, ts, perTs=False):
         """Creates the setting file that will be used by the different programs.
            It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
            the tiltimages."""
+        tsId = ts.getTsId()
         starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
         pwutils.makePath(starFolder)
+        if perTs:
+            starFolder = self._getExtraPath(TOMOSTAR_FOLDER, tsId)
+            pwutils.makePath(starFolder)
         objSet = self.inputSet.get()
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
-        invertTiltAngle = -1
+        invertTiltAngle = 1
         pwutils.makePath(imagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
@@ -237,7 +245,7 @@ class ProtWarpBase(EMProtocol):
                                                                      axisAngle, shiftX, shiftY, dose,
                                                                      amplitudeContrast, maskedFraction]
 
-            tomoStarGenerate(tsId, tiValues, starFolder, True)
+            tomoStarGenerate(tsId, tiValues, starFolder, True, perTs=perTs)
 
         # 2. Create symbolic links from tiltseries folder to average folder
         #    We need to do this because warp needs both folders: The tiltimages folder to get
@@ -251,29 +259,33 @@ class ProtWarpBase(EMProtocol):
             if not os.path.exists(destFolder):
                 os.symlink('../' + fileName, destFolder)
 
-    def createTiltSeriesSetting(self, ts):
-        tsId = ts.getTsId()
+    def createTiltSeriesSetting(self, ts, perTs=False):
+        tsId = ts.getTsId() if ts is not None else ''
+        extension = "*.tomostar" if perTs or ts is None else "%s.tomostar" % tsId
+        tomoStarFolder = os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER))
+        folderPath = tomoStarFolder if not perTs else os.path.join(tomoStarFolder, tsId)
         self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
         setOfTS = self.inputSet.get()
         sr = setOfTS.getSamplingRate()
         exposure = setOfTS.getAcquisition().getDosePerFrame()
-        fileName, extension = os.path.splitext(ts.getFileName())
-        settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
-        pwutils.makePath(settingsFolder)
+        settingsFolder = os.path.abspath(self._getExtraPath())
+        if ts is not None:
+            settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
+            pwutils.makePath(settingsFolder)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         pwutils.makePath(processingFolder)
-        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS if ts is not None else TILTSERIE_SETTINGS
         tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
         argsDict = {
-            "--folder_data": os.path.abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-            "--extension": "%s.tomostar" % tsId,
+            "--folder_data": folderPath,
+            "--extension": extension,
             "--folder_processing": processingFolder,
             '--angpix': sr,
             "--output": tsSettingFilePath
         }
 
         if exposure is not None:
-            argsDict['--exposure'] = -1 * exposure
+            argsDict['--exposure'] = exposure
 
         if hasattr(self, 'tomo_thickness'):
             z = self.tomo_thickness.get()
@@ -289,7 +301,19 @@ class ProtWarpBase(EMProtocol):
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
-        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+
+    def normalizeParticlesPath(self, particleValue):
+        particleFile = particleValue
+        if not os.path.exists(particleFile):
+            particleFile = os.path.normpath(os.path.join(self._getExtraPath(TILTSERIES_FOLDER), particleValue))
+        return particleFile
+
+    def normalizeTomogramsPath(self, tomogramValue):
+        tomogramFile = tomogramValue
+        if not os.path.exists(tomogramFile):
+            tomogramFile = os.path.join(self._getExtraPath(RELION_FOLDER), tomogramValue)
+        return tomogramFile
 
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):

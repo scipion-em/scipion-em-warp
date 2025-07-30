@@ -109,6 +109,8 @@ class Plugin(pwem.Plugin):
             return cls.getVar(WARP_LOADER)
 
     @classmethod
-    def getProgram(cls, program):
+    def getProgram(cls, program, algorithm=None):
         """ Create Warp command line. """
-        return f"{cls.getActivationCmd()} && WarpTools {program}"
+        if algorithm is not None:
+            return f"{cls.getActivationCmd()} && {program} {algorithm}"
+        return f"{cls.getActivationCmd()} && {program} "

@@ -36,7 +36,7 @@ from tomo.protocols import ProtTomoBase
 from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
                             OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
                             RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
-                            TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS)
+                            TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS, WARP_TOOLS)
 from warp.protocols.protocol_base import ProtWarpBase
 from warp.utils import updateCtFXMLFile
 
@@ -71,13 +71,9 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
         form.addSection(label="Reconstruction")
 
-        form.addParam('binFactor', params.IntParam,
-                      default=4, label='Binning factor', important=True,
-                      help='Binning factor of the reconstructed tomograms')
-
-        # form.addParam('angpix', params.IntParam, default=10,
-        #               condition='reconstruct==True',
-        #               label='Pixel size (Å)', help='Pixel size of the reconstructed tomograms in Angstrom')
+        form.addParam('angpix', params.IntParam, default=10,
+                      label='Pixel size (Å)',
+                      help='Pixel size of the reconstructed tomograms in Angstrom')
 
         form.addParam('halfmap_tilts', params.BooleanParam, default=False,
                       label='Produce two half-tomograms?',
@@ -152,29 +148,19 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
                 continue
             self._insertFunctionStep(self.tomoReconstructionStep, ts, needsGPU=True)
             self._insertFunctionStep(self.createOutput, ts, needsGPU=False)
-            self.cleanIntermediateResults()
+            self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
 
         self._insertFunctionStep(self._closeOutputSet, needsGPU=False)
 
     def tsCtfEstimation(self, ts):
         """CTF estimation"""
         self.info(">>> Generating ctf estimation file fo %s ..." % ts.getTsId())
-        inputTSAdquisition = ts.getAcquisition()
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
-            # "--window": 512,
-            # "--range_low": 30,
-            # "--range_high": 8,
-            # # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
-            # "--defocus_min": 0.5,
-            # "--defocus_max": 5,
-            # "--voltage": int(inputTSAdquisition.getVoltage()),
-            # "--cs": inputTSAdquisition.getSphericalAberration(),
-            # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
         }
         try:
-            self.runProgram(argsDict, TS_CTF)
+            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
         except Exception:
             self.info(">>> Error generating ctf estimation file...")
         ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
@@ -186,17 +172,17 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
-        ts.writeImodFiles(tiltstackFolder, delimiter=' ')
+        factor = self.angpix.get() / ts.getSamplingRate()
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=factor)
         self.info(">>> Starting import aligments...")
-        angpix = ts.getSamplingRate()
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
-            "--alignment_angpix": angpix,
+            "--alignment_angpix": self.angpix.get(),
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
 
     def tomoReconstructionStep(self, ts):
         """Tomo Reconstruction"""
@@ -205,7 +191,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         self.tsCtfEstimation(ts)
         self.tsImportAligments(ts)
         self.info(">>> Starting tomogram reconstruction...")
-        angpix = self.getAngPix()
+        angpix = self.angpix.get()
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
@@ -222,7 +208,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         if not self.normalize.get():
             cmd += " --dont_normalize"
 
-        self.runProgram(argsDict, TS_RECONSTRUCTION, othersCmds=cmd)
+        self.runProgram(argsDict, WARP_TOOLS, TS_RECONSTRUCTION, othersCmds=cmd)
 
     def createOutput(self, ts):
         self.info(">>> Generating outputs...")
@@ -288,16 +274,12 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         return summary
 
     def getAngPix(self):
-        return round(self.inputSet.get().getSamplingRate() * self.binFactor.get())
+        return self.angpix.get()
 
     def getOutFile(self, tsId, ext) -> str:
         angpix = self.getAngPix()
         suffix = str(f"{angpix:.2f}") + 'Apx'
         return f'{tsId}_{suffix}.{ext}'
-
-    def getBinFactor(self):
-        import math
-        return math.floor(math.log2(self.binFactor.get()))
 
     def cleanIntermediateResults(self):
         self.info(">>> Cleaning intermediate results...")

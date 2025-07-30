@@ -33,7 +33,7 @@ import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
 
 from warp.protocols.protocol_base import ProtMovieAlignBase
-from warp import Plugin
+from warp import Plugin, WARP_TOOLS
 from warp.constants import (CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER,
                             FRAMESERIES_SETTINGS, AVERAGE_FOLDER)
 
@@ -172,7 +172,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
             if self.gainSwap.get() == 1:
                 cmd += ' --gain_transpose'
 
-        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     def proccessMoviesStep(self, micNamesList) -> None:
         """Estimate motion in frame series, produce aligned averages and register the output"""
@@ -199,7 +199,7 @@ class ProtWarpMotionCorr(ProtMovieAlignBase):
         if self.x.get() and self.y.get() and self.z.get():
             cmd += ' --grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
 
-        self.runJob(self.getPlugin().getProgram(FS_MOTION), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION), cmd, executable='/bin/bash')
 
         processingFolder = self._getExtraPath(FRAMESERIES_FOLDER, AVERAGE_FOLDER)
         # Generate a list of output micrograph locations based on the original micrograph names

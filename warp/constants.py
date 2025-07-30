@@ -42,6 +42,9 @@ WARP_FORCE_MRC_FLOAT32 = 'WARP_FORCE_MRC_FLOAT32'
 
 
 OUTPUT_CTF_SERIE = "CTFTomoSeries"
+OUPUT_AVERAGE_SUBTOMOGRAM = "AverageSubTomogram"
+OUTPUT_MASK_SUBTOMOGRAM = "MaskSubTomogram"
+OUTPUT_RELION_PARTICLES = "RelionParticles"
 OUTPUT_TOMOGRAMS_NAME = "Tomograms"
 OUTPUT_TILTSERIES = 'TiltSeries'
 OUTPUT_HANDEDNESS = 'Handedness_OK'
@@ -52,7 +55,8 @@ ODD = 'odd'
 MRC_EXT = 'mrc'
 
 
-# --------- [PROGRAMS] ---------------
+# --------- [WARPPTOOLS PROGRAMS] ---------------
+WARP_TOOLS = 'WarpTools'
 CREATE_SETTINGS = 'create_settings'
 FS_MOTION = 'fs_motion'
 TS_CTF = 'ts_ctf'
@@ -64,6 +68,18 @@ TS_DEFOCUS_HAND = 'ts_defocus_hand'
 TS_TEMPLATE_MATCH = 'ts_template_match'
 TS_THRESHOLD_PICKS = 'threshold_picks'
 TS_IMPORT_ALIGNMENTS = 'ts_import_alignments'
+TS_EXPORT_PARTICLES = 'ts_export_particles'
+
+WARP_TOOLS_GPU_ALGORITHMS = [FS_MOTION, TS_CTF, FS_MOTION, FS_MOTION_AND_CTF, TS_RECONSTRUCTION, TS_TEMPLATE_MATCH,
+                             TS_THRESHOLD_PICKS, TS_EXPORT_PARTICLES]
+
+# ---------[MTOOLS PROGRAMS]-------------------
+MTOOLS = 'MTools'
+CREATE_POPULATION = 'create_population'
+CREATE_SOURCES = 'create_source'
+CREATE_SPECIES = 'create_species'
+MCORE = 'MCore'
+
 
 # -------------[LABELS]----------------
 TOMOSTAR_FOLDER = 'tomostar'
@@ -80,6 +96,20 @@ RECONSTRUCTION_FOLDER = 'reconstruction'
 RECONSTRUCTION_ODD_FOLDER = 'odd'
 RECONSTRUCTION_EVEN_FOLDER = 'even'
 MATCHING_FOLDER = 'matching'
+RELION_FOLDER = 'relion'
+M_RESULT_FOLDER = 'm'
+SPECIES_FOLDER = 'species'
+OPTIMISATION_SET_STAR = 'matching_optimisation_set.star'
+MATCHING_PARTICLES_STAR = 'matching.star'
+IN_PARTICLES_STAR = 'inParticles.star'
+MATCHING_TOMOGRAMS_STAR = 'matching_tomograms.star'
+MATCHING_PROCESSING_SPECIES_PATTERN = 'processing_species_*'
+PROCESSING_SPECIES_AVERAGE = 'processing_species_filt.mrc'
+PROCESSING_SPECIES_HALF1 = 'processing_species_half1.mrc'
+PROCESSING_SPECIES_HALF2 = 'processing_species_half2.mrc'
+PROCESSING_SPECIES_PARTICLES = 'processing_species_particles.star'
+PROCESSING_SPECIES_MASK = 'processing_species_mask.mrc'
+PROCESSING_SPECIES_SPECIES = 'processing_species.species'
 
 # RELION LABELS
 RLN_COORDINATE_X = 'rlnCoordinateX'
@@ -89,3 +119,29 @@ RLN_ANGLE_ROT = 'rlnAngleRot'
 RLN_ANGLE_TILT = 'rlnAngleTilt'
 RLN_ANGLE_PSI = 'rlnAnglePsi'
 RLN_AUTOPICK_FIGURE_OF_MERIT = 'rlnAutopickFigureOfMerit'
+RLN_MICROGRAPH_NAME = 'rlnMicrographName'
+RLN_TOMO_NAME = 'rlnTomoName'
+RLN_SOURCE_HASH = 'rlnSourceHash'
+RLN_RAMDOM_SUBSET = 'rlnRamdomSubset'
+
+# WARP_LABELS
+WRP_COORDINATE_X = 'wrpCoordinateX1'
+WRP_COORDINATE_Y = 'wrpCoordinateY1'
+WRP_COORDINATE_Z = 'wrpCoordinateZ1'
+WRP_ANGLE_ROT = 'wrpAngleRot1'
+WRP_ANGLE_TILT = 'wrpAngleTilt1'
+WRP_ANGLE_PSI = 'wrpAnglePsi1'
+WRP_RAMDOM_SUBSET = 'wrpRandomSubset'
+WRP_SOURCE_NAME = 'wrpSourceName'
+WRP_SOURCE_HASH = 'wrpSourceHash'
+
+tomoStarFields = [
+    RLN_COORDINATE_X,
+    RLN_COORDINATE_Y,
+    RLN_COORDINATE_Z,
+    RLN_ANGLE_ROT,
+    RLN_ANGLE_TILT,
+    RLN_ANGLE_PSI,
+    RLN_MICROGRAPH_NAME,
+    RLN_AUTOPICK_FIGURE_OF_MERIT,
+]

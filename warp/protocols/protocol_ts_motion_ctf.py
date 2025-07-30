@@ -222,7 +222,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         fileName, extension = os.path.splitext(firstTSMovie.getFirstItem().getFileName())
         folderData = os.path.abspath(os.path.dirname(fileName))
         processingFolder = os.path.abspath(self._getExtraPath(FRAMESERIES_FOLDER))
-        exposure = -1 * tsMovies.getAcquisition().getDosePerFrame()
+        exposure = tsMovies.getAcquisition().getDosePerFrame()
         gainPath = os.path.abspath(tsMovies.getGain()) if tsMovies.getGain() else None
         pwutils.makePath(processingFolder)
         argsDict = {
@@ -251,7 +251,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
             if self.gainSwap.get() == 1:
                 cmd += ' --gain_transpose'
 
-        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     def createTiltSeriesSettingStep(self, tsId):
         self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
@@ -276,7 +276,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         }
 
         if exposure is not None:
-            argsDict['--exposure'] = -1 * exposure
+            argsDict['--exposure'] = exposure
 
         if hasattr(self, 'tomo_thickness'):
             z = self.tomo_thickness.get()
@@ -292,7 +292,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
 
-        self.runJob(Plugin.getProgram(CREATE_SETTINGS), cmd, executable='/bin/bash')
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
 
     def dataPrepare(self, tsMovie):
         """Creates the setting file that will be used by the different programs.
@@ -344,7 +344,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --check'
-        self.runJob(self.getPlugin().getProgram(TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
         self.createOutputDefocusHand()
 
     def proccessTSMoviesStep(self, tsId) -> None:
@@ -416,7 +416,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         if self.use_sum.get():
             cmd += ' --c_use_sum'
 
-        self.runJob(self.getPlugin().getProgram(FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
 
     def tsCtfEstimationStep(self, tsId):
         """CTF estimation"""
@@ -440,7 +440,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(TS_CTF), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_CTF), cmd, executable='/bin/bash')
 
     def createOutputTS(self, tsMovie):
         self.info(">>> Generating output for %s..." % tsMovie.getTsId())
