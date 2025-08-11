@@ -25,6 +25,7 @@
 # ******************************************************************************
 import glob
 import os
+import time
 from collections import defaultdict
 
 import emtools.metadata
@@ -253,7 +254,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inReParticles = self.getInputSetOfReParticles()
         outPath = self._getExtraPath()
         writer = convert50_tomo.Writer()
-        writer.pseudoSubtomograms2Star(inReParticles, outPath)
+        writer.pseudoSubtomograms2Star(inReParticles, outPath, isWarp=True)
 
         inputTs = self.getInputSetTS()
 
