@@ -315,6 +315,12 @@ class ProtWarpBase(EMProtocol):
             tomogramFile = os.path.join(self._getExtraPath(RELION_FOLDER), tomogramValue)
         return tomogramFile
 
+    def normalizeOptimizationPath(self, optimizationValue):
+        optimizationFile = optimizationValue
+        if not os.path.exists(optimizationFile):
+            optimizationFile = os.path.join(self._getExtraPath(RELION_FOLDER), optimizationValue)
+        return optimizationFile
+
 
 class ProtMovieAlignBase(EMProtocol, ProtStreamingBase):
     """

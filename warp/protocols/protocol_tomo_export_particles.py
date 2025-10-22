@@ -25,6 +25,7 @@
 # ******************************************************************************
 
 import os
+import time
 from enum import Enum
 
 from emtable import Table
@@ -40,7 +41,8 @@ from tomo.constants import BOTTOM_LEFT_CORNER
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
+from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable, \
+    modifyOptFileMultiTable
 
 
 class outputObjects(Enum):
@@ -199,6 +201,7 @@ class ProtWarpExportParticles(ProtWarpBase):
         self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
 
     def createOutputStep(self):
+        time.sleep(10)
         coordSet = self.coordinates.get()
         tsSet = self.inputSet.get()
         tsSRate = tsSet.getSamplingRate()
@@ -206,7 +209,10 @@ class ProtWarpExportParticles(ProtWarpBase):
         acq = tsSet.getAcquisition()
         relionFolder = self._getExtraPath(RELION_FOLDER)
         are2dStacks = self.writeStacks.get() == 0
-
+        modifyOptFileMultiTable(os.path.join(relionFolder, OPTIMISATION_SET_STAR),
+                                 '_rlnTomoParticlesFile', lambda v: self.normalizeOptimizationPath(v))
+        modifyOptFileMultiTable(os.path.join(relionFolder, OPTIMISATION_SET_STAR),
+                                 '_rlnTomoTomogramsFile', lambda v: self.normalizeOptimizationPath(v))
         psubtomoSet = createSetOfRelionPSubtomograms(self._getPath(),
                                                      os.path.join(relionFolder, OPTIMISATION_SET_STAR),
                                                      coordSet,

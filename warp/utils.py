@@ -321,6 +321,32 @@ def getTransformInfoFromCoordOrSubtomo(coord, samplingRate):
     return angles, shifts
 
 
+def modifyOptFileMultiTable(filePath, columnToModify, modifierFunc):
+    """
+        Modify a given column in all data blocks in a .star file that contain a loop_ table.
+        Keeps untouched blocks without loop_.
+        """
+    tempPath = filePath + '.tmp'
+
+    with open(filePath, 'r') as fin, open(tempPath, 'w') as fout:
+
+        for line in fin:
+            stripped = line.strip()
+            if stripped.startswith('_'):
+                if stripped.startswith(columnToModify):
+                    parts = line.strip().split()
+                    try:
+                        oldValue = parts[-1]
+                        parts[-1] = str(modifierFunc(oldValue))
+                        fout.write(' '.join(parts) + '\n')
+                    except IndexError:
+                        fout.write(line)  # Malformed line; write as-is
+                    continue
+            fout.write(line)
+
+    os.replace(tempPath, filePath)
+
+
 def modifyStarFileMultiTable(filePath, columnToModify, modifierFunc):
     """
     Modify a given column in all data blocks in a .star file that contain a loop_ table.
