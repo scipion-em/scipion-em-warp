@@ -201,7 +201,6 @@ class ProtWarpExportParticles(ProtWarpBase):
         self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
 
     def createOutputStep(self):
-        time.sleep(10)
         coordSet = self.coordinates.get()
         tsSet = self.inputSet.get()
         tsSRate = tsSet.getSamplingRate()
