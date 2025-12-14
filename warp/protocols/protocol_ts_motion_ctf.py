@@ -109,8 +109,21 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
 
         form.addParam('average_halves', params.BooleanParam,
                       default=False,
-                      label='Do even and odd ?',
+                      label='Do even and odd?',
                       help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
+        
+        form.addParam('do_skip_frames', params.BooleanParam,
+                      label='Skip frames?',
+                      default=False,
+                      help='Skip initial or final frames (e.g. to reduce effects from initial drift and radiation damage)')
+        form.addParam('skip_frames_first', params.IntParam,
+                      condition='do_skip_frames', 
+                      allowsNull=False,
+                      label='Skip first')
+        form.addParam('skip_frames_last', params.IntParam,
+                      condition='do_skip_frames',
+                      allowsNull=False, 
+                      label='Skip last')
 
         form.addSection(label="Gain and defects")
         form.addParam('gainSwap', params.EnumParam,
@@ -415,6 +428,10 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
             cmd += ' --c_fit_phase'
         if self.use_sum.get():
             cmd += ' --c_use_sum'
+
+        if self.do_skip_frames.get() is True:
+            cmd += ' --out_skip_first %s' % (self.skip_frames_first.get())
+            cmd += ' --out_skip_last %s' % (self.skip_frames_last.get())
 
         self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
 
