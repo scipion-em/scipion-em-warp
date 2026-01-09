@@ -27,10 +27,7 @@ import os
 import time
 
 import emtable
-import numpy as np
 
-
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
@@ -39,22 +36,16 @@ import tomo.objects as tomoObj
 from tomo.constants import BOTTOM_LEFT_CORNER
 from tomo.protocols import ProtTomoPicking
 
-from warp import Plugin, RLN_COORDINATE_X, RLN_COORDINATE_Y, RLN_COORDINATE_Z, RLN_ANGLE_ROT, RLN_ANGLE_TILT, \
-    RLN_ANGLE_PSI, RLN_AUTOPICK_FIGURE_OF_MERTI
-from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
-                            OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
-                            RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
-                            TS_TEMPLATE_MATCH, CREATE_SETTINGS, SETTINGS_FOLDER, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
-                            AVERAGE_FOLDER, TS_THRESHOLD_PICKS, MATCHING_FOLDER, TS_IMPORT_ALIGNMENTS)
+from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import tomoStarGenerate, genTransformMatrix, updateCtFXMLFile
+from warp.utils import genTransformMatrix, updateCtFXMLFile
 
 
 class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
     """
     Match previously reconstructed tomograms against a 3D template, producing a list of the highest-scoring matches
+    Note: The contrast of the tomograms and the reference volume should be the same
     More info:
-        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
     """
 
@@ -84,10 +75,12 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
 
         form.addSection(label="Template matching")
 
-        form.addParam('templateVolume', params.PointerParam, pointerClass='Volume',
+        groupColor = form.addGroup('Volume Template')
+        groupColor.addParam('volumeLabel', params.LabelParam, label='The contrast of the tomograms and the volume template should be the same')
+        groupColor.addParam('templateVolume', params.PointerParam, pointerClass='Volume',
                       important=True,
                       label="Volume Template",
-                      help='Map that will serve as a template')
+                      help='Map that will serve as a template. It should have the same contrast as tomograms')
 
         form.addParam('template_diameter', params.IntParam, default=None,
                       important=True,
@@ -132,8 +125,8 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
 
         form.addParam('dont_normalize', params.BooleanParam, default=True,
                       expertLevel=params.LEVEL_ADVANCED,
-                      label="Don't normalize?",
-                      help="Don't set score distribution to median = 0, stddev = 1")
+                      label="Normalize?",
+                      help="Set score distribution to median = 0, stddev = 1")
 
         form.addParam('whiten', params.BooleanParam, default=True,
                       expertLevel=params.LEVEL_ADVANCED,
@@ -158,7 +151,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
                       label='Maximum dismiss positions',
                       help="Dismiss positions not covered by at least this many tilts; set to -1 to disable position culling")
 
-        form.addParam('reuse_results', params.BooleanParam, default=True,
+        form.addParam('reuse_results', params.BooleanParam, default=False,
                       expertLevel=params.LEVEL_ADVANCED,
                       label="Reuse correlation volumes?",
                       help="Reuse correlation volumes from a previous run if available, only extract peak positions")
@@ -179,19 +172,19 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
-        # form.addParam('apply_score', params.BooleanParam, default=False,
-        #               label="Apply a score threshold to particles picked?",
-        #               help="Apply a score threshold to particles picked through template-matching from tilt")
-        #
-        # form.addParam('minimum', params.IntParam, default=3,
-        #               allowsNull=True,
-        #               condition='apply_score',
-        #               label="Minimum threshold",
-        #               help="Remove all particles below this threshold")
-        # form.addParam('maximum', params.IntParam, default=None,
-        #               condition='apply_score',
-        #               label="Maximun threshold",
-        #               help="Remove all particles above this threshold")
+        form.addParam('apply_score', params.BooleanParam, default=True,
+                      label="Apply a score threshold to particles picked?",
+                      help="Apply a score threshold to particles picked through template-matching from tilt")
+
+        form.addParam('minimum', params.IntParam, default=3,
+                      condition='apply_score',
+                      label="Minimum threshold",
+                      help="Remove all particles below this threshold")
+        form.addParam('maximum', params.IntParam, default=None,
+                      allowsNull=True,
+                      condition='apply_score',
+                      label="Maximun threshold",
+                      help="Remove all particles above this threshold")
 
     def _insertAllSteps(self):
         inputTomograms = self.inputTomograms.get()
@@ -212,11 +205,10 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             tsId = tomogram.getTsId()
             ts = inputTs.getItem('_tsId', tsId)
             self._insertFunctionStep(self.templateMatchStep, ts, needsGPU=True)
+            if self.apply_score.get():
+                self._insertFunctionStep(self.applyScoreStep, ts, needsGPU=True)
             self._insertFunctionStep(self.createOutputStep, ts, needsGPU=False)
             self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
-
-            # if self.apply_score.get():
-            #     self._insertFunctionStep(self.applyScoreStep, ts, needsGPU=True)
 
         self._insertFunctionStep(self._closeOutputSet, needsGPU=False)
 
@@ -234,44 +226,37 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation file for %s..." % ts.getTsId())
-        # inputTSAdquisition = ts.getAcquisition()
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(settingFile),
-            # "--window": 512,
-            # "--range_low": 30,
-            "--range_high": 7,
-            # # "--range_high": self.inputSet.get().getSamplingRate() * 2 + 0.1,
-            # "--defocus_min": 0.5,
-            "--defocus_max": 8,
-            # "--voltage": int(inputTSAdquisition.getVoltage()),
-            # "--cs": inputTSAdquisition.getSphericalAberration(),
-            # "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
+            "--settings": os.path.abspath(settingFile)
         }
         try:
-            self.runProgram(argsDict, TS_CTF)
+            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
         except Exception:
             self.info(">>> Error generating ctf estimation file...")
+
         ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
         updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
 
     def tsImportAligments(self, ts):
+        angpix = self.inputTomograms.get().getSamplingRate()
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
-        ts.writeImodFiles(tiltstackFolder, delimiter=' ')
-        self.info(">>> Starting import aligments...")
-        angpix = ts.getSamplingRate()
+        factor = angpix/ts.getSamplingRate()
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=factor)
+        self.info(">>> Starting import alignments...")
+
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
-            "--alignment_angpix": angpix,
+            "--alignment_angpix": angpix
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
 
     def templateMatchStep(self, ts):
         """Particle Picking"""
@@ -289,27 +274,48 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             "--template_path": self.templateVolume.get().getFileName(),
             "--template_diameter": self.template_diameter.get(),
             "--symmetry": self.symmetry.get(),
-            "--check_hand": self.check_hand.get()
+            "--check_hand": self.check_hand.get(),
+            # "--batch_angles": self.batch_angles.get(),
+            # "--npeaks": self.npeaks.get(),
+            # "--lowpass": self.lowpass.get(),
+            # "--lowpass_sigma": self.lowpass_sigma.get(),
+            # "--subvolume_size": self.subvolume_size.get()
+
         }
+
+        if self.tilt_range.get() is not None:
+            argsDict['--tilt_range'] = self.tilt_range.get()
+
+        if self.peak_distance.get() is not None:
+            argsDict['--peak_distance'] = self.peak_distance.get()
 
         cmd = ''
         if self.whiten.get():
             cmd += " --whiten"
+        if not self.dont_normalize.get():
+            cmd += " --dont_normalize"
+        if self.reuse_results.get():
+            cmd += " --reuse_results"
 
-        self.runProgram(argsDict, TS_TEMPLATE_MATCH, othersCmds=cmd)
+        self.runProgram(argsDict, WARP_TOOLS, TS_TEMPLATE_MATCH, othersCmds=cmd)
 
     def applyScoreStep(self, ts):
         """Apply a score threshold to particles picked through template-matching from tilt"""
         tsId = ts.getTsId()
         self.info(">>> Starting to apply a score threshold to particles picked to %s..." % tsId)
         settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIE_SETTINGS)
+        suffix = os.path.splitext(os.path.basename(self.templateVolume.get().getFileName()))[0].split('_')[-1]
         argsDict = {
             "--settings": os.path.abspath(settingFile),
-            "--in_suffix": tsId,
+            "--in_suffix": suffix,
             "--out_suffix": 'clean',
             "--minimum": self.minimum.get()
         }
-        self.runProgram(argsDict, TS_THRESHOLD_PICKS)
+        if self.maximum.get() is not None:
+            argsDict["--maximum"] = self.maximum.get()
+
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_THRESHOLD_PICKS), cmd, executable='/bin/bash')
 
     def getOutputSetOfCoordinates3D(self, outputSetName):
         suffix = self._getOutputSuffix(tomoObj.SetOfCoordinates3D)
@@ -336,7 +342,11 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         tomoFileName = os.path.basename(tomogram.getFileName())
         tomoFileBaseName = os.path.splitext(tomoFileName)[0]
         outputPath = self._getExtraPath(TILTSERIES_FOLDER, MATCHING_FOLDER)
-        coordsFile = [f for f in os.listdir(outputPath) if f.startswith(tomoFileBaseName) and f.endswith(".star") and "_flipx" not in f][0]
+        starFiles = [f for f in os.listdir(outputPath) if f.startswith(tomoFileBaseName) and f.endswith(".star")]
+        if self.apply_score.get():
+            coordsFile = next(f for f in starFiles if "_clean" in f)
+        else:
+            coordsFile = next(f for f in starFiles if "_flipx" not in f and "_clean" not in f)
 
         setOfCoord3D = self.getOutputSetOfCoordinates3D('output3DCoordinates')
         origin = BOTTOM_LEFT_CORNER
@@ -359,7 +369,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
                                    float(row.get(RLN_ANGLE_PSI)))
             coord.setMatrix(M)
             coord.setTomoId(tsId)
-            coord.setScore(float((row.get(RLN_AUTOPICK_FIGURE_OF_MERTI))))
+            coord.setScore(float((row.get(RLN_AUTOPICK_FIGURE_OF_MERIT))))
             setOfCoord3D.append(coord)
         setOfCoord3D.write()
         setOfCoord3D.setBoxSize(int(self.template_diameter.get()/sr))

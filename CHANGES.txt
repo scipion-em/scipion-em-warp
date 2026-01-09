@@ -1,3 +1,9 @@
+3.6.0: Adding M refinement protocol
+       Adding Extract Particles protocol
+       Adding Template Matching protocol
+       Fixing an error importing alignments
+       Fixing the test
+
 3.5.0: Procesing TiltSerieMovies one by one(motioncorr and ctf estimation) in streaming
        Big code refactoring
        Processing Tiltseries one by one(reconstruction) and eliminating intermediate results

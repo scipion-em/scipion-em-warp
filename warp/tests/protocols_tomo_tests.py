@@ -26,13 +26,15 @@
 import os.path
 
 from pwem import Domain
+from pwem.protocols import ProtImportVolumes
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import magentaStr
 
 from tomo.protocols import ProtImportTs, ProtImportTsCTF, ProtImportTsMovies
 from tomo.tests import DataSet
 from warp.protocols import (ProtWarpTomoReconstruct, ProtWarpDeconvTomo,
-                            ProtWarpDeconvTS, ProtWarpTSMotionCorr)
+                            ProtWarpDeconvTS, ProtWarpTSMotionCorr, ProtWarpTSTemplateMatch)
+from xmipp3.protocols import XmippProtPreprocessVolumes
 
 
 class TestWarpBase(BaseTest):
@@ -87,6 +89,13 @@ class TestWarpBase(BaseTest):
         return cls.tomoReconstruct
 
     @classmethod
+    def runWarpTemplateMatching(cls, **kwargs):
+        cls.templateMatching = cls.newProtocol(ProtWarpTSTemplateMatch, **kwargs)
+        cls.launchProtocol(cls.templateMatching)
+        cls.assertIsNotNone(cls.templateMatching.output3DCoordinates, "SetOf3DCoordinates has not been produced.")
+        return cls.templateMatching
+
+    @classmethod
     def runImportCtf(cls, **kwargs):
         cls.protImportCtf = cls.newProtocol(ProtImportTsCTF, **kwargs)
         cls.launchProtocol(cls.protImportCtf)
@@ -104,6 +113,20 @@ class TestWarpBase(BaseTest):
                             "SetOfTomograms has not been produced.")
 
         return cls.protRecon
+
+    @classmethod
+    def runImportVolumes(cls, **kwargs):
+        """ Run an Import volumes protocol. """
+        protImportVol = cls.newProtocol(ProtImportVolumes, **kwargs)
+        cls.launchProtocol(protImportVol)
+        return protImportVol
+
+    @classmethod
+    def runPreprocessVolume(cls, **kwargs):
+        """ Run an Import volumes protocol. """
+        protImportVol = cls.newProtocol(XmippProtPreprocessVolumes, **kwargs)
+        cls.launchProtocol(protImportVol)
+        return protImportVol
 
 
 class TestDeconvolveTomo(TestWarpBase):
@@ -186,6 +209,7 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
 
         print(magentaStr("\n==> Running Warp - Tomo Reconstruction "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   inputSetOfCtfTomoSeries=protAlignAndCtf.CTFTomoSeries,
                                                                                    binFactor=13,
                                                                                    tomo_thickness=1000,
                                                                                    x_dimension=4400,
@@ -214,6 +238,7 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
 
         print(magentaStr("\n==> Running Warp - Tomo Reconstruction (Excluding views) "))
         ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   inputSetOfCtfTomoSeries=protAlignAndCtf.CTFTomoSeries,
                                                                                    binFactor=13,
                                                                                    tomo_thickness=1000,
                                                                                    x_dimension=4400,
@@ -235,3 +260,62 @@ class TestWarpEstimateCTFTomoReconstruction(TestWarpBase):
         ts.write()
         tsSet.update(ts)
         tsSet.write()
+
+
+class TestWarpTemplateMatching(TestWarpBase):
+    def test_warpCTFEstimationTomoReconstruction(self):
+        print(magentaStr("\n==> Importing data - tilt series movies:"))
+        protImportTSM = self.runImportTiltSeriesM(filesPath=self.tsm_path,
+                                                  filesPattern="*/*.mdoc",
+                                                  voltage=300,
+                                                  samplingRate=0.79,
+                                                  tiltAxisAngle=-85.6,
+                                                  dosePerFrame=2.64,
+                                                  gainFile=os.path.join(self.tsm_path, 'gain_ref.mrc'))
+
+        print(magentaStr("\n==> Running Warp - align tiltseries movies and ctf estimation "))
+        protAlignAndCtf = self.runMotioncorrTSMovieAligment(inputTSMovies=protImportTSM.outputTiltSeriesM,
+                                                            binFactor=1,
+                                                            x=1, y=1, z=3,
+                                                            c_x=2, c_y=2, c_z=1,
+                                                            range_max=7,
+                                                            defocus_max=8,
+                                                            gainFlip=2)
+
+        print(magentaStr("\n==> Running Imod - import transformation matrix "))
+        protImportTM = self.runImodImportTMatrix(inputSetOfTiltSeries=protAlignAndCtf.TiltSeries,
+                                                 filesPath=os.path.join(self.tsm_path, 'tiltstack/TS_1'),
+                                                 filesPattern='*.xf',
+                                                 binningTM=13)
+
+        print(magentaStr("\n==> Running Warp - Tomo Reconstruction "))
+        ctfEstimationTomoReconstruct = self.runWarpCTFEstimationTomoReconstruction(inputSet=protImportTM.TiltSeries,
+                                                                                   inputSetOfCtfTomoSeries=protAlignAndCtf.CTFTomoSeries,
+                                                                                   binFactor=13,
+                                                                                   tomo_thickness=1000,
+                                                                                   x_dimension=4400,
+                                                                                   y_dimension=6000)
+        setOfTomogram = ctfEstimationTomoReconstruct.Tomograms
+        self.assertSetSize(setOfTomogram, 1)
+        self.assertTrue(setOfTomogram.getSamplingRate() == 10.00)
+        self.assertTrue(setOfTomogram.getDim() == (348, 474, 80))
+
+        print(magentaStr("\n==> Importing template volume "))
+        importVolume = self.runImportVolumes(importFrom=1, emdbId=15854)
+        preprocessVolume = self.runPreprocessVolume(inputVolumes=importVolume.outputVolume,
+                                                    doInvert=True)
+
+        print(magentaStr("\n==> Running Warp - Template matching "))
+        self.picking = self.runWarpTemplateMatching(inputSet=protImportTM.TiltSeries,
+                                                    inputSetOfCtfTomoSeries=protAlignAndCtf.CTFTomoSeries,
+                                                    inputTomograms=setOfTomogram,
+                                                    templateVolume=preprocessVolume.outputVol,
+                                                    subdivisions=3,
+                                                    template_diameter=130,
+                                                    symmetry='O',
+                                                    check_hand=2)
+
+        setOf3DCoordinates = self.picking.output3DCoordinates
+        self.assertTrue(setOf3DCoordinates.getSize() > 0)
+        self.assertTrue(setOf3DCoordinates.getSamplingRate() == 10.00)
+        self.assertTrue(setOf3DCoordinates.getBoxSize() == 13)

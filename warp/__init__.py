@@ -28,17 +28,19 @@ import os
 
 import pwem
 import pyworkflow.utils as pwutils
+from pyworkflow import SPA, TOMO
 
 from warp.constants import *
 
 
-__version__ = '3.5.0'
+__version__ = '3.6.0'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 
 
 class Plugin(pwem.Plugin):
     _url = "https://github.com/scipion-em/scipion-em-warp"
+    _processingField = [SPA, TOMO]
 
     @classmethod
     def _defineVariables(cls):
@@ -109,6 +111,8 @@ class Plugin(pwem.Plugin):
             return cls.getVar(WARP_LOADER)
 
     @classmethod
-    def getProgram(cls, program):
+    def getProgram(cls, program, algorithm=None):
         """ Create Warp command line. """
-        return f"{cls.getActivationCmd()} && WarpTools {program}"
+        if algorithm is not None:
+            return f"{cls.getActivationCmd()} && {program} {algorithm}"
+        return f"{cls.getActivationCmd()} && {program} "
