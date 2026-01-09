@@ -208,6 +208,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
     # --------------------------- STEPS functions -----------------------------
 
     def insertInitialSteps(self):
+        self.numberOfThreads = Integer(2)
         self.samplingRate = self.getInputTSMovies().getSamplingRate()
         createSettingStep = self._insertFunctionStep(self.createFrameSeriesSettingStep,
                                                      prerequisites=[], needsGPU=False)
