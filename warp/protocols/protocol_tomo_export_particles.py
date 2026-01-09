@@ -25,7 +25,6 @@
 # ******************************************************************************
 
 import os
-import time
 from enum import Enum
 
 from emtable import Table

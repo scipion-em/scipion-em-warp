@@ -28,6 +28,7 @@ import os
 
 import pwem
 import pyworkflow.utils as pwutils
+from pyworkflow import SPA, TOMO
 
 from warp.constants import *
 
@@ -39,6 +40,7 @@ _logo = "warp_logo.png"
 
 class Plugin(pwem.Plugin):
     _url = "https://github.com/scipion-em/scipion-em-warp"
+    _processingField = [SPA, TOMO]
 
     @classmethod
     def _defineVariables(cls):

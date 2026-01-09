@@ -29,7 +29,7 @@ from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry, log
 from pyworkflow import BETA
 import pyworkflow.utils as pwutils
 import pyworkflow.protocol.params as params
-from pyworkflow.object import Set, Float, Boolean
+from pyworkflow.object import Set, Float, Boolean, Integer
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries,
                           CTFTomo)
@@ -65,8 +65,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         form.addSection('Alignment')
         self._defineAlignmentParams(form)
         ProtTSMovieAlignBase._defineStreamingParams(self, form)
-
-    def _defineAlignmentParams(self, form):
+        form.addParallelSection(threads=2, mpi=0)
         form.addHidden(params.GPU_LIST, params.StringParam, default='0',
                        expertLevel=params.LEVEL_ADVANCED,
                        label="Choose GPU IDs",
@@ -74,6 +73,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                             " Warp can use multiple GPUs - in that case"
                             " set to i.e. *0 1 2*.")
 
+    def _defineAlignmentParams(self, form):
         form.addParam('binFactor', params.FloatParam, default=1,
                       label="Binning factor",
                       help="Binning factor, applied in Fourier "
@@ -204,7 +204,6 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                       expertLevel=params.LEVEL_ADVANCED,
                       label='Check the handedness ?',
                       help='Checking defocus handedness across a dataset ')
-        form.addParallelSection(threads=2, mpi=0)
 
     # --------------------------- STEPS functions -----------------------------
 
@@ -596,6 +595,9 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                 summary.append('Handedness: Not ready')
 
         return summary
+
+    def allowsDelete(self, obj):
+        return True
 
     def getOutputSetOfTS(self, outputSetName):
         outputSetOfTiltSeries = getattr(self, outputSetName, None)

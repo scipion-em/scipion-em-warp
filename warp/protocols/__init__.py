@@ -31,8 +31,8 @@ from .protocol_motion_ctf import ProtWarpMotionCorr
 with weakImport('tomo'):
     from .protocol_deconv_tomo import ProtWarpDeconvTomo
     from .protocol_deconv_ts import ProtWarpDeconvTS
-    from .protocol_tomoReconstruct import ProtWarpTomoReconstruct
+    # from .protocol_tomoReconstruct import ProtWarpTomoReconstruct
     from .protocol_ts_motion_ctf import ProtWarpTSMotionCorr
-    from .protocol_ts_template_match import ProtWarpTSTemplateMatch
-    from .protocol_m_high_resolution_refinements import ProtWarpMHigResolutionRefinement
-    from .protocol_tomo_export_particles import ProtWarpExportParticles
+    # from .protocol_ts_template_match import ProtWarpTSTemplateMatch
+    # from .protocol_m_high_resolution_refinements import ProtWarpMHigResolutionRefinement
+    # from .protocol_tomo_export_particles import ProtWarpExportParticles

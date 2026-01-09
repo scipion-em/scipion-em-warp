@@ -1,6 +1,7 @@
 # **************************************************************************
 # *
 # * Authors:     Grigory Sharov (gsharov@mrc-lmb.cam.ac.uk)
+# *              Yunior C. Fonseca Reyna (cfonseca@cnb.csic.es)
 # *
 # * MRC Laboratory of Molecular Biology (MRC-LMB)
 # *

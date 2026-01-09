@@ -25,7 +25,6 @@
 # ******************************************************************************
 import glob
 import os
-import time
 from collections import defaultdict
 
 import emtools.metadata
