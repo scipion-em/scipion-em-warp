@@ -73,4 +73,4 @@ Protocols
 References
 -----------
 
-1. Dimitry Tegunov and Patrick Cramer. Real-time cryo-electron microscopy data preprocessing with Warp. Nature Methods 16(11), 2019, p. 1146-1152.
+1. Dimitry Tegunov and Patrick Cramer. Real-time cryo-electron microscopy data preprocessing with Warp. Nature Methods 16(11), 2019, p. 1146-1152. 
