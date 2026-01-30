@@ -33,7 +33,7 @@ from pyworkflow import SPA, TOMO
 from warp.constants import *
 
 
-__version__ = '3.6.1'
+__version__ = '3.6.2'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 
@@ -105,7 +105,7 @@ class Plugin(pwem.Plugin):
     @classmethod
     def getActivationCmd(cls):
         """ Return the activation command. """
-        if cls.getVar(WARP_LOADER) is None:
+        if cls.getVar(WARP_LOADER) in [None, 'None', '']:
             return f"{cls.getCondaActivationCmd()} {cls.getVar(WARP_ENV_ACTIVATION)}"
         else:
             return cls.getVar(WARP_LOADER)
