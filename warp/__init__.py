@@ -33,7 +33,7 @@ from pyworkflow import SPA, TOMO
 from warp.constants import *
 
 
-__version__ = '3.6.2'
+__version__ = '3.6.3'
 _references = ['Nickell2005', 'Tegunov2019']
 _logo = "warp_logo.png"
 

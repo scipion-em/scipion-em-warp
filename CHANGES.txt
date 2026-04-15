@@ -1,3 +1,4 @@
+3.6.3: Validation added to prevent failure if binning is applied in the motioncorection
 3.6.2: Hotfix - fix the management of the command generation using the variable WARP_LOADER.
 3.6.1: Deploy test.
 3.6.0: Adding M refinement protocol
