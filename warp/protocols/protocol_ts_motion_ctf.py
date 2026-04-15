@@ -596,6 +596,19 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                 summary.append('Handedness: Not ready')
 
         return summary
+    
+    def _validate(self):
+        errorMsg = []
+        movieSampling = self.inputTSMovies.get().getSamplingRate()
+        outputSampling = movieSampling*self.binFactor.get()
+        nyquistFreq = 2 * outputSampling
+        resToFit = self.range_max.get()
+
+        if resToFit < nyquistFreq:
+            warnMs = (f'The resolution to fit should be greater than nyquist. Currently, resolution to fit is {resToFit} '
+                      f'and at this binning factor Nyquist is {nyquistFreq}\n')
+            errorMsg.append(warnMs)
+        return errorMsg
 
     def allowsDelete(self, obj):
         return True
