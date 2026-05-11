@@ -48,9 +48,231 @@ from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolutio
 
 class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     """
-    High Resolution Refinements in M
+    Performs high-resolution subtomogram refinement in M using tilt-series,
+    CTF information, pseudo-subtomograms, and reference half-maps.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#initial-3d-refinement-in-relion
+
+    AI Generated:
+
+    M High Resolution Refinement (ProtWarpMHigResolutionRefinement) — User Manual
+        Overview
+
+        This protocol performs high-resolution refinement of subtomographic
+        particles using the M framework. It is designed for cryo-electron
+        tomography workflows where particle poses, optical parameters, and
+        tilt-series geometry must be jointly optimized in order to improve
+        the final reconstructed structure.
+
+        Biologically, this protocol is typically used after an initial
+        subtomogram averaging step, when a preliminary consensus structure
+        already exists and the goal is to obtain improved alignment,
+        better CTF correction, and higher-resolution maps.
+
+        The protocol supports two execution modes:
+
+        1. Direct refinement from input data.
+        2. Continuation from a previous M refinement protocol.
+
+        This makes it suitable both for first-pass high-resolution refinement
+        and iterative optimization workflows.
+
+        Inputs and Workflow
+
+        The protocol requires a tilt-series dataset as the experimental
+        foundation. In a standard workflow, the following inputs are used:
+
+        - A set of tilt-series.
+        - A corresponding set of CTF estimations.
+        - A set of Relion pseudo-subtomograms.
+        - A reference subtomogram average with half-maps.
+        - A binary mask defining the biologically relevant region.
+
+        If the refinement is launched from a previous M protocol, the
+        protocol automatically reuses the relevant inputs and intermediate
+        processing files.
+
+        The internal workflow follows several sequential stages:
+
+        1. Input preparation and metadata conversion.
+        2. Tilt-series preparation and IMOD metadata generation.
+        3. CTF estimation and synchronization with external CTF models.
+        4. Creation of M population, sources, and species definitions.
+        5. Refinement of particle and imaging parameters.
+        6. Generation of refined outputs.
+
+        Preparation of Experimental Data
+
+        During preparation, pseudo-subtomograms are converted into the
+        metadata format required by M.
+
+        For each tilt-series, the protocol prepares:
+
+        - Tilt-series processing settings.
+        - IMOD alignment files.
+        - Local CTF estimation files.
+        - Alignment import metadata.
+
+        From a biological perspective, this stage ensures that particle
+        coordinates, tilt geometry, and optical information are internally
+        consistent before refinement begins.
+
+        Species Definition
+
+        A central concept in M refinement is the definition of a species.
+
+        The species contains:
+
+        - Reference half-maps.
+        - Molecular mask.
+        - Particle diameter.
+        - Symmetry definition.
+        - Temporal sampling parameters.
+
+        The biological interpretation is straightforward:
+
+        the species defines what structural signal the refinement should
+        consider as meaningful.
+
+        The molecular diameter should approximately reflect the real
+        particle size, while the mask should isolate the stable structural
+        core and exclude solvent or highly flexible peripheral regions.
+
+        Refinement Parameters
+
+        The protocol exposes several refinement options controlling both
+        particle alignment and optical model optimization.
+
+        Particle refinement options include:
+
+        - Particle pose refinement.
+        - Tilt-series stage angle refinement.
+        - Image warp refinement.
+        - Anisotropic magnification refinement.
+
+        CTF refinement options include:
+
+        - Defocus refinement.
+        - Exhaustive defocus search.
+        - Phase shift refinement.
+        - Spherical aberration refinement.
+        - Zernike polynomial refinements of orders 2 to 5.
+
+        In practical biological workflows, the most commonly used parameters
+        are pose refinement, defocus refinement, and stage-angle refinement.
+
+        Higher-order optical refinements are typically more relevant when
+        aiming for near-atomic resolution or when residual optical
+        aberrations are suspected.
+
+        Resolution and Resampling
+
+        The protocol allows optional half-map and mask resampling through
+        the angpix_resample parameter.
+
+        This is useful when:
+
+        - The reference was generated at a different pixel size.
+        - Computational cost needs to be reduced.
+        - Resolution matching between datasets is required.
+
+        An optional Gaussian low-pass filter may also be applied to the
+        input half-maps.
+
+        From a biological perspective, low-pass filtering can stabilize
+        early refinement stages when the starting reference is noisy or
+        partially inaccurate.
+
+        Refinement Execution
+
+        Once setup is complete, the protocol launches the M refinement.
+
+        Internally, the refinement may optimize:
+
+        - Particle trajectories.
+        - Tilt-series geometry.
+        - Local optical parameters.
+        - Image deformation models.
+
+        The exact refinement behavior depends on the selected options.
+
+        A preliminary setup validation step is also executed to verify that
+        all metadata are internally consistent before full refinement begins.
+
+        Output Generation
+
+        After refinement, the protocol produces several biologically useful
+        outputs.
+
+        Refined CTF Models
+
+        For each tilt-series, refined per-tilt CTF models are generated.
+        These include updated defocus values and associated power spectrum
+        metadata.
+
+        Refined Average Subtomogram
+
+        A refined average map is generated together with updated half-maps.
+
+        This is the main structural output of the protocol and usually
+        represents the improved consensus reconstruction.
+
+        Refined Mask
+
+        The refined mask generated by M is also exported. This mask often
+        reflects the refined structural envelope used internally during
+        optimization.
+
+        Refined Relion-Compatible Particles
+
+        Refined particle coordinates and orientations are exported back
+        into Relion-compatible pseudo-subtomogram format.
+
+        This is especially useful for downstream subtomogram classification,
+        additional Relion refinement, or comparative analysis.
+
+        Coordinate Normalization
+
+        Particle coordinates are normalized relative to tomogram dimensions
+        before export.
+
+        This ensures that the refined particle metadata remain geometrically
+        consistent with the original tomographic reference frame.
+
+        Practical Biological Recommendations
+
+        In most biological applications, the following practical strategy
+        works well:
+
+        - Start with pose refinement and defocus refinement enabled.
+        - Use a reliable binary mask centered on the stable core.
+        - Use stage-angle refinement for tilt-series datasets.
+        - Introduce higher-order aberration refinements only when the data
+          quality justifies it.
+
+        For heterogeneous or flexible macromolecular assemblies, the choice
+        of mask is often one of the most important factors affecting
+        refinement stability and final resolution.
+
+        Summary Information
+
+        After completion, the protocol reports the global resolution
+        estimated from the refined species metadata.
+
+        This value provides a quick overview of refinement quality, although
+        biological interpretation should always be supported by visual map
+        inspection, FSC analysis, and consistency across half-maps.
+
+        Final Perspective
+
+        This protocol is intended for high-resolution subtomogram
+        refinement workflows where both particle alignment and imaging
+        parameters must be optimized simultaneously.
+
+        For cryo-ET users, it represents a refinement stage in which
+        structural interpretability can significantly improve, provided
+        that input data quality, masking strategy, and refinement settings
+        are biologically well chosen.
     """
 
     _label = 'M high resolution refinement'

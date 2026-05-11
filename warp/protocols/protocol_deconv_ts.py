@@ -41,7 +41,184 @@ class outputs(Enum):
 
 
 class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
-    """ Protocol to deconvolve (Wiener-like filter) a set of tilt-series.
+    """
+    Deconvolves a set of tilt-series using a Wiener-like filtering
+    strategy based on the average CTF information associated with each
+    tilt series.
+
+    AI Generated:
+
+    Deconvolve Tilt-Series (ProtWarpDeconvTS) — User Manual
+        Overview
+
+        The ProtWarpDeconvTS protocol applies deconvolution directly to
+        aligned tilt-series stacks before tomogram reconstruction. Its
+        purpose is to compensate for contrast attenuation introduced by
+        microscope optics and improve the quality of the tilt images that
+        will later contribute to tomographic reconstruction.
+
+        In cryo-electron tomography workflows, this protocol is typically
+        used after tilt-series alignment and CTF estimation, but before
+        tomogram reconstruction.
+
+        Biological Purpose
+
+        Individual tilt images often suffer from low contrast and reduced
+        visibility of structural features. Applying deconvolution at the
+        tilt-series level enhances interpretable signal before volume
+        reconstruction.
+
+        Since reconstruction integrates information from all tilts,
+        improving the contrast of the individual projections can lead to
+        better visual quality and potentially more interpretable tomograms.
+
+        The protocol does not correct missing-wedge effects or alignment
+        errors. It only applies a controlled frequency-domain
+        deconvolution.
+
+        Inputs
+
+        The protocol requires:
+
+            1. A set of input tilt-series.
+            2. A corresponding SetOfCTFTomoSeries.
+
+        Matching between tilt-series and CTF metadata is performed using
+        the tilt-series identifier (tsId).
+
+        For each tilt-series:
+
+            - the first tilt image file is used as the stack reference
+            - the corresponding CTF series is retrieved
+            - the average defocus is computed from all CTF entries
+
+        Tilt-series without matching CTF information are skipped.
+
+        Processing Strategy
+
+        During execution:
+
+            - all input tilt-series are indexed by tsId
+            - all CTF series are indexed by tsId
+            - only matched identifiers are processed
+
+        For every matched tilt-series:
+
+            - the average defocus is calculated
+            - acquisition metadata is collected
+            - the complete image stack is deconvolved using the stack
+              processing mode inherited from ProtWarpBase
+
+        Unlike micrograph or tomogram deconvolution, here the protocol
+        processes a full stack of images rather than a single 2D image
+        or 3D volume.
+
+        Processing Parameters
+
+        The protocol inherits the deconvolution parameters from
+        ProtWarpBase.
+
+        Deconvolution strength
+            Controls the aggressiveness of the filter.
+
+        SNR falloff
+            Stabilizes high-frequency behavior in noisy regions.
+
+        High-pass fraction
+            Prevents excessive boosting of very low frequencies.
+
+        In most cases, default values provide a good starting point.
+
+        CPU and GPU Execution
+
+        The protocol supports both CPU and GPU execution.
+
+        GPU execution can significantly accelerate stack processing.
+        Only one GPU is used per execution.
+
+        CPU execution allows multithreaded processing.
+
+        Workflow
+
+        Step 1 — Matching Tilt-Series and CTF Metadata
+
+            The protocol creates two internal dictionaries:
+
+                - input tilt-series
+                - input CTF series
+
+            Matching is done using tsId.
+
+        Step 2 — Average Defocus Calculation
+
+            For each matched tilt-series:
+
+                - all CTF defocus values are collected
+                - the mean defocus is calculated
+
+        Step 3 — Stack Deconvolution
+
+            The complete tilt-image stack is processed as a single unit.
+
+            Each tilt image in the stack is deconvolved and written into
+            a new output stack.
+
+        Step 4 — Output Creation
+
+            After processing:
+
+                - a new SetOfTiltSeries is created
+                - original metadata is preserved
+                - every tilt image is updated to reference the new
+                  deconvolved stack file
+
+        Outputs
+
+        The protocol generates:
+
+            TiltSeries
+                A new set of deconvolved tilt-series.
+
+        Output Naming Convention
+
+        Each deconvolved stack is written as:
+
+            <original_name>_deconv.mrcs
+
+        The output uses .mrcs format because the protocol processes
+        stacked tilt-image data.
+
+        Practical Recommendations
+
+        This protocol is useful when:
+
+            - improving contrast before tomogram reconstruction
+            - preparing tilt-series for more interpretable reconstructions
+            - enhancing weak projection data in low-contrast datasets
+
+        Recommended practice:
+
+            - ensure correct tsId matching between tilt-series and CTF series
+            - use reliable CTF estimations
+            - inspect a few deconvolved tilt images before reconstruction
+
+        Since the protocol applies one average defocus per tilt-series,
+        it provides a practical global correction rather than a
+        tilt-by-tilt refinement.
+
+        Summary
+
+        ProtWarpDeconvTS provides a tilt-series-level deconvolution
+        workflow integrated into Scipion.
+
+        It combines:
+
+            - aligned tilt-series stacks
+            - associated CTF tilt-series information
+            - Warp-based stack deconvolution
+
+        to generate deconvolved tilt-series that can be used as improved
+        input for tomographic reconstruction.
     """
     _label = 'deconvolve tilt-series'
     _possibleOutputs = outputs

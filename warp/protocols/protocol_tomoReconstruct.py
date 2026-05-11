@@ -43,11 +43,202 @@ from warp.utils import updateCtFXMLFile
 
 class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     """
-    CTF estimation of a set of input tilt-series and reconstruct tomograms for various tasks and, optionally,
-    half-tomograms for denoiser training using the Warp procedure.
+    Reconstructs tomograms from tilt-series using WarpTools after CTF
+    estimation and alignment import. Optionally produces half-tomograms
+    for denoiser training and deconvolved reconstructions.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-ctf-estimation
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-reconstruct-tomograms
+
+    AI Generated:
+
+    Tomo Reconstruction (ProtWarpTomoReconstruct) — User Manual
+        Overview
+
+        The Tomo Reconstruction protocol processes a set of tilt-series
+        into reconstructed tomograms using the Warp tilt-series workflow.
+        It combines CTF handling, alignment import, and 3D reconstruction
+        into a sequential pipeline suitable for cryo-electron tomography.
+
+        The protocol is intended for users who already have aligned
+        tilt-series and associated CTF estimations. From these inputs,
+        it generates tomograms that can later be used for visualization,
+        subtomogram averaging, particle picking, template matching, or
+        denoising workflows.
+
+        Biological Purpose
+
+        In cryo-ET, tomogram reconstruction transforms a stack of
+        2D tilted projections into a 3D representation of the specimen.
+        This step is fundamental because all downstream biological
+        interpretation depends directly on the quality of the resulting
+        volume.
+
+        Accurate reconstruction requires both correct CTF information
+        and reliable alignment parameters. Errors introduced here often
+        propagate to later stages such as segmentation, particle
+        extraction, and subtomogram refinement.
+
+        Inputs
+
+        The protocol requires two main inputs:
+
+        1. A set of tilt-series.
+           These define the projection images and geometric acquisition
+           parameters.
+
+        2. A set of CTF estimations.
+           These are used to update Warp-compatible CTF files before
+           reconstruction.
+
+        The protocol assumes that the tilt-series are valid, accessible,
+        and that each series has matching metadata.
+
+        Reconstruction Workflow
+
+        For every enabled tilt-series, the protocol executes the
+        following sequence:
+
+        1. Create Warp settings for the individual tilt-series.
+        2. Prepare tilt images and internal metadata.
+        3. Generate or update CTF estimation files.
+        4. Import alignment information from IMOD-compatible files.
+        5. Launch Warp tomogram reconstruction.
+        6. Register reconstructed tomograms as Scipion outputs.
+        7. Remove temporary intermediate image files.
+
+        Each tilt-series is processed independently, which makes the
+        workflow robust for batch processing and easier to debug.
+
+        Reconstruction Parameters
+
+        Pixel size (angpix)
+            Defines the voxel size of the reconstructed tomogram.
+            This directly determines the sampling of the final 3D map.
+
+        Tomogram thickness
+            Defines the Z-size of the reconstruction volume in
+            unbinned pixels.
+
+        X and Y dimensions
+            Optional advanced controls for the lateral size of the
+            reconstruction. If omitted, the original tilt-series
+            dimensions are used.
+
+        These parameters should be chosen according to specimen size,
+        expected biological context, and available computational memory.
+
+        Half-Tomograms
+
+        The protocol can optionally reconstruct two half-tomograms,
+        each generated from half of the tilts.
+
+        This is especially useful for:
+
+        - denoiser training,
+        - validation workflows,
+        - consistency analysis between independent halves.
+
+        When enabled, both half volumes are stored together with the
+        main tomogram.
+
+        Deconvolution and Contrast Options
+
+        Deconvolution
+            Produces a deconvolved tomogram that may improve visibility
+            of structural features.
+
+        Invert contrast
+            Controls whether density contrast is inverted.
+            For cryo-data, disabling inversion is often appropriate
+            unless template matching requires opposite contrast.
+
+        Normalize tilt images
+            Controls whether input projections are normalized before
+            reconstruction.
+
+        These options affect interpretability and should be chosen
+        according to the intended downstream application.
+
+        CTF Handling
+
+        Before reconstruction, the protocol generates Warp-compatible
+        CTF estimation files and updates them using the provided
+        CTF metadata.
+
+        This ensures that the reconstruction uses corrected optical
+        parameters while preserving previously estimated defocus
+        information.
+
+        Alignment Import
+
+        Alignment parameters are written as IMOD-compatible files and
+        imported into Warp before reconstruction.
+
+        The imported alignment is rescaled according to the requested
+        reconstruction pixel size, ensuring geometric consistency
+        between tilt images and reconstructed tomograms.
+
+        Outputs
+
+        The protocol produces:
+
+        - A SetOfTomograms containing one tomogram per input tilt-series.
+        - Optional half-maps if half-tomogram generation is enabled.
+
+        Each output tomogram contains:
+
+        - file location,
+        - sampling rate,
+        - acquisition metadata,
+        - default tomogram origin.
+
+        The resulting tomograms are immediately suitable for further
+        Scipion-based tomographic analysis.
+
+        Output Registration
+
+        Tomograms are appended incrementally to an output set.
+        This allows progressive streaming-like behavior during
+        processing of multiple tilt-series.
+
+        Output dimensions are updated automatically after each new
+        tomogram is created.
+
+        Practical Recommendations
+
+        For exploratory work:
+            Use moderate pixel size and default normalization.
+
+        For denoiser preparation:
+            Enable half-tomogram generation.
+
+        For template matching:
+            Carefully check contrast inversion settings.
+
+        For large specimens:
+            Increase tomogram thickness to fully capture specimen depth.
+
+        In practice, the most critical factor is consistency between
+        acquisition metadata, CTF estimation, and alignment geometry.
+
+        Cleanup Strategy
+
+        After each tilt-series is processed, intermediate tilt-image
+        files are removed automatically.
+
+        This helps reduce storage usage, especially when processing
+        large tomography datasets.
+
+        Final Perspective
+
+        Tomogram reconstruction is the bridge between raw tilt-series
+        data and biologically interpretable 3D volumes.
+
+        This protocol automates the main Warp reconstruction workflow
+        while preserving compatibility with Scipion output objects,
+        making it appropriate for both routine tomography processing
+        and large-scale cryo-ET pipelines.
     """
 
     _label = 'tomo reconstruction'

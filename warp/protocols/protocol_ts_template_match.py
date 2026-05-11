@@ -43,10 +43,248 @@ from warp.utils import genTransformMatrix, updateCtFXMLFile
 
 class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
     """
-    Match previously reconstructed tomograms against a 3D template, producing a list of the highest-scoring matches
-    Note: The contrast of the tomograms and the reference volume should be the same
+    Performs template-based particle picking on previously reconstructed tomograms
+    by matching a 3D reference volume against each tomogram and extracting the
+    highest-scoring candidate positions.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
+
+    AI Generated:
+
+    Template Match for Tomograms (ProtWarpTSTemplateMatch) — User Manual
+        Overview
+
+        The Template Match protocol identifies candidate particles inside
+        reconstructed tomograms by comparing a known 3D reference volume
+        against the tomographic density. It uses WarpTools template matching
+        to search for regions whose local signal resembles the supplied template.
+
+        The protocol is intended for cryo-electron tomography workflows where
+        particles are already embedded inside tomograms and the user wants an
+        automated first-pass localization of likely particle coordinates.
+
+        A critical biological requirement is contrast consistency:
+        the input tomograms and the template volume must have the same contrast
+        convention. If one is inverted relative to the other, correlation scores
+        become biologically meaningless and particle detection may fail.
+
+        Inputs and General Workflow
+
+        The protocol requires three main inputs:
+
+        1. A set of reconstructed tomograms.
+        2. The corresponding set of tilt-series.
+        3. A set of CTF estimations associated with those tilt-series.
+
+        These three inputs are linked by tilt-series identifiers.
+        For every tomogram, the protocol retrieves the corresponding tilt-series
+        and performs a complete Warp-compatible preparation workflow before
+        template matching begins.
+
+        The internal workflow follows these steps:
+
+        - Prepare tomogram files in Warp processing folders.
+        - Generate tilt-series settings.
+        - Export tilt images and metadata.
+        - Reconstruct or update CTF metadata.
+        - Import alignment parameters.
+        - Execute template matching.
+        - Optionally apply a score threshold.
+        - Convert Warp results into Scipion 3D coordinates.
+
+        This means the protocol does not merely run template matching itself,
+        but also prepares all geometric and optical metadata required for
+        biologically meaningful matching.
+
+        Template Volume
+
+        The template volume represents the expected particle shape.
+        In practice, this is usually a previously reconstructed subtomogram,
+        an averaged particle map, or a known reference map.
+
+        The biological quality of the template is extremely important.
+
+        A good template should:
+
+        - Represent the expected molecular state.
+        - Have a similar sampling scale to the tomograms.
+        - Have the same density contrast.
+        - Avoid strong artifacts or excessive masking.
+
+        If the biological structure is highly flexible, template matching tends
+        to favor the most rigid and reproducible structural core.
+
+        Template Diameter
+
+        The template diameter defines the approximate particle size in Angstroms.
+
+        This parameter influences:
+
+        - the scale of local matching,
+        - default peak separation,
+        - output particle box size.
+
+        From a biological point of view, the diameter should reflect the
+        approximate molecular envelope rather than the exact maximal dimension.
+        Overestimating it may merge nearby particles, while underestimating it
+        may produce fragmented or unstable detections.
+
+        Angular Search
+
+        The protocol evaluates many orientations of the template.
+
+        The angular sampling is controlled by the number of subdivisions.
+
+        Typical interpretation:
+
+        - 2  → coarse search
+        - 3  → moderate search
+        - 4+ → fine search
+
+        Finer angular searches improve orientation coverage but increase
+        computational cost substantially.
+
+        In biological applications, moderate sampling is usually a good starting
+        point unless the particle is highly anisotropic or orientation-sensitive.
+
+        Symmetry
+
+        Symmetry defines the rotational symmetry applied to the template.
+
+        Correct symmetry can dramatically improve picking robustness because it
+        reduces redundant angular exploration.
+
+        Examples include:
+
+        - C1 for asymmetric particles
+        - Dn for dihedral symmetry
+        - O for octahedral symmetry
+
+        Incorrect symmetry may bias orientations and lead to biologically
+        misleading matches.
+
+        Tilt Constraints
+
+        The optional tilt-range parameter restricts orientations between the
+        template Z axis and the tomogram XY plane.
+
+        This is particularly useful for biological objects that are expected
+        to lie preferentially flat, such as:
+
+        - membrane-associated complexes
+        - filamentous assemblies
+        - elongated particles adsorbed on support surfaces
+
+        Restricting the orientation search can improve selectivity and reduce
+        false positives.
+
+        Matching Filters and Scoring
+
+        Several advanced parameters influence selectivity.
+
+        Spectral whitening:
+            Gives more weight to higher-frequency information and can improve
+            discrimination when alignment is already approximately correct.
+
+        Low-pass filtering:
+            Smooths both template and tomogram.
+            This can improve robustness for noisy tomograms.
+
+        Peak distance:
+            Defines the minimum allowed distance between candidate particles.
+
+        Maximum peaks:
+            Limits the number of stored candidates.
+
+        Missing tilts:
+            Rejects positions poorly supported by tilt coverage.
+
+        These parameters become especially relevant when working with crowded
+        tomograms or structurally heterogeneous samples.
+
+        Handedness Checking
+
+        The protocol can test flipped versions of the template.
+
+        This is biologically useful when the handedness of tomograms or the
+        reference structure is uncertain.
+
+        In practice, a mismatch in handedness may otherwise produce plausible
+        but systematically incorrect localizations.
+
+        Score Thresholding
+
+        After template matching, an optional score filtering step removes
+        particles outside a user-defined score interval.
+
+        This is often one of the most biologically important refinement steps.
+
+        A low threshold may retain too many false positives.
+        A high threshold may discard real particles, especially in noisy
+        tomograms or partially occupied regions.
+
+        In practical workflows, users usually inspect score distributions and
+        visually validate particles before selecting final thresholds.
+
+        Output Coordinates
+
+        The protocol produces a SetOfCoordinates3D.
+
+        For every selected candidate, the output stores:
+
+        - X, Y, Z position inside the tomogram
+        - orientation matrix
+        - score
+        - tomogram identifier
+
+        Coordinates are converted from normalized Warp output into tomogram
+        voxel coordinates.
+
+        The output box size is automatically derived from the template diameter.
+
+        Biological Interpretation
+
+        Template matching does not directly identify true particles.
+        Instead, it identifies regions whose local density resembles the
+        supplied template.
+
+        Therefore, the biological reliability of the results depends strongly on:
+
+        - template quality
+        - tomogram quality
+        - structural heterogeneity
+        - score thresholding
+        - visual validation
+
+        In flexible or crowded biological samples, false positives are expected.
+        Template matching is best interpreted as a candidate generation step,
+        usually followed by subtomogram extraction, classification, or manual
+        inspection.
+
+        Practical Recommendations
+
+        For routine cryo-ET particle picking:
+
+        - Use a biologically representative template.
+        - Keep contrast consistent.
+        - Start with moderate angular sampling.
+        - Apply score filtering conservatively.
+        - Inspect candidate particles visually before downstream analysis.
+
+        For highly heterogeneous datasets, template matching usually performs
+        best when the template focuses on the rigid structural core rather than
+        the full molecular envelope.
+
+        Final Perspective
+
+        The Template Match protocol is not simply a computational detector.
+        It is a biologically guided correlation search whose usefulness depends
+        heavily on the quality of the prior structural hypothesis encoded in
+        the template.
+
+        When used carefully, it provides a powerful and efficient way to obtain
+        initial particle coordinates from tomograms and serves as an important
+        bridge between tomographic reconstruction and subtomogram analysis.
     """
 
     _label = 'tomo picking'

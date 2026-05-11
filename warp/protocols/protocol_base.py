@@ -46,6 +46,338 @@ from warp.utils import tom_deconv, tomoStarGenerate
 
 
 class ProtWarpBase(EMProtocol):
+    """
+    Base infrastructure for Warp-related preprocessing, deconvolution,
+    and streaming alignment workflows for both movies and tilt-series.
+
+    AI Generated:
+
+    Warp Processing and Streaming Alignment (ProtWarpBase) — User Manual
+        Overview
+
+        This protocol family provides a common computational framework for
+        preprocessing cryo-EM data before downstream reconstruction,
+        refinement, or tomographic analysis.
+
+        The provided code combines three major functional areas:
+
+        1. Deconvolution of micrographs and tilt-series.
+        2. Streaming processing of movie datasets.
+        3. Streaming processing of tilt-series movie datasets.
+
+        Although the original source defines several classes, their behavior
+        can be understood as one unified processing framework whose goal is
+        to transform incoming experimental data into corrected, analysis-ready
+        outputs while preserving compatibility with Scipion streaming logic.
+
+        General Purpose
+
+        In cryo-EM workflows, raw images often contain strong contrast-transfer
+        effects, low-frequency background, and acquisition artifacts that
+        complicate interpretation.
+
+        This protocol addresses those limitations by providing:
+
+        - Wiener-like deconvolution using CTF information.
+        - GPU-aware execution of Warp tools.
+        - Preparation of tomography-specific metadata.
+        - Streaming ingestion of incoming movies or tilt-series.
+        - Incremental registration of processed outputs.
+
+        This design is particularly useful in facility pipelines, automated
+        acquisition environments, or high-throughput cryo-EM workflows.
+
+        --------------------------------------------------------------------
+        DECONVOLUTION WORKFLOW
+        --------------------------------------------------------------------
+
+        Input Requirements
+
+        The deconvolution workflow expects:
+
+        - Input images or stacks.
+        - Acquisition metadata.
+        - CTF information indexed by image identity.
+
+        Each input image is matched against a CTF dictionary. Only inputs
+        with valid defocus information are processed.
+
+        Main Deconvolution Parameters
+
+        deconvstrength
+            Controls the strength of the deconvolution filter.
+
+        snrfalloff
+            Controls how rapidly signal-to-noise decreases with frequency.
+
+        highpassnyquist
+            Defines the low-frequency cutoff expressed as a fraction of
+            Nyquist frequency.
+
+        Practical Interpretation
+
+        These parameters regulate how strongly low-frequency background
+        is suppressed and how much high-frequency information is restored.
+
+        Conservative values are recommended initially. Excessively strong
+        deconvolution can amplify noise and introduce artifacts.
+
+        Processing Logic
+
+        For every input item:
+
+        - Its metadata key is matched against the CTF dictionary.
+        - Defocus is extracted and converted.
+        - Output filename is generated.
+        - The image is processed either as:
+
+            * a single micrograph
+            * a tilt-series stack
+
+        Image Processing Modes
+
+        _processImage
+            Reads one image, applies tomographic deconvolution, and writes
+            a corrected MRC file.
+
+        _processStack
+            Reads all slices from an image stack, processes them one by one,
+            and writes a corrected MRC stack.
+
+        Output Naming
+
+        Output files are stored in the protocol extra directory and receive
+        the suffix:
+
+            _deconv.mrc
+
+        --------------------------------------------------------------------
+        GPU EXECUTION
+        --------------------------------------------------------------------
+
+        GPU-aware command execution is handled automatically.
+
+        If GPUs are available:
+
+        - Warp GPU algorithms receive a device list.
+        - MCore-compatible programs receive Warp-specific GPU flags.
+
+        The framework also warns when thread counts are incompatible with
+        GPU execution.
+
+        Practical Note
+
+        In GPU mode, CPU thread count may be ignored depending on the
+        underlying Warp implementation.
+
+        --------------------------------------------------------------------
+        TOMOGRAPHY PREPARATION
+        --------------------------------------------------------------------
+
+        Tilt-Series Data Preparation
+
+        For tomographic workflows, the protocol can prepare per-tilt metadata.
+
+        For each tilt image:
+
+        - Individual images are extracted from the tilt-series.
+        - Acquisition metadata are collected.
+        - Alignment shifts are converted to physical units.
+        - Tilt angles, dose, shifts, and contrast metadata are stored.
+
+        A tomostar file is then generated.
+
+        This preparation allows Warp to understand both geometry and
+        acquisition conditions of the tilt-series.
+
+        Auxiliary Folder Structure
+
+        The preparation stage creates:
+
+        - tilt-image folders
+        - tomostar folders
+        - symbolic links required by Warp
+
+        This organization is necessary because Warp expects both original
+        image headers and average-accessible image paths.
+
+        Tilt-Series Settings Generation
+
+        The protocol can also create Warp tilt-series settings files.
+
+        These settings may include:
+
+        - sampling rate
+        - exposure per frame
+        - tomogram dimensions
+        - EER grouping information
+
+        These settings are required before downstream Warp tomography
+        programs can be executed.
+
+        --------------------------------------------------------------------
+        STREAMING MOVIE PROCESSING
+        --------------------------------------------------------------------
+
+        Streaming Purpose
+
+        The streaming movie framework is designed for acquisition-time
+        processing of incoming movie data.
+
+        Instead of waiting for a full dataset to finish acquisition,
+        the protocol continuously monitors the input set.
+
+        Streaming Workflow
+
+        During execution:
+
+        - new movies are detected
+        - only unseen inputs are selected
+        - items are grouped into batches
+        - processing steps are inserted dynamically
+        - outputs are appended incrementally
+
+        Batch Size Behavior
+
+        streamingBatchSize = 1
+            Process one movie at a time.
+
+        streamingBatchSize > 1
+            Group several movies into one processing step.
+
+        streamingBatchSize = 0
+            Process all currently available items together.
+
+        Output Registration
+
+        Processed outputs are converted into micrographs.
+
+        For each generated micrograph:
+
+        - input acquisition metadata are copied
+        - accumulated dose is updated
+        - sampling rate is propagated
+        - the item is appended to the streaming output set
+
+        Streaming State Management
+
+        Two internal dictionaries keep track of state:
+
+        _moviesToProcess
+            Newly detected inputs waiting for processing.
+
+        _moviesInProcess
+            Inputs already dispatched for execution.
+
+        This prevents duplicate processing.
+
+        --------------------------------------------------------------------
+        STREAMING TILT-SERIES PROCESSING
+        --------------------------------------------------------------------
+
+        The tilt-series streaming framework follows the same philosophy,
+        but the processing unit becomes an entire tilt-series rather than
+        a single movie.
+
+        Workflow
+
+        - new tilt-series are detected
+        - already processed ones are ignored
+        - each tilt-series launches its own processing step
+        - optional finalization steps may be inserted
+        - output sets are closed once streaming ends
+
+        Output Types
+
+        The framework supports tilt-series outputs and optionally
+        CTF-tomography outputs.
+
+        Compared with movie streaming, the logic is simpler because
+        each streaming task corresponds to one tilt-series identifier.
+
+        --------------------------------------------------------------------
+        PATH NORMALIZATION UTILITIES
+        --------------------------------------------------------------------
+
+        Several helper methods normalize paths for downstream tools.
+
+        They are used to locate:
+
+        - particle files
+        - tomograms
+        - optimization files
+
+        If relative paths are found, they are resolved against protocol
+        output folders.
+
+        This is particularly useful in iterative Warp/Relion workflows.
+
+        --------------------------------------------------------------------
+        EXTENSION POINTS FOR DEVELOPERS
+        --------------------------------------------------------------------
+
+        The framework intentionally leaves some methods unimplemented.
+
+        These must be specialized by derived protocols.
+
+        Main abstract extension points include:
+
+        deconvolveStep()
+            Defines how deconvolution is triggered.
+
+        createOutputStep()
+            Defines how outputs are created.
+
+        proccessMoviesStep()
+            Defines batch processing logic for streaming movies.
+
+        proccessTSMoviesStep()
+            Defines processing logic for streaming tilt-series.
+
+        insertInitialSteps()
+            Allows protocols to insert pre-processing steps.
+
+        insertFinalSteps()
+            Allows protocols to insert finalization steps.
+
+        --------------------------------------------------------------------
+        PRACTICAL USAGE RECOMMENDATIONS
+        --------------------------------------------------------------------
+
+        For standard micrograph deconvolution:
+
+        - begin with conservative deconvolution strength
+        - verify output visually before large-scale processing
+
+        For streaming workflows:
+
+        - use batch size 1 for immediate feedback
+        - use larger batch sizes when minimizing process-launch overhead
+
+        For tomography:
+
+        - verify tilt metadata carefully
+        - ensure acquisition geometry is correct before reconstruction
+
+        For GPU execution:
+
+        - prefer GPU when available
+        - avoid relying on thread count for performance scaling
+
+        --------------------------------------------------------------------
+        FINAL PERSPECTIVE
+        --------------------------------------------------------------------
+
+        This protocol base is not a single algorithm but a shared execution
+        architecture for Warp-oriented preprocessing.
+
+        Its main role is to make cryo-EM preprocessing scalable,
+        automation-friendly, and compatible with modern streaming acquisition.
+
+        In practice, it provides the infrastructure needed to move from
+        raw experimental movies toward reproducible, structured,
+        downstream-ready cryo-EM data products.
+    """
     _label = None
 
     # -------------------------- DEFINE param functions -----------------------
