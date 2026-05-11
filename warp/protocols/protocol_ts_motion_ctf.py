@@ -42,8 +42,182 @@ from warp.utils import parseCtfXMLFile, tomoStarGenerate
 
 
 class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
-    """ This protocol wraps WarpTools programs.
-        Estimate motion in frame series, produce aligned averages, estimate CTF
+    """
+    Estimates beam-induced motion in tilt-series movies, generates aligned
+    tilt images, and optionally performs contrast transfer function
+    estimation for tomographic preprocessing.
+
+    AI Generated:
+
+    Tilt-Series Motion Correction and CTF Estimation (ProtWarpTSMotionCorr) - User Manual
+        Overview
+
+        This protocol is designed for the early stages of cryo-electron
+        tomography preprocessing, where raw tilt-series movies must be
+        converted into physically meaningful aligned tilt images before
+        tomographic reconstruction. Its main objective is to compensate for
+        beam-induced motion across movie frames, generate stable averaged
+        tilt images, and optionally estimate contrast transfer function
+        parameters for each tilt in the series.
+
+        In practical cryo-ET workflows, this stage is essential because
+        motion accumulated during acquisition directly affects image sharpness,
+        high-resolution signal preservation, and the reliability of all
+        downstream steps. Accurate motion correction improves the visibility
+        of structural features, while CTF estimation provides the optical
+        parameters required for later reconstruction, refinement, and
+        interpretation.
+
+        Inputs and Biological Context
+
+        The protocol requires a set of tilt-series movies acquired as frame
+        stacks. Each tilt angle contributes an individual movie whose frames
+        contain both signal and beam-induced drift. From a biological
+        perspective, this protocol transforms unstable raw detector output
+        into a geometrically coherent tilt series suitable for structural
+        analysis.
+
+        The quality of the result depends strongly on the consistency of
+        acquisition metadata such as dose per frame, pixel size, voltage,
+        spherical aberration, and amplitude contrast. Reliable metadata
+        improves the physical realism of both motion estimation and optical
+        modeling.
+
+        Motion Correction Strategy
+
+        Motion correction aims to align individual movie frames so that the
+        final averaged tilt image preserves structural detail that would
+        otherwise be blurred by sample drift or beam-induced movement. This
+        is particularly important in tomography because each tilt is already
+        dose-limited and often acquired at low signal-to-noise ratio.
+
+        The protocol allows the user to control how finely the motion field
+        is modeled in space and time. For most routine biological datasets,
+        moderate default values are usually sufficient. More complex samples,
+        such as thick cellular specimens or strongly deforming vitreous ice,
+        may benefit from finer local motion modeling.
+
+        Binning and Resolution Considerations
+
+        Binning reduces the effective sampling of the images before motion
+        estimation. In biological practice, this is often used to accelerate
+        preprocessing and stabilize alignment when the raw data are very
+        noisy. Lower binning preserves more high-resolution information,
+        while stronger binning may improve robustness at the expense of
+        ultimate detail.
+
+        The selected fitting resolution should remain physically meaningful
+        relative to the sampling of the data. Choosing unrealistic fitting
+        limits may overemphasize noise rather than genuine structural signal.
+
+        Even and Odd Averages
+
+        The protocol can optionally produce separate averages from even and
+        odd movie frames. These outputs are particularly useful when preparing
+        training data for denoising approaches or when downstream workflows
+        benefit from statistically independent half-data representations.
+
+        From a biological interpretation standpoint, these paired outputs
+        should not be viewed as separate reconstructions of different
+        molecular states. They represent independent estimates of the same
+        underlying specimen signal.
+
+        Gain Reference and Detector-Specific Considerations
+
+        Detector normalization can have a major effect on data quality.
+        The protocol allows adjustment of gain reference orientation so that
+        detector response is interpreted consistently. This is especially
+        important when data originate from facility pipelines where detector
+        metadata conventions may differ between acquisition systems.
+
+        Correct gain handling reduces systematic intensity artifacts that
+        could otherwise propagate into both motion correction and CTF
+        estimation.
+
+        EER Acquisition Modes
+
+        For electron event representation datasets, the protocol supports
+        virtual regrouping of detector events into effective frames. This
+        provides flexibility in balancing temporal sampling against signal
+        strength.
+
+        In biological applications, stronger temporal fractionation preserves
+        finer motion information but may reduce signal per frame. Coarser
+        grouping increases signal stability but may smooth rapid motion.
+        Choosing an appropriate balance depends on dose rate, specimen
+        thickness, and the expected level of beam-induced drift.
+
+        CTF Estimation in Tilt-Series Processing
+
+        When enabled, the protocol estimates contrast transfer function
+        parameters for each tilt image. This step becomes particularly
+        important when the final goal is high-quality tomographic
+        reconstruction, subtomogram averaging, or any workflow requiring
+        accurate optical correction.
+
+        The protocol explores a user-defined defocus range and fitting
+        resolution. In biological datasets, the best settings usually depend
+        on specimen thickness, ice quality, and signal level. Cellular
+        tomography often requires more conservative fitting conditions than
+        purified macromolecular samples.
+
+        The protocol also supports estimation of spatially varying defocus
+        behavior. This can be useful for tilted geometries where defocus is
+        not uniform across the field of view.
+
+        Handedness Evaluation
+
+        An optional handedness evaluation can be performed across the dataset.
+        This provides a consistency check for the interpretation of defocus
+        geometry.
+
+        In biological practice, handedness assessment is valuable when data
+        will later be integrated with external software packages or compared
+        with previously reconstructed tomograms. Detecting convention
+        mismatches early helps prevent systematic orientation errors in later
+        stages.
+
+        Outputs and Their Interpretation
+
+        The protocol produces an aligned tilt-series dataset composed of
+        motion-corrected averaged tilt images. These aligned tilts preserve
+        the ordering and acquisition identity of the original experiment but
+        provide substantially improved geometric and signal consistency.
+
+        When CTF estimation is enabled, an additional set of per-tilt optical
+        models is generated. These models describe the imaging conditions of
+        each tilt and can be used directly by downstream tomographic
+        reconstruction and refinement procedures.
+
+        If handedness analysis is requested, an additional diagnostic output
+        summarizes the global consistency of the estimated optical geometry.
+
+        Practical Recommendations
+
+        In routine cryo-ET preprocessing, it is often advisable to begin with
+        conservative motion fitting and standard CTF settings, then inspect
+        the resulting tilt averages visually. If the aligned images remain
+        noisy or unstable, moderate binning often improves robustness.
+
+        For thin specimens or high-quality purified samples, finer fitting
+        settings may preserve additional detail. For thick cellular material,
+        more conservative fitting ranges generally provide more stable
+        results.
+
+        When preparing data for tomographic reconstruction, users should
+        ensure that the aligned tilt series, CTF estimates, and acquisition
+        metadata remain physically consistent, since errors introduced here
+        propagate throughout the remainder of the workflow.
+
+        Final Perspective
+
+        For cryo-electron tomography users, motion correction is not merely a
+        technical preprocessing task. It is the stage where raw detector
+        movies become structurally interpretable tilt images. Careful choice
+        of motion modeling, detector normalization, and CTF fitting directly
+        determines the reliability of later tomographic reconstruction and
+        the biological conclusions drawn from the final three-dimensional
+        maps.
     """
 
     _label = 'tilt-series motion and ctf estimation'

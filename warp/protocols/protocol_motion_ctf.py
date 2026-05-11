@@ -39,8 +39,165 @@ from warp.constants import (CREATE_SETTINGS, FS_MOTION, FRAMESERIES_FOLDER,
 
 
 class ProtWarpMotionCorr(ProtMovieAlignBase):
-    """ This protocol wraps WarpTools programs.
-        Estimate motion in frame series, produce aligned averages
+    """
+    Performs motion correction on cryo-EM movie frame series in order
+    to compensate for beam-induced specimen drift and produce aligned
+    micrograph averages suitable for downstream image processing.
+
+    AI Generated:
+
+    Motion Correction (ProtWarpMotionCorr) - User Manual
+        Overview
+
+        The Motion Correction protocol estimates and compensates for
+        sample motion present during movie acquisition in cryo-electron
+        microscopy. Its main purpose is to align the successive frames
+        of each recorded movie so that the final averaged micrograph
+        preserves as much high-resolution structural information as
+        possible.
+
+        In modern cryo-EM workflows, movies are collected instead of
+        single exposure images because beam interaction with the frozen
+        specimen induces subtle but significant movement over time.
+        Without motion correction, this drift causes image blurring,
+        weakens high-frequency signal, and limits the quality of all
+        subsequent analysis steps such as contrast transfer estimation,
+        particle picking, classification, and high-resolution
+        reconstruction.
+
+        Biological Importance
+
+        For biological users, motion correction is one of the earliest
+        and most critical preprocessing stages. A well-corrected
+        micrograph retains structural detail that may otherwise be lost
+        permanently at the beginning of the workflow. This directly
+        affects the interpretability of macromolecular complexes,
+        membrane proteins, viral particles, and other fragile
+        biological assemblies.
+
+        Even small residual motion can reduce the visibility of fine
+        structural features. For this reason, careful motion correction
+        often has a disproportionate impact on the final attainable
+        resolution of a cryo-EM project.
+
+        Inputs and General Workflow
+
+        The protocol operates on a set of input movies acquired as
+        frame series. Each movie is treated as a temporal record of the
+        same exposure, and the objective is to estimate how the image
+        shifts during acquisition and to compensate for those
+        displacements before generating the final aligned average.
+
+        The input dataset should ideally have consistent acquisition
+        conditions, including stable pixel size, dose information, and
+        detector geometry. Accurate acquisition metadata helps the
+        refinement process preserve physically meaningful motion
+        estimates.
+
+        Motion Modeling
+
+        Motion is modeled across both space and time. This means that
+        the protocol can account not only for global specimen drift but
+        also for local differential motion across the field of view.
+        Such local behavior is common in cryo-EM, particularly in thin
+        ice, large fields of view, or specimens with uneven support
+        properties.
+
+        For many biological datasets, local motion correction is more
+        effective than global alignment because different regions of
+        the image may move in slightly different ways during exposure.
+        Correctly accounting for this behavior helps preserve local
+        structural detail that would otherwise be smeared out.
+
+        Resolution Range and Frequency Weighting
+
+        The refinement can be guided by a chosen spatial frequency
+        range. This allows the alignment to focus on the signal most
+        informative for motion estimation while reducing sensitivity to
+        noise or irrelevant low-frequency intensity variation.
+
+        Frequency weighting is also important. High-resolution
+        information is often weaker and more noise sensitive, so
+        downweighting unstable frequencies can improve alignment
+        robustness. For biological specimens with weak contrast, this
+        often leads to more stable and reliable corrected averages.
+
+        Binning and Practical Tradeoffs
+
+        The protocol allows Fourier-space binning of the raw movie
+        frames before alignment. Binning can reduce computational cost
+        and may improve robustness in noisy datasets. This is often
+        useful during exploratory processing, screening sessions, or
+        large-scale facility pipelines.
+
+        For high-resolution projects, however, users usually prefer
+        minimal binning so that fine structural information remains
+        available. The appropriate choice depends on data quality,
+        particle size, and the biological resolution goals of the
+        experiment.
+
+        EER Movie Support
+
+        The protocol also supports electron event representation movie
+        formats. In this context, temporal fractionation becomes
+        biologically relevant because it determines how finely the
+        exposure is divided during motion estimation.
+
+        Finer temporal sampling can better capture rapid motion early
+        in the exposure, where beam-induced drift is often strongest.
+        However, excessive temporal subdivision may reduce the signal
+        available in each fraction. In practical biological work, the
+        best choice is usually a balance between temporal precision and
+        sufficient per-frame signal.
+
+        Gain Reference Considerations
+
+        Proper detector gain handling is essential because detector
+        normalization artifacts can propagate directly into aligned
+        micrographs. When gain orientation differs from the movie
+        orientation, correcting that mismatch ensures that intensity
+        normalization remains physically meaningful.
+
+        Although this is often considered a technical preprocessing
+        detail, its biological consequence is important because
+        inaccurate normalization can subtly degrade particle contrast
+        and affect all downstream interpretation.
+
+        Outputs and Their Interpretation
+
+        The main output of the protocol is a set of aligned micrograph
+        averages. These corrected images serve as the standard starting
+        point for subsequent cryo-EM analysis.
+
+        From a practical biological perspective, successful motion
+        correction is often recognized by sharper particle boundaries,
+        improved visibility of high-frequency features, and more stable
+        downstream contrast transfer estimation. These corrected
+        micrographs are generally the images that will be inspected for
+        data quality and used throughout the remainder of the workflow.
+
+        Practical Recommendations
+
+        In routine cryo-EM processing, it is often advisable to begin
+        with conservative alignment settings and visually inspect the
+        corrected micrographs. If the dataset shows strong local drift,
+        increasing the flexibility of the motion model may improve
+        results.
+
+        For noisy datasets or rapid screening, moderate binning can
+        provide a useful balance between speed and reliability. For
+        high-resolution biological studies, users generally favor
+        finer temporal sampling and reduced binning whenever signal
+        quality permits.
+
+        Final Perspective
+
+        For most cryo-EM users, motion correction is not simply a
+        technical preprocessing task. It is the stage where raw movie
+        data are converted into structurally meaningful images.
+        Careful handling of motion, detector normalization, temporal
+        sampling, and spatial modeling strongly influences the quality
+        of every downstream biological interpretation.
     """
 
     _label = 'motion correction'

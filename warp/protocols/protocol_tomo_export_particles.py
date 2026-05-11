@@ -50,9 +50,152 @@ class outputObjects(Enum):
 
 class ProtWarpExportParticles(ProtWarpBase):
     """
-    Export particles as 3D volumes or 2D image series
+    Exports particles from tilt-series data as either reconstructed 3D
+    subtomograms or 2D particle image series, enabling downstream
+    structural analysis from localized coordinates in tomographic
+    experiments.
     More info:
        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#export-particles
+
+    AI Generated:
+
+    Export Particles (ProtWarpExportParticles) - User Manual
+        Overview
+
+        The Export Particles protocol prepares localized particles from
+        cryo-electron tomography experiments for downstream analysis by
+        converting previously identified particle coordinates into
+        standardized particle datasets. Its main objective is to bridge
+        the gap between tomographic localization and particle-based
+        structural interpretation, allowing biologically meaningful
+        regions detected inside reconstructed cellular or purified
+        specimens to be extracted in a form suitable for refinement,
+        classification, or visualization.
+
+        In practical cryo-ET workflows, this protocol becomes relevant
+        once particles have already been detected in tomograms and the
+        user wishes to isolate them as individual analysis units. The
+        exported particles can represent either volumetric subtomograms
+        or aligned 2D particle series, depending on the intended
+        downstream strategy. This flexibility makes the protocol useful
+        both for subtomogram averaging pipelines and for workflows that
+        rely on projection-based particle analysis.
+
+        Inputs and Biological Context
+
+        The protocol requires three biologically linked sources of
+        information. First, it uses a set of three-dimensional particle
+        coordinates that define the positions of the particles of
+        interest inside the tomographic volume. Second, it requires the
+        original tilt series used to reconstruct those tomograms, since
+        these images contain the experimental signal from which particle
+        information is ultimately derived. Third, it uses contrast
+        transfer function estimations that provide optical correction
+        parameters necessary for physically meaningful reconstruction.
+
+        The biological quality of the exported particles depends heavily
+        on the quality of these inputs. Accurate coordinate placement is
+        essential because misplaced coordinates may isolate background
+        density, neighboring complexes, or incomplete particles. In the
+        same way, poorly aligned tilt series or inaccurate CTF
+        estimation can degrade the interpretability of the final
+        particle data.
+
+        Reconstruction Strategy
+
+        A central role of this protocol is to transform localized
+        coordinates into particle-centered datasets with a controlled
+        spatial sampling. The user defines the desired output pixel
+        size, particle box dimensions, and an approximate particle
+        diameter. These parameters together determine the physical scale
+        and the amount of surrounding structural context preserved in
+        the exported particle.
+
+        From a biological perspective, choosing these values carefully
+        is important. A box that is too small may truncate peripheral
+        domains, flexible regions, or interaction partners. A box that
+        is too large may include excessive solvent or neighboring
+        densities that complicate later classification. Similarly, the
+        output pixel size should balance computational efficiency
+        against the structural detail needed for the intended analysis.
+
+        Choosing Between 2D and 3D Export
+
+        The protocol supports two conceptually different export modes.
+        In the 2D mode, particles are represented as image series
+        centered on each target location. This option is useful when
+        users intend to preserve projection information or apply
+        particle-based analyses closer to single-particle workflows.
+
+        In the 3D mode, particles are exported as subtomograms. This is
+        generally the preferred option when the biological goal is
+        subtomogram averaging, structural classification, or local
+        volumetric interpretation of macromolecular complexes in situ.
+
+        The choice between these two modes should reflect the biological
+        question being addressed. When studying native macromolecular
+        organization inside cells, 3D export is often more directly
+        informative. When emphasizing projection consistency or
+        experimental image-space analysis, 2D export may be more
+        appropriate.
+
+        Coordinate Consistency and Geometric Interpretation
+
+        An important biological feature of the protocol is the
+        preservation of particle localization within the tomographic
+        coordinate system. Each exported particle remains linked to its
+        original spatial context through its position and orientation.
+        This is particularly valuable in cryo-ET studies where spatial
+        organization itself carries biological meaning, such as
+        membrane-associated assemblies, intracellular filament systems,
+        or molecular complexes arranged within crowded environments.
+
+        Because of this, reliable coordinate definitions and consistent
+        tomogram geometry are critical. Errors in scaling, mismatched
+        sampling rates, or inaccurate tomogram references may produce
+        particles that are mathematically valid but biologically
+        misleading.
+
+        Output Products and Their Interpretation
+
+        After completion, the protocol generates a particle dataset
+        compatible with downstream subtomogram-oriented processing
+        environments. The resulting output preserves the connection
+        between each exported particle, its originating coordinate, and
+        its parent tilt-series information.
+
+        For biological users, this means the exported particles are not
+        merely cropped image regions. They represent structured
+        particle-centered observations that can now be classified,
+        aligned, averaged, or interpreted as localized molecular
+        instances inside the original specimen.
+
+        Practical Recommendations
+
+        In most practical cryo-ET projects, it is advisable to choose
+        an output sampling close to the intended refinement scale and a
+        box size that comfortably encloses the expected particle
+        diameter together with a moderate surrounding margin. This
+        generally provides a useful balance between computational cost
+        and structural completeness.
+
+        Before large-scale export, users often benefit from verifying
+        that the coordinate set is biologically sensible and that the
+        selected particles correspond to recognizable molecular
+        features. Small validation runs can prevent costly downstream
+        processing of poorly centered or biologically irrelevant
+        particle sets.
+
+        Final Perspective
+
+        For cryo-electron tomography users, particle export is not only
+        a preparatory conversion step but an important biological
+        transition from spatial localization to particle-centered
+        structural analysis. When coordinates, sampling, and particle
+        dimensions are chosen carefully, the resulting exported dataset
+        becomes a reliable starting point for extracting meaningful
+        molecular information from complex three-dimensional biological
+        environments.
     """
 
     _label = 'Export particles'

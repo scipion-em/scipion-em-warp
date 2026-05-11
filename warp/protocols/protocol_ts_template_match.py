@@ -43,10 +43,173 @@ from warp.utils import genTransformMatrix, updateCtFXMLFile
 
 class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
     """
-    Match previously reconstructed tomograms against a 3D template, producing a list of the highest-scoring matches
-    Note: The contrast of the tomograms and the reference volume should be the same
+    Matches previously reconstructed tomograms against a 3D template in
+    order to identify candidate particle positions with high correlation
+    scores.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
+
+    AI Generated:
+
+    Template Match for Tomograms (ProtWarpTSTemplateMatch) - User Manual
+        Overview
+
+        The Template Match protocol identifies candidate particles inside
+        reconstructed tomograms by comparing a three-dimensional reference
+        volume against the tomographic data over a wide range of possible
+        orientations. Its main objective is to provide an automated and
+        biologically meaningful way to detect macromolecular complexes in
+        crowded cellular or in situ environments, where manual picking is
+        often impractical or inconsistent.
+        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#particle-picking
+
+        In cryo-electron tomography workflows, this procedure is commonly
+        used when the approximate structure of the target complex is already
+        known and the goal is to locate potential copies of that structure
+        throughout one or more tomograms. Rather than producing a final
+        structural interpretation, the protocol generates a first candidate
+        population that can later be refined, classified, or validated by
+        subtomogram averaging procedures.
+
+        Inputs and Biological Consistency
+
+        The protocol requires reconstructed tomograms, their corresponding
+        tilt-series information, associated CTF estimation, and a reference
+        template volume. A biologically important requirement is that the
+        tomograms and the template must share the same contrast convention.
+        If the density polarity differs between them, correlations become
+        misleading and candidate detection may lose biological relevance.
+
+        The template should ideally represent the target macromolecule as
+        faithfully as possible. In practice, the best templates usually come
+        from prior reconstructions, subtomogram averages, or externally
+        validated structures filtered to a realistic resolution. A template
+        that differs strongly from the expected molecular state may still
+        produce matches, but many of them may correspond to geometrically
+        plausible yet biologically incorrect placements.
+
+        Search Geometry and Orientation Sampling
+
+        Template matching explores possible orientations of the reference
+        volume within the tomographic data. The angular sampling controls
+        how finely this orientation space is searched. Coarser searches are
+        faster and often suitable for exploratory analyses, while finer
+        angular sampling improves discrimination when closely related
+        conformations or crowded environments are present.
+
+        Symmetry plays an important biological role because it constrains the
+        orientation search according to the expected architecture of the
+        particle. Applying the correct symmetry reduces computational cost
+        and usually improves specificity. However, imposing incorrect
+        symmetry may artificially bias the detection process and should be
+        avoided unless the oligomeric state is well supported.
+
+        In some biological systems, especially filamentous or membrane-
+        associated assemblies, expected orientations are not fully random.
+        Restricting the angular search can therefore improve detection by
+        emphasizing physically plausible particle arrangements while
+        suppressing geometrically valid but biologically unlikely matches.
+
+        Template Size and Spatial Separation
+
+        The template diameter defines the approximate particle scale and is
+        one of the most important biological parameters in the protocol.
+        It determines the expected physical extent of the searched object
+        and strongly influences how candidate positions are separated from
+        one another.
+
+        If the diameter is underestimated, several detections may cluster
+        around the same particle. If it is overestimated, nearby particles
+        may be merged or weaker candidates may be suppressed. In crowded
+        cellular environments, selecting a biologically realistic diameter
+        is therefore essential for meaningful particle counting.
+
+        Signal Conditioning and Matching Behavior
+
+        Several optional settings influence how strongly different spatial
+        frequencies contribute to matching. In biological practice, these
+        parameters become useful when the data quality, the template
+        resolution, or the expected structural variability require more
+        selective detection.
+
+        Spectral weighting and low-pass filtering can help when the template
+        is reliable and the goal is to distinguish closely related local
+        environments. At the same time, overly aggressive high-resolution
+        emphasis may favor noise or local artifacts, particularly in thick
+        tomograms or low-dose data. As in most cryo-ET analyses, practical
+        success depends on balancing sensitivity against specificity.
+
+        Handedness and Structural Validation
+
+        The protocol also allows testing alternative geometric handedness of
+        the reference. This can be valuable in tomographic workflows where
+        the absolute hand of the reconstruction is uncertain. For biological
+        interpretation, handedness checks are especially relevant when the
+        template represents asymmetric complexes or when downstream analysis
+        depends strongly on absolute chirality.
+
+        Although this option does not by itself determine structural
+        correctness, it provides useful evidence when evaluating whether the
+        detected particle population is consistent with known biological
+        expectations.
+
+        Score Thresholding and Candidate Selection
+
+        Template matching typically produces more candidate positions than
+        will ultimately be useful. A score-based filtering stage allows the
+        user to retain only those candidates whose correlation values fall
+        within a chosen range.
+
+        From a biological perspective, thresholding should not be viewed as
+        a purely numerical cleanup step. Loose thresholds improve
+        sensitivity but may retain false positives arising from membranes,
+        contamination, ribosome-rich regions, or structured noise. Strict
+        thresholds improve specificity but may discard rare conformations,
+        partially occupied particles, or weakly visible targets.
+
+        A practical strategy is often to begin with permissive thresholds,
+        inspect the spatial distribution of candidates, and only then
+        tighten the selection according to the biological context.
+
+        Outputs and Their Interpretation
+
+        The main output is a three-dimensional coordinate set containing the
+        candidate particle positions detected in each tomogram. Each
+        coordinate carries an associated orientation and a matching score,
+        making the result suitable for downstream subtomogram extraction,
+        classification, or averaging.
+
+        These coordinates should be interpreted as hypotheses rather than
+        final particle assignments. A high-scoring candidate is not
+        necessarily biologically correct, and visual inspection remains
+        important, particularly in heterogeneous cellular environments.
+
+        Practical Recommendations
+
+        In routine cryo-electron tomography practice, it is usually best to
+        begin with a template whose size and structural state closely match
+        the expected target. Conservative angular sampling and realistic
+        template diameter often provide the most stable starting point.
+
+        If too many candidates appear in biologically implausible regions,
+        increasing score stringency or narrowing the allowed orientation
+        space often helps. If too few candidates are found, relaxing the
+        filtering criteria or slightly broadening the search may recover
+        valid particles.
+
+        The most reliable biological results usually arise when template
+        matching is treated as an informed candidate-generation step rather
+        than a final decision procedure.
+
+        Final Perspective
+
+        For cryo-ET users, template matching is fundamentally a guided
+        biological search through noisy three-dimensional cellular data. Its
+        value depends not only on computational sensitivity but also on how
+        well the template, the search geometry, and the selection criteria
+        reflect the expected molecular reality. Careful parameter choice and
+        biological validation are therefore essential for producing useful
+        candidate particle populations.
     """
 
     _label = 'tomo picking'

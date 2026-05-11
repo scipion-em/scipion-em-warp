@@ -46,6 +46,183 @@ from warp.utils import tom_deconv, tomoStarGenerate
 
 
 class ProtWarpBase(EMProtocol):
+    """
+    Provides a general framework for deconvolution based image enhancement and
+    streaming preparation of cryo-EM data, with emphasis on both single-particle
+    movies and tilt-series workflows.
+
+    AI Generated:
+
+    Warp Base (ProtWarpBase) - User Manual
+        Overview
+
+        This protocol family provides a common operational foundation for
+        cryo-EM preprocessing tasks that require image restoration,
+        organization of intermediate data, and preparation of inputs for
+        downstream reconstruction workflows. Its main objective is to improve
+        the interpretability of experimental images before higher-level
+        analysis, while also establishing a consistent structure for handling
+        conventional movies, tilt-series acquisitions, and streaming data.
+
+        In practical cryo-EM work, these preprocessing stages are often
+        essential because raw data usually contain contrast degradation,
+        microscope transfer effects, and acquisition-related heterogeneity.
+        By standardizing the treatment of incoming datasets, the protocol
+        family allows users to prepare cleaner and more coherent inputs for
+        particle analysis, tomography, and related computational procedures.
+
+        Deconvolution and Image Restoration
+
+        A central purpose of this framework is the controlled enhancement of
+        cryo-EM images through deconvolution. In biological practice, this
+        operation is intended to partially compensate for the loss of contrast
+        introduced during image formation. The practical effect is often a
+        clearer visualization of structural boundaries, improved visibility of
+        weak features, and more stable downstream alignment or reconstruction.
+
+        The most biologically relevant parameters govern how strongly signal
+        restoration is applied and how aggressively low-frequency information
+        is treated. These settings should be interpreted carefully. Mild
+        values often provide robust improvements in interpretability, whereas
+        overly aggressive enhancement can amplify noise and produce features
+        that appear sharper than biologically justified.
+
+        For many users, the best strategy is to begin conservatively. If the
+        sample is noisy, highly heterogeneous, or contains weak contrast,
+        moderate deconvolution usually improves downstream processing without
+        distorting the biological content.
+
+        Input Requirements and Experimental Context
+
+        Effective preprocessing depends on reliable acquisition metadata.
+        Pixel size, accelerating voltage, spherical aberration, and defocus
+        values all contribute to defining how restoration should be applied.
+        From a biological perspective, accurate experimental metadata are not
+        merely technical annotations but directly influence whether restored
+        images remain physically meaningful.
+
+        This makes the protocol especially suitable for workflows in which
+        imaging conditions have been carefully tracked during acquisition.
+        When metadata are incomplete or inconsistent, restoration may still be
+        possible, but the resulting outputs should be interpreted more
+        cautiously.
+
+        Tilt-Series Preparation and Tomographic Use
+
+        Beyond general image enhancement, this protocol family also supports
+        the preparation of tilt-series datasets for tomographic analysis.
+        Within cryo-electron tomography, this preparation step is especially
+        important because each tilt image contributes to the final
+        three-dimensional reconstruction. Small inconsistencies in geometry,
+        ordering, or metadata can propagate into substantial reconstruction
+        artifacts.
+
+        The protocol therefore helps organize tilt-series information into a
+        form that preserves acquisition geometry, angular relationships, dose
+        accumulation, and alignment context. For biological users, this means
+        that reconstructed tomograms are more likely to preserve meaningful
+        spatial organization of macromolecular assemblies, cellular
+        structures, and heterogeneous molecular environments.
+
+        In practice, this preparation stage is particularly valuable when
+        data will later be used for subtomogram averaging, particle picking
+        in tomograms, or structural interpretation inside native cellular
+        contexts.
+
+        Streaming Processing and Continuous Acquisition
+
+        A major practical feature of this protocol family is support for
+        streaming operation. In modern cryo-EM facilities, data often arrive
+        continuously during acquisition rather than as a fixed completed
+        dataset. Streaming allows preprocessing to begin immediately as new
+        material becomes available.
+
+        For biological projects, this can significantly accelerate feedback
+        during microscope sessions. Early processed outputs allow users to
+        inspect data quality, detect acquisition problems, and evaluate sample
+        behavior before a full experiment has finished.
+
+        Streaming is relevant both for conventional movie-based workflows and
+        for tilt-series collection. In both cases, the protocol family helps
+        maintain orderly progression from acquisition to analysis without
+        waiting for complete dataset closure.
+
+        Single-Particle and Micrograph-Oriented Workflows
+
+        In single-particle cryo-EM, one of the main biological goals is to
+        produce high-quality micrographs suitable for particle detection,
+        classification, and reconstruction. The streaming movie-oriented
+        components of this protocol family are intended to support that early
+        phase.
+
+        Processed outputs preserve the biological identity of each acquired
+        field of view while transforming the raw acquisition into a more
+        analysis-ready representation. This is particularly important when
+        large automated collections are being generated over many hours or
+        days.
+
+        For downstream single-particle analysis, early consistency at this
+        stage often improves the robustness of particle picking and reduces
+        later variability caused by acquisition artifacts.
+
+        Tilt-Series Streaming Workflows
+
+        In tomographic experiments, streaming support extends beyond
+        individual images to full tilt-series handling. This is especially
+        important because tomographic datasets are naturally grouped by
+        acquisition sequence rather than by independent micrographs.
+
+        From a biological standpoint, preserving the integrity of each
+        tilt-series as a coherent unit is essential. The protocol family
+        therefore supports workflows in which entire tilt-series are prepared,
+        tracked, and passed forward in a way that preserves their
+        experimental meaning.
+
+        This becomes particularly valuable in large-scale tomography
+        campaigns, where many cellular regions or many experimental
+        conditions are collected in parallel.
+
+        Outputs and Biological Interpretation
+
+        The outputs generated through this framework are intended to be
+        improved, analysis-ready image products rather than final biological
+        conclusions. Their purpose is to support later steps such as motion
+        correction, CTF analysis, particle extraction, tomographic
+        reconstruction, and structural interpretation.
+
+        Users should therefore interpret these outputs as refined
+        representations of the experimental measurement. Better contrast or
+        improved visual sharpness does not automatically imply new biological
+        information. Instead, these outputs should be treated as enhanced
+        substrates for more reliable downstream inference.
+
+        Practical Recommendations
+
+        In most cryo-EM projects, it is advisable to begin with moderate
+        restoration parameters and inspect representative outputs before
+        applying the same strategy to large datasets. For tomography, careful
+        verification of tilt-series consistency is especially important before
+        proceeding to reconstruction.
+
+        During streaming acquisition, early inspection of outputs can be one
+        of the most valuable uses of the protocol. Detecting problems in
+        exposure, focus behavior, contrast quality, or dataset consistency at
+        this stage can save substantial microscope time and computational
+        effort.
+
+        Final Perspective
+
+        For most biological users, this protocol family should be understood
+        as an enabling layer between raw acquisition and structural
+        interpretation. Its value lies not in producing the final biological
+        result, but in creating cleaner, more coherent, and more trustworthy
+        starting points for downstream cryo-EM and cryo-ET analysis.
+
+        When used thoughtfully, it improves both technical robustness and
+        biological confidence, helping ensure that later structural
+        conclusions are based on data that have been consistently prepared
+        and biologically preserved.
+    """
     _label = None
 
     # -------------------------- DEFINE param functions -----------------------
