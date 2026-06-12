@@ -25,6 +25,7 @@
 # ******************************************************************************
 
 import os
+import time
 from enum import Enum
 
 from emtable import Table
@@ -40,8 +41,7 @@ from tomo.constants import BOTTOM_LEFT_CORNER
 
 from warp.constants import *
 from warp.protocols.protocol_base import ProtWarpBase
-from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable, \
-    modifyOptFileMultiTable
+from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
 
 
 class outputObjects(Enum):
@@ -101,14 +101,14 @@ class ProtWarpExportParticles(ProtWarpBase):
                       default=None,
                       help='Particle diameter in angstroms')
 
-        form.addParam('writeStacks', params.EnumParam,
-                      label='Export type',
-                      default=0,
-                      choices=['2D', '3D'],
-                      display=params.EnumParam.DISPLAY_HLIST,
-                      help='If set to 2D, this program will write output particles as 2d image series centered on '
-                           'the particle (particle series). If set to 3D, this program will write output '
-                           'particles as 3d images (subtomograms)')
+        # form.addParam('writeStacks', params.EnumParam,
+        #               label='Export type',
+        #               default=0,
+        #               choices=['2D', '3D'],
+        #               display=params.EnumParam.DISPLAY_HLIST,
+        #               help='If set to 2D, this program will write output particles as 2d image series centered on '
+        #                    'the particle (particle series). If set to 3D, this program will write output '
+        #                    'particles as 3d images (subtomograms)')
 
     def _insertAllSteps(self):
         self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
@@ -192,12 +192,27 @@ class ProtWarpExportParticles(ProtWarpBase):
             "--box": self.box.get(),
             "--diameter": self.diameter.get(),
         }
-        cmd = '--relative_output_paths --normalized_coords'
-        if self.writeStacks.get() == 0:
-            cmd += ' --2d'
-        else:
-            cmd += ' --3d'
+        cmd = '--relative_output_paths --normalized_coords --2d'
         self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
+
+    def writeOptimisationSetStar(self, relionFolder):
+        optFile = os.path.join(relionFolder, OPTIMISATION_SET_STAR)
+
+        particlesFile = self.normalizeOptimizationPath(
+            os.path.join(relionFolder, MATCHING_PARTICLES_STAR)
+        )
+        tomogramsFile = self.normalizeOptimizationPath(
+            os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR)
+        )
+
+        self.info(">>> Rewriting optimisation set STAR file...")
+
+        with open(optFile, 'w') as f:
+            f.write('data_\n\n')
+            f.write(f'_rlnTomoParticlesFile {particlesFile}\n')
+            f.write(f'_rlnTomoTomogramsFile {tomogramsFile}\n')
+
+        return optFile
 
     def createOutputStep(self):
         coordSet = self.coordinates.get()
@@ -206,26 +221,24 @@ class ProtWarpExportParticles(ProtWarpBase):
         boxSize = self.box.get()
         acq = tsSet.getAcquisition()
         relionFolder = self._getExtraPath(RELION_FOLDER)
-        are2dStacks = self.writeStacks.get() == 0
-        modifyOptFileMultiTable(os.path.join(relionFolder, OPTIMISATION_SET_STAR),
-                                 '_rlnTomoParticlesFile', lambda v: self.normalizeOptimizationPath(v))
-        modifyOptFileMultiTable(os.path.join(relionFolder, OPTIMISATION_SET_STAR),
-                                 '_rlnTomoTomogramsFile', lambda v: self.normalizeOptimizationPath(v))
+        are2dStacks = True
+
+        optFile = self.writeOptimisationSetStar(relionFolder)
         psubtomoSet = createSetOfRelionPSubtomograms(self._getPath(),
-                                                     os.path.join(relionFolder, OPTIMISATION_SET_STAR),
+                                                     optFile,
                                                      coordSet,
                                                      template='pseudosubtomograms%s.sqlite',
                                                      tsSamplingRate=tsSRate,
-                                                     relionBinning=self.output_angpix.get()/tsSet.getSamplingRate(),
+                                                     relionBinning=self.output_angpix.get() / tsSet.getSamplingRate(),
                                                      boxSize=boxSize,
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
 
         modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
-                                      '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
+                                 '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
         modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
-                                      '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
-        # Fill the set with the generated particles
+                                 '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
+
         readSetOfPseudoSubtomograms(psubtomoSet)
         outDict = {outputObjects.relionParticles.name: psubtomoSet}
         self._defineOutputs(**outDict)

@@ -217,18 +217,37 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tomogramFolder = os.path.join(processingFolder, RECONSTRUCTION_FOLDER)
         pwutils.makePath(tomogramFolder)
+
+        tomoSr = inputTomograms.getSamplingRate()
+        srSuffix = f"_{tomoSr:.2f}Apx"
+
         for tomogram in inputTomograms:
-            fileName = tomogram.getFileName()
-            destFolder = os.path.join(tomogramFolder, os.path.basename(fileName))
-            os.symlink(fileName, destFolder)
+            fileName = os.path.abspath(tomogram.getFileName())
+            baseName = os.path.basename(fileName)
+            name, extension = os.path.splitext(baseName)
+
+            if name.endswith(srSuffix):
+                newBaseName = baseName
+            else:
+                newBaseName = f"{name}{srSuffix}{extension}"
+
+            destFileName = os.path.join(tomogramFolder, newBaseName)
+
+            if os.path.lexists(destFileName):
+                os.remove(destFileName)
+
+            os.symlink(fileName, destFileName)
 
     def tsCtfEstimation(self, ts):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation file for %s..." % ts.getTsId())
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        tomoSr = self.inputTomograms.get().getSamplingRate()
         argsDict = {
-            "--settings": os.path.abspath(settingFile)
+            "--settings": os.path.abspath(settingFile),
+            "--range_high": tomoSr*3,
+            "--range_low": tomoSr*4,
         }
         try:
             self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
@@ -271,7 +290,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             "--settings": os.path.abspath(settingFile),
             "--tomo_angpix": angpix,
             "--subdivisions": self.subdivisions.get(),
-            "--template_path": self.templateVolume.get().getFileName(),
+            "--template_path": os.path.abspath(self.templateVolume.get().getFileName()),
             "--template_diameter": self.template_diameter.get(),
             "--symmetry": self.symmetry.get(),
             "--check_hand": self.check_hand.get(),
@@ -279,7 +298,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             # "--npeaks": self.npeaks.get(),
             # "--lowpass": self.lowpass.get(),
             # "--lowpass_sigma": self.lowpass_sigma.get(),
-            # "--subvolume_size": self.subvolume_size.get()
+            "--subvolume_size": self.subvolume_size.get()
 
         }
 
