@@ -156,8 +156,12 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         """CTF estimation"""
         self.info(">>> Generating ctf estimation file fo %s ..." % ts.getTsId())
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        tsSr = ts.getSamplingRate()
         argsDict = {
             "--settings": os.path.abspath(settingFile),
+            "--range_high": tsSr * 3,
+            "--range_low": tsSr * 4,
+
         }
         try:
             self.runProgram(argsDict, WARP_TOOLS, TS_CTF)

@@ -256,12 +256,13 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         writer.pseudoSubtomograms2Star(inReParticles, outPath, isWarp=True)
 
         inputTs = self.getInputSetTS()
+        tsSr = inputTs.getSamplingRate()
 
         self.createTiltSeriesSetting(None)
         for ts in inputTs.iterItems(iterate=False):
             self.tsDataPrepare(ts)
             self.createImodFiles(ts)
-        self.tsCtfEstimation()
+        self.tsCtfEstimation(tsSr)
         self.updateCTFValues()
         self.tsImportAligments()
 
@@ -387,13 +388,15 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.info(msg)
         self.runProgram(argsDict, MCORE, None, othersCmds=cmd)
 
-    def tsCtfEstimation(self):
+    def tsCtfEstimation(self, tsSr):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation...")
         settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(settingFile)
+            "--settings": os.path.abspath(settingFile),
+            "--range_high": tsSr * 3,
+            "--range_low": tsSr * 4,
         }
         try:
             self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
