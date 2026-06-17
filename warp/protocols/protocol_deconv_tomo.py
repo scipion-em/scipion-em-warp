@@ -40,7 +40,180 @@ class outputs(Enum):
 
 
 class ProtWarpDeconvTomo(ProtWarpBase, ProtTomoBase):
-    """ Protocol to deconvolve (Wiener-like filter) a set of tomograms.
+    """
+    Deconvolves a set of tomograms using a Wiener-like filtering strategy
+    based on the average CTF information associated with each tilt series.
+
+    AI Generated:
+
+    Deconvolve Tomograms (ProtWarpDeconvTomo) — User Manual
+        Overview
+
+        The ProtWarpDeconvTomo protocol applies deconvolution to a set of
+        reconstructed tomograms. Its purpose is to partially compensate for
+        contrast attenuation introduced by the microscope optics and improve
+        the interpretability of tomographic volumes.
+
+        In cryo-electron tomography workflows, this protocol is typically
+        applied after tomogram reconstruction and CTF estimation, when the
+        user wants to enhance structural contrast before particle extraction,
+        subtomogram averaging, segmentation, or visual inspection.
+
+        Biological Purpose
+
+        Tomograms often exhibit reduced contrast, especially at high spatial
+        frequencies. This protocol uses CTF information derived from the
+        associated tilt series to apply a controlled deconvolution to the
+        final reconstructed volume.
+
+        The result is not a correction of missing-wedge artifacts or a full
+        recovery of specimen density. Instead, it enhances useful contrast
+        and improves the visibility of macromolecular features within the
+        tomographic volume.
+
+        Inputs
+
+        The protocol requires:
+
+            1. A set of input tomograms.
+            2. A corresponding SetOfCTFTomoSeries.
+
+        Matching between tomograms and CTF information is performed using
+        the tilt-series identifier (tsId).
+
+        For each tomogram:
+
+            - the tomogram file is retrieved
+            - the corresponding CTF series is retrieved
+            - the average defocus is computed from all CTF entries
+              in that series
+
+        If a tomogram has no associated CTF series, it is skipped.
+
+        Processing Strategy
+
+        During execution:
+
+            - all input tomograms are indexed by tsId
+            - all CTF series are indexed by tsId
+            - only matching identifiers are processed
+
+        For each matched tomogram:
+
+            - the average defocus of the full tilt series is calculated
+            - acquisition parameters are collected
+            - the tomogram is deconvolved using the Warp implementation
+              inherited from ProtWarpBase
+
+        If mismatches are found, the protocol reports them as warnings.
+
+        Processing Parameters
+
+        The protocol inherits the same advanced deconvolution parameters
+        available in ProtWarpBase.
+
+        Deconvolution strength
+            Controls the strength of contrast enhancement.
+
+        SNR falloff
+            Determines the attenuation of noisy high-frequency signal.
+
+        High-pass fraction
+            Suppresses very low frequencies that would otherwise be
+            excessively amplified.
+
+        In most practical workflows, the default values are appropriate.
+
+        CPU and GPU Execution
+
+        The protocol supports both CPU and GPU execution.
+
+        GPU execution can accelerate processing significantly for large
+        tomograms. Only one GPU is used per execution.
+
+        CPU execution allows multithreaded processing.
+
+        Workflow
+
+        Step 1 — Matching Tomograms and CTF Series
+
+            The protocol builds internal dictionaries for:
+
+                - tomograms
+                - CTF series
+
+            Matching is done by tilt-series identifier.
+
+        Step 2 — Average Defocus Calculation
+
+            For each matched CTF series:
+
+                - all defocus values are collected
+                - the mean defocus is computed
+
+        Step 3 — Deconvolution
+
+            For each matched tomogram:
+
+                - the tomogram is processed
+                - the deconvolved volume is written to the output folder
+
+        Step 4 — Output Creation
+
+            Once processing finishes:
+
+                - a new SetOfTomograms is created
+                - metadata from the input set is preserved
+                - file paths are updated to point to deconvolved tomograms
+
+            Tomograms that failed processing are excluded automatically.
+
+        Outputs
+
+        The protocol generates:
+
+            Tomograms
+                A new set of deconvolved tomograms.
+
+        Output Naming Convention
+
+        Each output tomogram is written as:
+
+            <original_name>_deconv.mrc
+
+        This preserves traceability between original and processed data.
+
+        Practical Recommendations
+
+        This protocol is especially useful when:
+
+            - preparing tomograms for subtomogram particle picking
+            - improving visual inspection of weak densities
+            - enhancing contrast before segmentation or annotation
+
+        Recommended practice:
+
+            - ensure correct tsId matching between tomograms and CTF series
+            - use reliable CTF estimations
+            - visually inspect deconvolved tomograms before downstream analysis
+
+        Because the protocol uses the average defocus of the tilt series,
+        it provides a practical global correction rather than a per-tilt
+        refinement.
+
+        Summary
+
+        ProtWarpDeconvTomo provides a convenient tomogram-level
+        deconvolution workflow integrated into Scipion.
+
+        It combines:
+
+            - reconstructed tomograms
+            - associated CTF tilt-series information
+            - Warp-based deconvolution
+
+        to generate a new tomogram set with enhanced contrast for
+        downstream cryo-ET analysis.
     """
     _label = 'deconvolve tomograms'
     _possibleOutputs = outputs

@@ -42,8 +42,190 @@ from warp.utils import parseCtfXMLFile, tomoStarGenerate
 
 
 class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
-    """ This protocol wraps WarpTools programs.
-        Estimate motion in frame series, produce aligned averages, estimate CTF
+    """
+    Performs tilt-series movie motion correction and CTF estimation using WarpTools.
+    The protocol aligns frame-series movies, generates aligned tilt-series averages,
+    optionally estimates per-tilt CTF parameters, and evaluates defocus handedness.
+
+    AI Generated:
+
+    Tilt-Series Motion and CTF Estimation (ProtWarpTSMotionCorr) — User Manual
+        Overview
+
+        This protocol wraps external WarpTools programs to process cryo-electron
+        tomography tilt-series movies. Its main goal is to correct beam-induced
+        motion at the movie level, generate aligned tilt images, and optionally
+        estimate CTF parameters for each tilt image.
+
+        In a typical cryo-ET workflow, this protocol is used after importing raw
+        tilt-series movies and before tomogram reconstruction. The output aligned
+        tilt-series can be directly used for downstream alignment, reconstruction,
+        or subtomogram analysis.
+
+        General Workflow
+
+        The protocol processes the input tilt-series in several stages:
+
+        1. Frame-series settings creation
+           A Warp settings file is generated using acquisition parameters such as
+           sampling rate, exposure, binning, gain reference, and EER-specific options.
+
+        2. Frame motion correction
+           For each tilt-series, Warp estimates movie motion and generates aligned
+           average images.
+
+        3. Tilt-series preparation
+           Temporary metadata and tomostar files are generated to describe the
+           aligned tilt images.
+
+        4. Optional CTF estimation
+           If enabled, Warp estimates defocus parameters for each tilt image.
+
+        5. Output registration
+           The protocol assembles aligned tilt images into a new tilt-series stack
+           and optionally creates a CTF series object.
+
+        Input Parameters
+
+        Input Tilt-Series Movies
+            The protocol requires a previously imported set of tilt-series movies.
+
+        Binning Factor
+            Controls Fourier-space binning during loading.
+            Larger values reduce data size and computation time, but also lower
+            the final sampling resolution.
+
+        Motion Fit Resolution
+            Defines the spatial frequency range used during motion fitting.
+            A wide range improves robustness, while high-frequency fitting may
+            increase sensitivity to noise.
+
+        B-Factor
+            Downweights high spatial frequencies during motion estimation.
+
+        Motion Model Grid
+            Defines the spatial and temporal complexity of the motion model.
+            Higher values allow more flexible correction but increase runtime.
+
+        Even/Odd Averages
+            Optionally exports independent averages from odd and even frames.
+            This can be useful for denoiser training or validation procedures.
+
+        Gain and Detector Defects
+
+        Gain Transpose / Flip
+            Allows correction of gain-reference orientation mismatches.
+
+        EER Options
+            For EER movies, virtual frame fractionation can be defined either by
+            grouping frames or by specifying exposure per group.
+
+        CTF Estimation
+
+        Estimate CTF
+            Enables per-tilt CTF fitting after motion correction.
+
+        Window Size
+            Defines the patch size used during CTF estimation.
+
+        Resolution Range
+            Sets the frequency interval used for fitting the CTF model.
+
+        Defocus Search Range
+            Defines the explored underfocus interval in microns.
+
+        Defocus Model Grid
+            Allows spatial or temporal modeling of defocus variation.
+
+        Fit Phase
+            Enables phase-shift estimation for phase plate data.
+
+        Use Movie Average
+            Uses the average movie spectrum instead of averaging individual-frame
+            spectra. This can improve stability in low-signal datasets.
+
+        Handedness Check
+            Optionally evaluates defocus handedness consistency across the dataset.
+
+        Processing Logic
+
+        Initial Step
+            The protocol initializes execution, stores sampling information, and
+            creates the global frame-series Warp settings file.
+
+        Per Tilt-Series Processing
+            For each tilt-series:
+
+            - movie file paths are collected
+            - motion correction is executed
+            - tilt metadata are prepared
+            - tomostar metadata are generated
+            - optional CTF estimation is performed
+            - aligned outputs are written
+
+        Output Generation
+
+        Aligned Tilt-Series
+            The protocol creates a new aligned tilt-series where:
+
+            - tilt images are sorted by tilt angle
+            - aligned averages are stacked into a single MRC stack
+            - sampling rate is updated according to binning
+
+        Even/Odd Stacks
+            If enabled, separate odd and even aligned stacks are also generated.
+
+        CTF Output
+            When CTF estimation is enabled:
+
+            - Warp XML output is parsed
+            - defocus values are extracted
+            - one CTF object per tilt image is created
+            - PSD references are assigned
+
+        Defocus Handedness
+
+        If handedness evaluation is enabled:
+
+            - Warp checks the global defocus handedness
+            - the average correlation is parsed from stdout
+            - a boolean output indicates whether handedness is consistent
+
+        Validation
+
+        Before execution, the protocol verifies that the selected CTF fitting
+        resolution is not beyond the Nyquist frequency imposed by the selected
+        binning factor.
+
+        If the requested fitting resolution exceeds Nyquist limits, a validation
+        warning is returned.
+
+        Summary Output
+
+        The protocol reports:
+
+            - number of aligned tilt-series generated
+            - number of CTF series estimated
+            - handedness evaluation result (if requested)
+
+        Practical Recommendations
+
+        For routine cryo-ET processing:
+
+            - start with binning = 1 unless data size is limiting
+            - keep default motion fitting parameters for most datasets
+            - enable CTF estimation when downstream reconstruction requires it
+            - use even/odd averages only when explicitly needed
+            - check handedness only for full dataset validation
+
+        Final Perspective
+
+        This protocol acts as a bridge between Scipion and WarpTools for
+        high-throughput cryo-electron tomography preprocessing.
+
+        Its main strength lies in combining movie motion correction, tilt-series
+        assembly, CTF estimation, and metadata generation into a single
+        reproducible workflow suitable for tomographic pipelines.
     """
 
     _label = 'tilt-series motion and ctf estimation'

@@ -50,9 +50,181 @@ class outputObjects(Enum):
 
 class ProtWarpExportParticles(ProtWarpBase):
     """
-    Export particles as 3D volumes or 2D image series
+    Exports particles from tomographic coordinates using WarpTools as
+    either 2D particle series or 3D subtomograms.
     More info:
        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#export-particles
+
+    AI Generated:
+
+    Export Particles (ProtWarpExportParticles) — User Manual
+        Overview
+
+        The Export Particles protocol extracts particle-centered data
+        from tilt-series based on a set of 3D coordinates. It prepares
+        Warp-compatible metadata, imports CTF and alignment information,
+        and exports particles in formats suitable for downstream
+        subtomogram analysis.
+
+        This protocol is commonly used after tomogram reconstruction,
+        particle picking, or coordinate annotation, when the goal is to
+        generate particle stacks for refinement, classification, or
+        visualization.
+
+        Biological Purpose
+
+        In cryo-electron tomography, particles are often identified as
+        3D coordinates inside reconstructed tomograms. However, many
+        downstream analysis tools require particles to be represented as
+        localized image stacks or subtomograms.
+
+        This protocol bridges that gap by converting coordinates into
+        extracted particle-centered image data while preserving
+        geometric, CTF, and alignment consistency.
+
+        Inputs
+
+        The protocol requires three main inputs:
+
+        1. A set of 3D coordinates.
+           These define the particle centers inside tomograms.
+
+        2. A set of tilt-series.
+           These provide the original aligned projection data.
+
+        3. A set of CTF estimations.
+           These are used to update Warp-compatible CTF metadata.
+
+        All inputs must correspond to the same tomographic dataset.
+
+        Export Workflow
+
+        The protocol executes the following sequence:
+
+        1. Read tomogram geometry from the coordinate set.
+        2. Compute scaling factors between tomogram and tilt-series.
+        3. Prepare Warp settings and tilt-series metadata.
+        4. Generate IMOD alignment files.
+        5. Generate Warp CTF estimation files.
+        6. Update CTF metadata using provided CTF models.
+        7. Import alignments into Warp.
+        8. Create one STAR file per tomogram containing normalized
+           particle coordinates and orientations.
+        9. Export particles using WarpTools.
+        10. Register exported particles as Scipion outputs.
+        11. Remove temporary intermediate files.
+
+        Coordinate Handling
+
+        Coordinates are grouped by tomogram identifier.
+
+        For each particle, the protocol writes:
+
+        - normalized X, Y, Z coordinates,
+        - particle orientation angles,
+        - tomogram association,
+        - particle score.
+
+        Coordinates are normalized with respect to tomogram dimensions
+        so Warp can correctly interpret particle positions during export.
+
+        Export Modes
+
+        The protocol supports two output modes:
+
+        2D mode
+            Exports particle-centered 2D image series. These are often
+            useful for particle-series workflows and certain Relion
+            subtomogram pipelines.
+
+        3D mode
+            Exports full subtomograms as 3D particle volumes.
+
+        The selected mode determines how Warp writes particle data and
+        how the output set is interpreted downstream.
+
+        Main Parameters
+
+        Output pixel size
+            Defines the sampling rate of exported particles.
+
+        Output box size
+            Defines the cubic extraction box around each particle.
+
+        Particle diameter
+            Provides a biological size estimate used during export.
+
+        Export type
+            Selects whether output particles are written as 2D image
+            stacks or 3D subtomograms.
+
+        These parameters should match the biological particle size and
+        the intended downstream analysis resolution.
+
+        CTF and Alignment Consistency
+
+        Before particle extraction, the protocol regenerates Warp
+        metadata for each tilt-series and updates the local CTF XML
+        files with the provided defocus information.
+
+        Alignment files are imported from IMOD-compatible metadata so
+        particle extraction remains geometrically consistent with the
+        original tilt-series alignment.
+
+        Output Registration
+
+        After export, the protocol creates a
+        RelionSetOfPseudoSubtomograms output object.
+
+        This output includes:
+
+        - exported particle references,
+        - tomogram associations,
+        - sampling information,
+        - Relion-compatible metadata.
+
+        Internal STAR files are also normalized so paths remain valid
+        inside the Scipion project structure.
+
+        Output Relations
+
+        The resulting particle set is linked to:
+
+        - the original coordinate set,
+        - the tilt-series,
+        - the input CTF estimations.
+
+        This preserves provenance and ensures reproducibility of
+        downstream processing.
+
+        Practical Recommendations
+
+        For subtomogram refinement:
+            Use 3D export mode.
+
+        For particle-series workflows:
+            Use 2D export mode.
+
+        Box size should be large enough to contain the full particle,
+        but not excessively large, as unnecessary background increases
+        computational cost.
+
+        The chosen output pixel size should be compatible with both the
+        biological target size and the refinement software to be used.
+
+        Cleanup Strategy
+
+        After successful export, temporary intermediate tilt-image
+        files are removed automatically to reduce disk usage.
+
+        Final Perspective
+
+        Particle export is a critical bridge between coordinate-based
+        particle localization and downstream subtomogram analysis.
+
+        This protocol automates metadata preparation, coordinate
+        normalization, and Warp-based extraction while generating
+        Scipion-ready particle outputs for further structural analysis.
     """
 
     _label = 'Export particles'
