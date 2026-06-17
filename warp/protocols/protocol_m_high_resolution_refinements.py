@@ -48,9 +48,175 @@ from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolutio
 
 class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     """
-    High Resolution Refinements in M
+    Performs high resolution subtomogram refinement for cryo-electron
+    tomography datasets, with the goal of improving particle alignment,
+    optical parameter estimation, and the final structural quality of
+    three-dimensional reconstructions.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#initial-3d-refinement-in-relion
+
+    AI Generated:
+
+    M High Resolution Refinement (ProtWarpMHigResolutionRefinement) - User Manual
+        Overview
+
+        The M High Resolution Refinement protocol is designed for
+        high-precision refinement of subtomogram data in cryo-electron
+        tomography. Its main objective is to improve the consistency
+        between particle observations, tilt-series geometry, and optical
+        models so that the resulting three-dimensional reconstruction
+        reaches the highest possible biological interpretability.
+
+        In practical cryo-ET workflows, this protocol is typically used
+        after an initial subtomogram reconstruction has already been
+        obtained. At this stage, the user already has particle
+        coordinates, an initial reference, and an approximate structural
+        model. The refinement process then improves particle poses,
+        microscope parameters, and image distortions in a coordinated
+        manner, allowing weak structural details to become more reliable.
+        More info:
+        https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#initial-3d-refinement-in-relion
+
+        Biological Context
+
+        For biological users, the protocol becomes especially valuable
+        when studying macromolecular complexes in crowded cellular
+        environments, where imperfect alignment or inaccurate optical
+        modeling can limit the attainable resolution. By refining these
+        parameters jointly, the protocol helps recover more accurate
+        molecular features while preserving the native contextual
+        information provided by tomography.
+
+        This refinement is commonly used for in situ structural biology,
+        membrane protein analysis, viral assemblies, and other systems
+        where particles are heterogeneous in orientation but expected to
+        share a common structural core.
+
+        Inputs and Starting Conditions
+
+        The protocol requires a tilt-series dataset, particle
+        definitions, contrast transfer information, and a reference
+        subtomogram average. A corresponding mask is also important
+        because it focuses refinement on the structurally meaningful
+        region and reduces the influence of solvent, background density,
+        or flexible peripheral regions.
+
+        A particularly useful feature is the ability to continue from a
+        previous refinement. This enables iterative improvement across
+        several rounds of processing, which is often essential in
+        high-resolution cryo-ET workflows. Users can therefore either
+        start from a newly prepared dataset or continue from a previous
+        refinement state without rebuilding the entire processing
+        context.
+
+        Species Definition and Biological Relevance
+
+        The molecular diameter defines the approximate physical size of
+        the target complex and strongly influences refinement behavior.
+        A realistic value helps balance signal usage and noise
+        suppression. If the diameter is too small, biologically relevant
+        peripheral density may be excluded. If it is too large,
+        irrelevant surrounding signal may degrade refinement quality.
+
+        Symmetry can also be specified. This is biologically meaningful
+        only when the molecular complex truly obeys a known symmetry.
+        Applying incorrect symmetry may artificially sharpen maps while
+        introducing structural artifacts. In most uncertain cases,
+        asymmetric refinement remains the safer initial strategy.
+
+        The protocol also supports temporal sampling, which is useful
+        when particle trajectories or local motion are expected to vary
+        over time. This can improve modeling of subtle dynamic behavior
+        in challenging datasets.
+
+        Refinement Strategy
+
+        A central goal of this protocol is simultaneous optimization of
+        particle alignment and imaging parameters. Particle pose
+        refinement improves the relative orientation and position of
+        each particle. For most biological applications, this is one of
+        the most important contributors to improved map quality.
+
+        Image warp refinement accounts for residual local distortions
+        that may remain after initial preprocessing. This is especially
+        useful in tilt-series data where local geometric consistency may
+        vary across the field of view.
+
+        Stage-angle refinement improves the geometric consistency of the
+        tilt-series itself. This can be important when alignment errors
+        remain after earlier tomographic preprocessing.
+
+        Optical refinement can further improve reconstruction quality by
+        refining defocus, phase shift, spherical aberration, and higher
+        order aberration terms. These corrections become increasingly
+        important as the target resolution improves. For biological
+        users, such refinement is most meaningful when the underlying
+        data quality is already good and when sufficient particle
+        numbers are available.
+
+        Resolution Control and Reference Conditioning
+
+        The protocol allows optional resampling of the reference maps
+        and masks to a different pixel size. This can be useful when
+        harmonizing datasets that originate from different processing
+        environments or when controlling computational cost during
+        intermediate refinement stages.
+
+        An optional low-pass filter may also be applied to the initial
+        reference. This is often biologically sensible because it helps
+        reduce model bias during early refinement rounds. Starting from
+        an overly sharp reference can force incorrect high-frequency
+        agreement that does not reflect the actual experimental signal.
+
+        Outputs and Their Interpretation
+
+        After completion, the protocol produces refined particle
+        information, updated optical estimates, an improved subtomogram
+        average, corresponding half maps, and an updated mask. These
+        outputs form the basis for downstream interpretation, validation,
+        visualization, or additional iterative refinement.
+
+        The refined average represents the most important biological
+        outcome. Improved continuity of secondary structure, clearer
+        domain boundaries, and better local contrast are often the
+        practical indicators that refinement has been successful.
+
+        A global resolution estimate is also generated. This provides a
+        useful overall indicator of refinement progress, but it should
+        not be treated as the sole measure of biological quality. Local
+        interpretability, preservation of expected features, and
+        agreement with independent biological knowledge remain equally
+        important.
+
+        Practical Recommendations
+
+        In routine cryo-ET practice, it is usually advisable to begin
+        with conservative refinement settings and a reliable reference.
+        Early rounds often focus on improving particle poses and defocus
+        consistency. More advanced optical refinement is often better
+        reserved for later stages, once alignment has stabilized.
+
+        A carefully chosen mask usually has a major impact on success.
+        For flexible complexes, focusing refinement on a rigid core
+        often improves stability substantially. Overly broad masks may
+        dilute signal, whereas overly tight masks may suppress relevant
+        structural information.
+
+        Iterative continuation from previous refinements is commonly the
+        most effective strategy. Rather than expecting a single run to
+        produce the final map, users generally obtain better results by
+        progressively refining the dataset over multiple cycles.
+
+        Final Perspective
+
+        For cryo-electron tomography, high resolution refinement is not
+        merely a technical optimization step. It is a biologically
+        important stage that directly determines how faithfully the
+        final reconstruction reflects molecular reality. Careful choice
+        of reference, biologically sensible masking, and a gradual
+        refinement strategy are the key factors that allow this
+        protocol to extract the maximum structural information from
+        subtomogram datasets.
     """
 
     _label = 'M high resolution refinement'

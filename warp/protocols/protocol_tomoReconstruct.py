@@ -43,11 +43,152 @@ from warp.utils import updateCtFXMLFile
 
 class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     """
-    CTF estimation of a set of input tilt-series and reconstruct tomograms for various tasks and, optionally,
-    half-tomograms for denoiser training using the Warp procedure.
+    Performs tomographic reconstruction from aligned cryo-electron tilt
+    series, combining contrast transfer information with geometric
+    alignment in order to generate tomograms suitable for downstream
+    structural interpretation and subtomogram analysis.
     More info:
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-ctf-estimation
         https://warpem.github.io/warp/user_guide/warptools/quick_start_warptools_tilt_series/#tilt-series-reconstruct-tomograms
+
+    AI Generated:
+
+    Tomogram Reconstruction (ProtWarpTomoReconstruct) - User Manual
+        Overview
+
+        The Tomogram Reconstruction protocol is designed to transform a
+        collection of aligned tilt series into reconstructed tomographic
+        volumes that can be directly used for biological interpretation.
+        Its main objective is to convert two-dimensional tilt images into
+        three-dimensional representations of the specimen while preserving
+        the structural information required for cellular and molecular
+        analysis.
+
+        In cryo-electron tomography workflows, this stage is one of the
+        most important because it creates the volumetric context in which
+        macromolecular complexes, membranes, organelles, and intracellular
+        organization become visible. The protocol is therefore especially
+        relevant when the user intends to perform particle picking,
+        subtomogram averaging, segmentation, or direct visual inspection
+        of native biological environments.
+
+        Inputs and Biological Context
+
+        The protocol requires a set of tilt series that already contain
+        geometric alignment information. This means that the images should
+        represent a coherent angular acquisition of the same specimen area.
+        In addition, a corresponding set of contrast transfer information
+        can be supplied so that the reconstructed tomograms preserve more
+        reliable structural detail across spatial frequencies.
+
+        From a biological perspective, the quality of the resulting
+        tomograms depends strongly on the quality of the input data.
+        Stable acquisition, accurate tilt geometry, and well estimated
+        optical parameters all contribute directly to the interpretability
+        of the final three-dimensional volume.
+
+        Reconstruction Strategy
+
+        The protocol reconstructs one tomogram for each input tilt series.
+        Each output volume represents the original specimen region in a
+        form that can be explored in three dimensions. This allows users
+        to examine cellular landscapes, locate molecular assemblies, and
+        prepare regions of interest for more focused downstream analyses.
+
+        The reconstructed voxel size can be chosen according to the
+        biological objective. Coarser sampling is often appropriate for
+        rapid inspection of large cellular regions, whereas finer sampling
+        is generally preferred when the reconstructed volume will later be
+        used for subtomogram extraction or template matching.
+
+        Tomogram Dimensions and Spatial Coverage
+
+        An important practical consideration is the size of the final
+        reconstruction. The protocol allows the user to define the
+        thickness of the tomogram as well as its lateral dimensions.
+
+        Biologically, these parameters determine how much of the specimen
+        is represented in the final volume. A reconstruction that is too
+        small may truncate meaningful structural features, while a volume
+        that is unnecessarily large may increase computational cost
+        without adding useful information.
+
+        When the specimen is relatively thin, moderate thickness values
+        are often sufficient. In thicker cellular samples or lamellae,
+        larger reconstruction depth may be necessary to preserve the full
+        three-dimensional context.
+
+        Half Tomograms and Validation Workflows
+
+        The protocol can optionally generate two independent half
+        tomograms reconstructed from complementary subsets of the tilt
+        images. These half reconstructions are particularly valuable for
+        validation and denoising workflows.
+
+        In practical biological applications, half tomograms are useful
+        when training denoising procedures that must avoid introducing
+        artificial correlations. They also provide a principled way to
+        evaluate whether observed structural features are reproducible
+        rather than reconstruction artifacts.
+
+        Contrast and Image Conditioning
+
+        Several optional conditioning choices affect the biological
+        appearance of the reconstructed density. Contrast inversion can be
+        particularly relevant for template matching workflows, where the
+        expected sign of density matters. Normalization helps produce more
+        stable intensity behavior across tilt images, which often improves
+        consistency in the final tomogram.
+
+        The protocol can also generate a deconvolved version of the
+        reconstruction. For biological users, deconvolution may improve
+        visual sharpness and make boundaries or compact macromolecular
+        features easier to recognize. However, deconvolution should always
+        be interpreted with caution because enhanced contrast does not
+        necessarily imply improved biological truth.
+
+        Outputs and Interpretation
+
+        The primary output is a set of tomograms, one for each input tilt
+        series. Each reconstructed volume preserves the identity of its
+        originating acquisition while making the sample accessible in
+        three dimensions.
+
+        When half reconstruction is enabled, each tomogram is accompanied
+        by corresponding half volumes. These additional outputs can be
+        important for denoiser training, reproducibility assessment, and
+        careful interpretation of weak structural signals.
+
+        For biological interpretation, the tomogram should be viewed as an
+        experimentally constrained representation of the specimen rather
+        than as a perfectly faithful model. Contrast variations, missing
+        wedge effects, and local thickness differences remain important
+        factors that can influence visibility of structural features.
+
+        Practical Recommendations
+
+        In routine cryo-electron tomography practice, it is usually best
+        to begin with conservative reconstruction settings and inspect the
+        resulting tomograms visually. If the goal is exploratory cellular
+        analysis, moderate sampling and standard normalization are often
+        sufficient.
+
+        When the tomograms will feed into subtomogram averaging or
+        particle extraction workflows, closer attention should be paid to
+        sampling, contrast convention, and the consistency of the
+        reconstructed dimensions. If denoising or validation is expected
+        downstream, generating half tomograms from the start is generally
+        a good strategy.
+
+        Final Perspective
+
+        Tomogram reconstruction is not merely a computational conversion
+        of tilt images into a three-dimensional volume. It defines the
+        structural landscape from which downstream biological conclusions
+        will be drawn. Careful choice of reconstruction sampling, volume
+        dimensions, and conditioning options directly affects the
+        interpretability of macromolecular organization inside the native
+        biological specimen.
     """
 
     _label = 'tomo reconstruction'
