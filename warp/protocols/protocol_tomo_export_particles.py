@@ -133,7 +133,7 @@ class ProtWarpExportParticles(ProtWarpBase):
         for ts in inputTs.iterItems(iterate=False):
             self.tsDataPrepare(ts)
             self.createImodFiles(ts)
-        self.tsCtfEstimation(ts)
+        self.tsCtfEstimation(tsSr)
         self.updateCTFValues()
         self.tsImportAligments()
 
@@ -246,13 +246,11 @@ class ProtWarpExportParticles(ProtWarpBase):
         self._defineSourceRelation(self.inputSetOfCtfTomoSeries, psubtomoSet)
         self._defineSourceRelation(self.inputSet, psubtomoSet)
 
-    def tsCtfEstimation(self, ts):
+    def tsCtfEstimation(self, tsSr):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation...")
         settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
-        tsSr = ts.getSamplingRate()
-
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--range_high": tsSr * 3,
