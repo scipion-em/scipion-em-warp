@@ -663,7 +663,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             defaultDefocusAngle = float(ctfData['DefocusAngle'])
 
             tiltImages = sorted(
-                (ti for ti in ts.iterItems() if ti.isEnabled()),
+                (ti for ti in ts.iterItems(iterate=False) if ti.isEnabled()),
                 key=lambda ti: ti.getTiltAngle()
             )
 
