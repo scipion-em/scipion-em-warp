@@ -523,44 +523,63 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         self.info(">>> Generating outputs to %s" % tsId)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tsSet = self.TiltSeries
+
         if tsSet:
             psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
-            ts = self.TiltSeries.getItem(TiltSeries.TS_ID_FIELD, tsId)
+            ts = tsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
+
             if ts.isEnabled():
                 tsId = ts.getTsId()
                 outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
 
-                # CTF outputs
                 newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
                 newCTFTomoSeries.copyInfo(ts)
                 newCTFTomoSeries.setTiltSeries(ts)
                 outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
-                defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-                ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
-                defocusDelta = float(ctfData['DefocusDelta']) * 1e4
-                defocusAngle = float(ctfData['DefocusAngle'])
 
-                index = 0
-                for ti in ts.iterItems():
-                    if ti.isEnabled():
-                        newCTFTomo = CTFTomo()
-                        newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
-                        newCTFTomo.setIndex(index)
-                        newCTFTomo.setObjId(index)
-                        defocusU = 0
-                        defocusV = 0
-                        if index in gridCtfData["Nodes"]:
-                            defocusU = gridCtfData["Nodes"][index] + defocusDelta
-                            defocusV = gridCtfData["Nodes"][index] - defocusAngle
-                        newCTFTomo.setDefocusU(defocusU)
-                        newCTFTomo.setDefocusV(defocusV)
-                        newCTFTomo.setDefocusAngle(defocusAngle)
-                        newCTFTomo.setResolution(0)
-                        newCTFTomo.setFitQuality(0)
-                        newCTFTomo.standardize()
-                        newCTFTomo.setPsdFile(f"{index}@" + psdStack)
-                        newCTFTomoSeries.append(newCTFTomo)
-                        index += 1
+                defocusFilePath = os.path.join(processingFolder, tsId + '.xml')
+                ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+
+                defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
+                defaultDefocusAngle = float(ctfData['DefocusAngle'])
+
+                tiltImages = sorted(
+                    (ti for ti in ts.iterItems() if ti.isEnabled()),
+                    key=lambda ti: ti.getTiltAngle()
+                )
+
+                for index, ti in enumerate(tiltImages):
+                    if index not in gridCtfData["Nodes"]:
+                        raise ValueError(
+                            f'No Warp CTF defocus found for tilt index {index} '
+                            f'in tilt-series {tsId}'
+                        )
+
+                    defocus = gridCtfData["Nodes"][index]
+                    defocusDelta = gridCtfData["DeltaNodes"].get(
+                        index, defaultDefocusDelta
+                    )
+                    defocusAngle = gridCtfData["AngleNodes"].get(
+                        index, defaultDefocusAngle
+                    )
+
+                    defocusU = defocus + defocusDelta
+                    defocusV = defocus - defocusDelta
+
+                    itemIndex = index + 1
+
+                    newCTFTomo = CTFTomo()
+                    newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
+                    newCTFTomo.setIndex(itemIndex)
+                    newCTFTomo.setDefocusU(defocusU)
+                    newCTFTomo.setDefocusV(defocusV)
+                    newCTFTomo.setDefocusAngle(defocusAngle)
+                    newCTFTomo.setResolution(0)
+                    newCTFTomo.setFitQuality(0)
+                    newCTFTomo.standardize()
+                    newCTFTomo.setPsdFile(f"{itemIndex}@{psdStack}")
+
+                    newCTFTomoSeries.append(newCTFTomo)
 
                 outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
                 outputSetOfCTFTomoSeries.write()

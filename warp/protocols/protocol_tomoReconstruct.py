@@ -170,7 +170,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-        updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
+        updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
 
     @staticmethod
     def _invertTiltAngles(tltPath):

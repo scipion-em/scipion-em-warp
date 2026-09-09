@@ -266,7 +266,7 @@ class ProtWarpExportParticles(ProtWarpBase):
             ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
             processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
             defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-            updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
+            updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
 
     def tsImportAligments(self):
         self.info(">>> Starting import alignments...")
