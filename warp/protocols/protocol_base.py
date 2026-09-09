@@ -198,7 +198,6 @@ class ProtWarpBase(EMProtocol):
             pwutils.makePath(starFolder)
         objSet = self.inputSet.get()
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
-        invertTiltAngle = 1
         pwutils.makePath(imagesFolder)
         hasAlignment = objSet.hasAlignment()
         sr = objSet.getSamplingRate()
@@ -241,10 +240,18 @@ class ProtWarpBase(EMProtocol):
                         shiftX = multShift[0] * sr
                         shiftY = multShift[1] * sr
 
-                    tiValues[ti.getTiltAngle() * invertTiltAngle] = [newBinaryName,
-                                                                     ti.getTiltAngle() * invertTiltAngle,
-                                                                     axisAngle, shiftX, shiftY, dose,
-                                                                     amplitudeContrast, maskedFraction]
+                    tiltAngle = ti.getTiltAngle()
+
+                    tiValues[tiltAngle] = [
+                        newBinaryName,
+                        -tiltAngle,
+                        axisAngle,
+                        shiftX,
+                        shiftY,
+                        dose,
+                        amplitudeContrast,
+                        maskedFraction
+                    ]
 
             tomoStarGenerate(tsId, tiValues, starFolder, True, perTs=perTs)
 
