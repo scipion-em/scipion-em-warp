@@ -301,7 +301,6 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
         pwutils.makePath(starFolder)
         imagesFolder = self._getExtraPath(FRAMES_FOLDER)
-        invertTiltAngle = 1
         pwutils.makePath(imagesFolder)
 
         if tsMovie.isEnabled():
@@ -325,9 +324,18 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                     newBinaryName = os.path.basename(fileName)
                     os.symlink(os.path.abspath(fileName), os.path.join(imagesFolder, os.path.basename(fileName)))
 
-                    tiValues[ti.getTiltAngle() * invertTiltAngle] = [newBinaryName, ti.getTiltAngle() * invertTiltAngle,
-                                                                     axisAngle, shiftX, shiftY, dose,
-                                                                     amplitudeContrast, maskedFraction]
+                    tiltAngle = ti.getTiltAngle()
+
+                    tiValues[tiltAngle] = [
+                        newBinaryName,
+                        -tiltAngle,
+                        axisAngle,
+                        shiftX,
+                        shiftY,
+                        dose,
+                        amplitudeContrast,
+                        maskedFraction
+                    ]
 
             tomoStarGenerate(tsId, tiValues, starFolder, 0)
 
