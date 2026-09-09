@@ -425,11 +425,28 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
 
+    @staticmethod
+    def _invertTiltAngles(tltPath):
+        with open(tltPath, 'r') as f:
+            angles = [
+                float(line.strip())
+                for line in f
+                if line.strip()
+            ]
+
+        with open(tltPath, 'w') as f:
+            for angle in angles:
+                f.write(f'{-angle}\n')
+
     def createImodFiles(self, ts):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
+
         ts.writeImodFiles(tiltstackFolder, delimiter=' ')
+
+        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
+        self._invertTiltAngles(tltPath)
 
     def createOutputStep(self):
         self.info(">>> Creating outputs...")
