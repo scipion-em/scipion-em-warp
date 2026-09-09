@@ -339,20 +339,72 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
 
             tomoStarGenerate(tsId, tiValues, starFolder, 0)
 
-    def tsDefocusHandStep(self):
-        """Defocus handedness"""
-        self.info(">>> Starting defocus handedness...")
-        objSet = self.inputTSMovies.get()
-        settingsFolder = os.path.abspath(self._getExtraPath(SETTINGS_FOLDER))
-        tsId = objSet.getFirstItem().getTsId()
-        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
-        tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
+    def createHandednessSetting(self):
+        """Create a Warp settings file containing all tilt-series."""
+        tsMovies = self.inputTSMovies.get()
+        sr = tsMovies.getSamplingRate()
+        exposure = tsMovies.getAcquisition().getDosePerFrame()
+
+        settingsPath = os.path.abspath(
+            self._getExtraPath('defocus_hand.settings')
+        )
+        processingFolder = os.path.abspath(
+            self._getExtraPath(TILTSERIES_FOLDER)
+        )
+
         argsDict = {
-            "--settings": tsSettingFilePath,
+            "--folder_data": os.path.abspath(
+                self._getExtraPath(TOMOSTAR_FOLDER)
+            ),
+            "--extension": "'*.tomostar'",
+            "--folder_processing": processingFolder,
+            "--bin": self.getBinFactor(),
+            "--angpix": sr,
+            "--output": settingsPath
         }
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
+        if exposure is not None:
+            argsDict['--exposure'] = exposure
+
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or tsMovies.getDimensions()[0]
+            y = self.y_dimension.get() or tsMovies.getDimensions()[1]
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+
+        cmd = ' '.join(
+            ['%s %s' % (k, v) for k, v in argsDict.items()]
+        )
+
+        self.runJob(
+            Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS),
+            cmd,
+            executable='/bin/bash'
+        )
+
+        return settingsPath
+
+    def tsDefocusHandStep(self):
+        """Check defocus handedness across the complete dataset."""
+        self.info(">>> Starting defocus handedness...")
+
+        settingsPath = self.createHandednessSetting()
+
+        argsDict = {
+            "--settings": settingsPath,
+        }
+
+        cmd = ' '.join(
+            ['%s %s' % (k, v) for k, v in argsDict.items()]
+        )
         cmd += ' --check'
-        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), cmd, executable='/bin/bash')
+
+        self.runJob(
+            self.getPlugin().getProgram(WARP_TOOLS, TS_DEFOCUS_HAND),
+            cmd,
+            executable='/bin/bash'
+        )
+
         self.createOutputDefocusHand()
 
     def proccessTSMoviesStep(self, tsId) -> None:
@@ -586,19 +638,27 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
                 self._store(outputSetOfCTFTomoSeries)
 
     def createOutputDefocusHand(self):
-        # Registering the output
-        stdoutFile = os.path.abspath(os.path.join(self.getPath(), 'logs', 'run.stdout'))
-        with open(stdoutFile, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-        for line in reversed(lines):
-            if 'Average correlation:' in line:
-                self.averageCorrelation.set(float(line.split()[-1]))
-                outputAverage = Boolean(True)
-                if self.averageCorrelation.get() < 0:
-                    outputAverage = Boolean(False)
+        stdoutFile = os.path.abspath(
+            os.path.join(self.getPath(), 'logs', 'run.stdout')
+        )
 
-                self._defineOutputs(**{OUTPUT_HANDEDNESS: outputAverage})
-                break
+        correlation = None
+
+        with open(stdoutFile, 'r', encoding='utf-8') as file:
+            for line in reversed(file.readlines()):
+                if 'Average correlation:' in line:
+                    correlation = float(line.split()[-1])
+                    break
+
+        if correlation is None:
+            raise RuntimeError('Warp did not report an average defocus-hand correlation.')
+
+        self.averageCorrelation.set(correlation)
+
+        self._defineOutputs(
+            **{OUTPUT_HANDEDNESS: Boolean(correlation > 0)}
+        )
+
         self._store(self.averageCorrelation)
 
     def _summary(self):
@@ -616,11 +676,17 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
         if self.handedness.get():
-            if self.averageCorrelation.get():
-                text = 'Warp convention is inverted related to ours (IMOD, Relion,...)'
-                summary.append(f"Handedness: {self.averageCorrelation}  {text}")
+            correlation = self.averageCorrelation.get()
+
+            if correlation > 0:
+                summary.append(f'Defocus handedness: {correlation:.3f} '
+                               '(no flip required)')
+            elif correlation < 0:
+                summary.append(f'Defocus handedness: {correlation:.3f} '
+                               '(flip required)'
+                )
             else:
-                summary.append('Handedness: Not ready')
+                summary.append('Defocus handedness: Not ready')
 
         return summary
     
