@@ -325,6 +325,8 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
             argsDict['--peak_distance'] = self.peak_distance.get()
 
         cmd = ''
+        if self.template_flip.get():
+            cmd += " --template_flip"
         if self.whiten.get():
             cmd += " --whiten"
         if not self.dont_normalize.get():
@@ -339,7 +341,12 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         tsId = ts.getTsId()
         self.info(">>> Starting to apply a score threshold to particles picked to %s..." % tsId)
         settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIE_SETTINGS)
-        suffix = os.path.splitext(os.path.basename(self.templateVolume.get().getFileName()))[0].split('_')[-1]
+        if self.template_flip.get():
+            suffix = 'flipx'
+        else:
+            suffix = os.path.splitext(
+                os.path.basename(self.templateVolume.get().getFileName())
+            )[0].split('_')[-1]
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--in_suffix": suffix,
@@ -380,6 +387,8 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         starFiles = [f for f in os.listdir(outputPath) if f.startswith(tomoFileBaseName) and f.endswith(".star")]
         if self.apply_score.get():
             coordsFile = next(f for f in starFiles if "_clean" in f)
+        elif self.template_flip.get():
+            coordsFile = next(f for f in starFiles if "_flipx" in f and "_clean" not in f)
         else:
             coordsFile = next(f for f in starFiles if "_flipx" not in f and "_clean" not in f)
 
@@ -416,8 +425,9 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
 
     def _validate(self):
         errors = []
-        # if self.apply_score.get() and self.maximum.get() is None and self.minimum.get() is None:
-        #     errors.append('The minimum or maximum threshold value must be greater than 0')
+        if self.template_flip.get() and self.check_hand.get() > 0:
+            errors.append('Template flip and check hand cannot be used at the same time.')
+
         return errors
 
     def cleanIntermediateResults(self):
