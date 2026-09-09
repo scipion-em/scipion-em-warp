@@ -457,6 +457,20 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.createOutputMask()
         self.createOutputParticles()
 
+    @staticmethod
+    def _getTemporalMean(rowData, prefix):
+        samples = [
+            (int(key[len(prefix):]), float(value))
+            for key, value in rowData.items()
+            if key.startswith(prefix) and key[len(prefix):].isdigit()
+        ]
+
+        if not samples:
+            raise ValueError(f'No temporal samples found for {prefix}')
+
+        samples.sort(key=lambda item: item[0])
+        return sum(value for _, value in samples) / len(samples)
+
     def createOutputParticles(self):
         processingFolder = self.getProcessingFolder()
 
@@ -494,11 +508,30 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             outputStar = emtools.metadata.StarFile(outputFilePath, 'w')
             outputStar.writeHeader('', outputTable)
             angpix = self.angpix_resample.get()
+
             for row in rows:
-                rowValues = list(row._asdict().values())
-                rowValues[0] = rowValues[0] / (angpix * self.x_dimension.get())
-                rowValues[1] = rowValues[1] / (angpix * self.y_dimension.get())
-                rowValues[2] = rowValues[2] / (angpix * self.tomo_thickness.get())
+                rowData = row._asdict()
+
+                coordX = self._getTemporalMean(rowData, 'wrpCoordinateX')
+                coordY = self._getTemporalMean(rowData, 'wrpCoordinateY')
+                coordZ = self._getTemporalMean(rowData, 'wrpCoordinateZ')
+
+                angleRot = self._getTemporalMean(rowData, 'wrpAngleRot')
+                angleTilt = self._getTemporalMean(rowData, 'wrpAngleTilt')
+                anglePsi = self._getTemporalMean(rowData, 'wrpAnglePsi')
+
+                rowValues = [
+                    coordX / (angpix * self.x_dimension.get()),
+                    coordY / (angpix * self.y_dimension.get()),
+                    coordZ / (angpix * self.tomo_thickness.get()),
+                    angleRot,
+                    angleTilt,
+                    anglePsi,
+                    rowData['wrpRandomSubset'],
+                    rowData['wrpSourceName'],
+                    rowData['wrpSourceHash']
+                ]
+
                 outputStar._writeRowValues(rowValues)
 
             outputStar.close()

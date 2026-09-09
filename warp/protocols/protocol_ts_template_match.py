@@ -242,21 +242,24 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation file for %s..." % ts.getTsId())
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
-        tomoSr = self.inputTomograms.get().getSamplingRate()
+        settingFile = self._getExtraPath(
+            SETTINGS_FOLDER,
+            ts.getTsId() + '_' + TILTSERIE_SETTINGS
+        )
+
+        tsSr = ts.getSamplingRate()
         argsDict = {
             "--settings": os.path.abspath(settingFile),
-            "--range_high": tomoSr*3,
-            "--range_low": tomoSr*4,
+            "--range_high": tsSr * 3,
+            "--range_low": tsSr * 4,
         }
-        try:
-            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
-        except Exception:
-            self.info(">>> Error generating ctf estimation file...")
+
+        self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
 
         ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+
         updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
 
     @staticmethod
