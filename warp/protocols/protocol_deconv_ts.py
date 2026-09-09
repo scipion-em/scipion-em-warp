@@ -94,7 +94,7 @@ class ProtWarpDeconvTS(ProtWarpBase, ProtTomoBase):
             }
 
         for ctfSeries in ctfSet.iterItems():
-            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusU()) for ctf in ctfSeries]
+            ctfValues = [0.5 * (ctf.getDefocusU() + ctf.getDefocusV()) for ctf in ctfSeries]
             ctfDict[ctfSeries.getTsId()] = sum(ctfValues) / len(ctfValues)
 
         matchIds = tsDict.keys() & ctfDict.keys()

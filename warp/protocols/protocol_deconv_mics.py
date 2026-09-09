@@ -82,7 +82,7 @@ class ProtWarpDeconvMics(ProtWarpBase, ProtMicrographs):
         ctfDict = dict()
         for ctf in self.ctfRelations.get():
             micKey = ctf.getMicrograph().getMicName()
-            ctfDict[micKey] = 0.5 * (ctf.getDefocusU() + ctf.getDefocusU())
+            ctfDict[micKey] = 0.5 * (ctf.getDefocusU() + ctf.getDefocusV())
 
         input_mics = self.getInputMicrographs()
         acq = input_mics.getAcquisition()
