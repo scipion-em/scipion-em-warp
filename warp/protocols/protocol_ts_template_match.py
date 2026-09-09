@@ -259,6 +259,19 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
         updateCtFXMLFile(defocusFilePath, ctfTomoSeries)
 
+    @staticmethod
+    def _invertTiltAngles(tltPath):
+        with open(tltPath, 'r') as f:
+            angles = [
+                float(line.strip())
+                for line in f
+                if line.strip()
+            ]
+
+        with open(tltPath, 'w') as f:
+            for angle in angles:
+                f.write(f'{-angle}\n')
+
     def tsImportAligments(self, ts):
         angpix = self.inputTomograms.get().getSamplingRate()
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
@@ -266,6 +279,9 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         pwutils.makePath(tiltstackFolder)
         factor = angpix/ts.getSamplingRate()
         ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=factor)
+        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
+        self._invertTiltAngles(tltPath)
+
         self.info(">>> Starting import alignments...")
 
         settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
