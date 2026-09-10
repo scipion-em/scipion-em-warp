@@ -328,7 +328,7 @@ class ProtWarpTSMotionCorr(ProtTomoBase, ProtTSMovieAlignBase):
 
                     tiValues[tiltAngle] = [
                         newBinaryName,
-                        tiltAngle,
+                        -tiltAngle,
                         axisAngle,
                         shiftX,
                         shiftY,
