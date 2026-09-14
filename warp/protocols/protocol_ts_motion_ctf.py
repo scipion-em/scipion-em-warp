@@ -260,6 +260,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             pId = self._insertFunctionStep(self.processTsMStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=True)
+            closeSetStepDeps.append(pId)
 
     # --------------------------- STEPS functions -----------------------------
     def _initialize(self):
