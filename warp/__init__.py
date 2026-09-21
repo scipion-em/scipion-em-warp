@@ -86,7 +86,8 @@ class Plugin(pwem.Plugin):
         # try to get CONDA activation command
         installCmds = [
             cls.getCondaActivationCmd(),
-            f'conda create -y -n {ENV_NAME} warp=2.0.0dev39 -c warpem -c nvidia/label/cuda-11.8.0 -c pytorch -c conda-forge &&',
+            f'conda create -y -n {ENV_NAME} warp=2.0.0dev41 -c warpem '
+            f'-c nvidia/label/cuda-12.9.0 -c pytorch -c conda-forge &&',
             f'touch {FLAG}'  # Flag installation finished
         ]
 
