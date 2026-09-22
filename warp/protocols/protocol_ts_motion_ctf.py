@@ -29,11 +29,11 @@ import math
 import traceback
 from enum import Enum
 from os.path import splitext, abspath, dirname, join, basename, exists
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pwem.protocols import EMProtocol
 from pyworkflow import BETA
-from pyworkflow.object import Set, Float, Boolean, Pointer, List
+from pyworkflow.object import Set, Float, Boolean, Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
 from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt
