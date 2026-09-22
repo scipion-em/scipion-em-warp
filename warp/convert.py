@@ -24,24 +24,25 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-from os.path import join, abspath
+from os.path import abspath, join
 
 from emtable import Table
 
-from tomo.objects import TiltSeries, TiltSeriesM, TiltImage
+from pyworkflow.utils import replaceBaseExt
+from tomo.objects import TiltSeriesM, TiltImage
 
 # TS motioncorr - star file fields
-WRP_MOVIE_NAME = '_wrpMovieName'
-WRP_ANGLE_TILT = '_wrpAngleTilt'
-WRP_AXIS_ANGLE = '_wrpAxisAngle'
-WRP_DOSE = '_wrpDose'
+WRP_MOVIE_NAME = 'wrpMovieName'
+WRP_ANGLE_TILT = 'wrpAngleTilt'
+WRP_AXIS_ANGLE = 'wrpAxisAngle'
+WRP_DOSE = 'wrpDose'
 # Per-tilt brightness measure = **median pixel value of the motion-corrected aligned average.
 # The value is never read back by any downstream tool
-WRP_AVERAGE_INTENSITY = '_wrpAverageIntensity'
+WRP_AVERAGE_INTENSITY = 'wrpAverageIntensity'
 # Per-tilt junk-coverage measure = **fraction (0–1) of the tilt image's pixels flagged as "mask"
 # by the BoxNet2 neural network** (carbon edges, contamination, gold, other artifacts). This
 # tomostar column is never read back.
-WRP_MASKED_FRACTION = '_wrpMaskedFraction'
+WRP_MASKED_FRACTION = 'wrpMaskedFraction'
 tsStarFileFields = [
     WRP_MOVIE_NAME,
     WRP_ANGLE_TILT,
@@ -52,7 +53,7 @@ tsStarFileFields = [
 ]
 
 
-def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
+def writeTsStar(tsM: TiltSeriesM, averagesDir: str, outputStarFile: str):
     """It creates a star file for a given tilt-series.
     It is expected to be executed after WarpTools fs_motion_and_ctf
     with the option --out_averages.
@@ -60,8 +61,9 @@ def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
     tsMTable = Table(columns=tsStarFileFields)
     acq = tsM.getAcquisition()
     for tiM in tsM.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD):
+        averageFn = join(averagesDir, replaceBaseExt(tiM.getFileName(), 'mrc'))
         tsMTable.addRow(
-            abspath(tiM.getFileName()),
+            abspath(averageFn),
             - tiM.getTiltAngle(),  # Warp inverts the tilt angles at this level
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
