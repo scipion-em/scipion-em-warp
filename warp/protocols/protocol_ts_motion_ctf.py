@@ -280,7 +280,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _initialize(self):
         tsMSet = self.getInputTSMovies()
         self.samplingRate = tsMSet.getSamplingRate()
-        self.outSamplingRate = tsMSet.getOutSamplingRate() * self.binFactor.get()
+        self.outSamplingRate = tsMSet.getSamplingRate() * self.binFactor.get()
         self.tsMDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
 
     def createFrameSeriesSettingStep(self):
