@@ -42,6 +42,7 @@ from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           CTFTomo, TiltSeriesM, TiltImageM)
 from warp import Plugin
 from warp.constants import *
+from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile, tomoStarGenerate
 
 logger = logging.getLogger(__name__)
@@ -261,15 +262,21 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             pId = self._insertFunctionStep(self.processTsMStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=True)
-            if self.estimateCTF.get():
-                pass
 
-            pId = self._insertFunctionStep(self.createOutputStep, tsId,
+            pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
-            # pId = self._insertFunctionStep(self.createTsMStar, tsId,
-            #                                prerequisites=pId,
-            #                                needsGPU=False)
+
+            if self.estimateCTF.get():
+                pId = self._insertFunctionStep(self.createTsMStar, tsId,
+                                               prerequisites=pId,
+                                               needsGPU=False)
+                # self._insertFunctionStep(self.createTsSettingsStep,
+                #                          prerequisites=pId,
+                #                          needsGPU=False)
+
+
+
             closeSetStepDeps.append(pId)
 
         self._insertFunctionStep(self.closeOutputStep,
@@ -282,6 +289,10 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         self.samplingRate = tsMSet.getSamplingRate()
         self.outSamplingRate = tsMSet.getSamplingRate() * self.binFactor.get()
         self.tsMDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
+        # Make paths
+        processingFolder = self._getFrameSeriesDir()
+        tsStarDir = self._getTsStarDir()
+        makePath(*[processingFolder, tsStarDir])
 
     def createFrameSeriesSettingStep(self):
         logger.info(cyanStr(">>> Creating frame-series settings..."))
@@ -304,91 +315,41 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             traceback.print_exc()
             self.failedTsIds.append(tsId)
 
-    def closeOutputStep(self):
-        super()._closeOutputSet()
-        outputTsSet = getattr(self, self._possibleOutputs.tiltSeries.name, ())
-        if not outputTsSet or outputTsSet and len(outputTsSet) == 0:
-            raise Exception('No outputs were generated. Please check the logs run.stdout and run.stderr.')
-
-    # def createTsMStar(self, tsId: str):
-    #     logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
-    #     tsStarDir = self._getTsStarDir()
-    #     makePath(tsStarDir)
-
-    def createOutputStep(self, tsId: str):
-        logger.info(cyanStr(f">>> {tsId} - creating the outputs..."))
+    def createOutputTsStep(self, tsId: str):
         if tsId in self.failedTsIds:
             return
 
         try:
+            logger.info(cyanStr(f">>> {tsId} - creating the output tilt-series..."))
             newTs, tiList = self._prepareOutputTs(tsId)
             self._registerOutputTs(newTs, tiList)
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
 
-    def _prepareOutputTs(self, tsId: str) -> Tuple[TiltSeries, List[TiltImage]]:
-        tsMovie = self.tsMDict[tsId]
-        averageFolder = join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
-        properties = {"sr": self.outSamplingRate}
-        newStack = ImageStack(properties=properties)
-        oddFileNames = ImageStack(properties=properties)
-        evenFileNames = ImageStack(properties=properties)
-        newBinaryName = join(averageFolder, f'{tsId}{MRCS_EXT}')
-        hasAverageHalves = self.average_halves.get()
-        newOddBinaryName = join(averageFolder, ODD, f'{tsId}_{ODD}{MRCS_EXT}')
-        newEvenBinaryName = join(averageFolder, EVEN, f'{tsId}_{EVEN}{MRCS_EXT}')
+    def createTsMStar(self, tsId: str):
+        if tsId in self.failedTsIds:
+            return
 
-        tiList = []
-        for i, tiM in enumerate(tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)):
-            newTi = TiltImage()
-            newTi.copyInfo(tiM)
-            newTi.setFileName(newBinaryName)
-            newTi.setIndex(i + 1)
-            newTi.setSamplingRate(self.outSamplingRate)
+        try:
+            logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
+            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
 
-            # Mount the stacks
-            averageFn = join(averageFolder, replaceBaseExt(tiM.getFileName(), 'mrc'))
-            newStack.append(ImageReadersRegistry.open(averageFn))
-            if hasAverageHalves:
-                newTi.setOddEven([newOddBinaryName, newEvenBinaryName])
-                averageBaseName = basename(averageFn)
-                oddFileNames.append(ImageReadersRegistry.open(join(averageFolder, ODD, averageBaseName)))
-                evenFileNames.append(ImageReadersRegistry.open(join(averageFolder, EVEN, averageBaseName)))
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
+                                f'with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
 
-            tiList.append(newTi)
 
-        # Write the stacks
-        ImageReadersRegistry.write(newStack, newBinaryName,
-                                   isStack=True,
-                                   samplingRate=self.outSamplingRate)
-        if hasAverageHalves:
-            ImageReadersRegistry.write(oddFileNames, newOddBinaryName,
-                                       isStack=True,
-                                       samplingRate=self.outSamplingRate)
-            ImageReadersRegistry.write(evenFileNames, newEvenBinaryName,
-                                       isStack=True,
-                                       samplingRate=self.outSamplingRate)
+    def closeOutputStep(self):
+        super()._closeOutputSet()
+        outputTsSet = getattr(self, self._possibleOutputs.tiltSeries.name, ())
+        if not outputTsSet or outputTsSet and len(outputTsSet) == 0:
+            raise Exception('No outputs were generated. Please check the logs run.stdout and run.stderr.')
 
-        newTs = TiltSeries(tsId=tsId)
-        newTs.copyInfo(tsMovie)
-
-        return newTs, tiList
-
-    def _registerOutputTs(self, newTs: TiltSeries, tiList: List[TiltImage]):
-        # TS set
-        outTsSet = self.getOutputSetOfTS()
-        # TS
-        outTsSet.append(newTs)
-        # Tilt-images
-        for newTi in tiList:
-            newTs.append(newTi)
-        # Data persistence
-        newTs.write()
-        outTsSet.update(newTs)
-        outTsSet.write()
-        self._store(outTsSet)
 
     # --------------------------- UTILS functions -----------------------------
     def getInputTSMovies(self, asPointer: bool = False) -> Union[SetOfTiltSeriesM, Pointer]:
@@ -401,22 +362,23 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _getFrameSeriesDir(self) -> str:
         return abspath(self._getExtraPath(FRAMESERIES_FOLDER))
 
-    # def _getTsStarDir(self) -> str:
-    #     return abspath(self._getExtraPath(TILTSERIES_FOLDER))
+    def _getTsStarDir(self) -> str:
+        return abspath(self._getExtraPath(TOMOSTAR_FOLDER))
+
+    def _getOutTsStarFile(self, tsId: str) -> str:
+        return join(self._getTsStarDir(), f'{tsId}.star')
 
     def _genCreateSettingsArgs(self) -> str:
         tsMovies = self.getInputTSMovies()
         firstTSMovie = tsMovies.getFirstItem()
         fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
         folderData = abspath(dirname(fileName))
-        processingFolder = self._getFrameSeriesDir()
         exposure = tsMovies.getAcquisition().getDosePerFrame()
         gainPath = abspath(tsMovies.getGain()) if tsMovies.getGain() else None
-        makePath(processingFolder)
         argsDict = {
             "--folder_data": folderData,
             "--extension": "'*%s'" % extension,
-            "--folder_processing": processingFolder,
+            "--folder_processing": self._getFrameSeriesDir(),
             "--bin": self.getBinFactor(),
             "--angpix": self.samplingRate,
             "--exposure": exposure,
@@ -489,52 +451,114 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
 
+    def _prepareOutputTs(self, tsId: str) -> Tuple[TiltSeries, List[TiltImage]]:
+        tsMovie = self.tsMDict[tsId]
+        averageFolder = join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
+        properties = {"sr": self.outSamplingRate}
+        newStack = ImageStack(properties=properties)
+        oddFileNames = ImageStack(properties=properties)
+        evenFileNames = ImageStack(properties=properties)
+        newBinaryName = join(averageFolder, f'{tsId}{MRCS_EXT}')
+        hasAverageHalves = self.average_halves.get()
+        newOddBinaryName = join(averageFolder, ODD, f'{tsId}_{ODD}{MRCS_EXT}')
+        newEvenBinaryName = join(averageFolder, EVEN, f'{tsId}_{EVEN}{MRCS_EXT}')
 
-    # def createTiltSeriesSettingStep(self, tsId):
-    #     self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
-    #     setOfTSMovies = self.inputTSMovies.get()
-    #     sr = setOfTSMovies.getSamplingRate()
-    #     exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
-    #     firstTSMovie = setOfTSMovies.getFirstItem()
-    #     fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
-    #     settingsFolder = abspath(self._getExtraPath(SETTINGS_FOLDER))
-    #     makePath(settingsFolder)
-    #     processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
-    #     makePath(processingFolder)
-    #     tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
-    #     tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
-    #     argsDict = {
-    #         "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-    #         "--extension": "%s.tomostar" % tsId,
-    #         "--folder_processing": processingFolder,
-    #         '--angpix': sr,
-    #         "--output": tsSettingFilePath
-    #     }
-    #
-    #     if self.binfactorMode.get() == BINNING_FACTOR:
-    #         argsDict["--bin"] = self.getBinFactor(),
-    #     else:
-    #         argsDict["--bin_angpix"] = self.binTarget.get()
-    #
-    #     if exposure is not None:
-    #         argsDict['--exposure'] = exposure
-    #
-    #     if hasattr(self, 'tomo_thickness'):
-    #         z = self.tomo_thickness.get()
-    #         x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
-    #         y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
-    #
-    #         argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
-    #
-    #     if extension == '.eer':
-    #         argsDict['--eer_ngroups'] = self.eer_ngroups.get()
-    #         if self.eer_groupexposure.get():
-    #             argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
-    #
-    #     cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-    #
-    #     self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
-    #
+        tiList = []
+        for i, tiM in enumerate(tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)):
+            newTi = TiltImage()
+            newTi.copyInfo(tiM)
+            newTi.setFileName(newBinaryName)
+            newTi.setIndex(i + 1)
+            newTi.setSamplingRate(self.outSamplingRate)
+
+            # Mount the stacks
+            averageFn = join(averageFolder, replaceBaseExt(tiM.getFileName(), 'mrc'))
+            newStack.append(ImageReadersRegistry.open(averageFn))
+            if hasAverageHalves:
+                newTi.setOddEven([newOddBinaryName, newEvenBinaryName])
+                averageBaseName = basename(averageFn)
+                oddFileNames.append(ImageReadersRegistry.open(join(averageFolder, ODD, averageBaseName)))
+                evenFileNames.append(ImageReadersRegistry.open(join(averageFolder, EVEN, averageBaseName)))
+
+            tiList.append(newTi)
+
+        # Write the stacks
+        ImageReadersRegistry.write(newStack, newBinaryName,
+                                   isStack=True,
+                                   samplingRate=self.outSamplingRate)
+        if hasAverageHalves:
+            ImageReadersRegistry.write(oddFileNames, newOddBinaryName,
+                                       isStack=True,
+                                       samplingRate=self.outSamplingRate)
+            ImageReadersRegistry.write(evenFileNames, newEvenBinaryName,
+                                       isStack=True,
+                                       samplingRate=self.outSamplingRate)
+
+        newTs = TiltSeries(tsId=tsId)
+        newTs.copyInfo(tsMovie)
+
+        return newTs, tiList
+
+    def _registerOutputTs(self, newTs: TiltSeries, tiList: List[TiltImage]):
+        # TS set
+        outTsSet = self.getOutputSetOfTS()
+        # TS
+        outTsSet.append(newTs)
+        # Tilt-images
+        for newTi in tiList:
+            newTs.append(newTi)
+        # Data persistence
+        newTs.write()
+        outTsSet.update(newTs)
+        outTsSet.write()
+        self._store(outTsSet)
+
+
+    def createTiltSeriesSettingStep(self, tsId):
+        self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
+        setOfTSMovies = self.inputTSMovies.get()
+        sr = setOfTSMovies.getSamplingRate()
+        exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
+        firstTSMovie = setOfTSMovies.getFirstItem()
+        fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
+        settingsFolder = abspath(self._getExtraPath(SETTINGS_FOLDER))
+        makePath(settingsFolder)
+        processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        makePath(processingFolder)
+        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
+        argsDict = {
+            "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
+            "--extension": "%s.tomostar" % tsId,
+            "--folder_processing": processingFolder,
+            '--angpix': sr,
+            "--output": tsSettingFilePath
+        }
+
+        if self.binfactorMode.get() == BINNING_FACTOR:
+            argsDict["--bin"] = self.getBinFactor(),
+        else:
+            argsDict["--bin_angpix"] = self.binTarget.get()
+
+        if exposure is not None:
+            argsDict['--exposure'] = exposure
+
+        if hasattr(self, 'tomo_thickness'):
+            z = self.tomo_thickness.get()
+            x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
+            y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
+
+            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+
+        if extension == '.eer':
+            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+            if self.eer_groupexposure.get():
+                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
+
+        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+
+        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+
     def dataPrepare(self, tsMovie):
         """Creates the setting file that will be used by the different programs.
            It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
