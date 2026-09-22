@@ -52,7 +52,8 @@ EXT_MRC_EVEN_NAME = "even.mrc"
 EXT_MRC_ODD_NAME = "odd.mrc"
 EVEN = 'even'
 ODD = 'odd'
-MRC_EXT = 'mrc'
+MRC_EXT = '.mrc'
+MRCS_EXT = '.mrcs'
 
 
 # --------- [WARPPTOOLS PROGRAMS] ---------------
