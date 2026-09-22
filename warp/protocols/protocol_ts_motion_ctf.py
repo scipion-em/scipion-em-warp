@@ -90,7 +90,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         form.addSection('Alignment')
         self._defineAlignmentParams(form)
         # ProtTSMovieAlignBase._defineStreamingParams(self, form)
-        # form.addParallelSection(threads=2, mpi=0)
+        form.addParallelSection(threads=2, mpi=0)
         form.addHidden(GPU_LIST, StringParam, default='0',
                        expertLevel=LEVEL_ADVANCED,
                        label="Choose GPU IDs",
@@ -428,11 +428,13 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             "--c_cs": inputTSAdquisition.getSphericalAberration(),
             "--c_amplitude": inputTSAdquisition.getAmplitudeContrast(),
             "--input_data": warpMoviesNames,
-            "--output_processing": self._getFrameSeriesDir()
+            "--output_processing": self._getFrameSeriesDir(),
+            "--perdevice": self.numberOfThreads.get()
         }
         gpuList = self.getGpuList()
         if gpuList:
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
+
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --out_averages'
