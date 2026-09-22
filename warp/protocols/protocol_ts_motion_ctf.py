@@ -483,11 +483,9 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         if self.fit_phase.get():
             cmd += ' --c_fit_phase'
+
         if self.use_sum.get():
             cmd += ' --c_use_sum'
-
-        if self.estimateCTF.get():
-            pass
 
         self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
 
