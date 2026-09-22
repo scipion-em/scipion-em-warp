@@ -39,7 +39,7 @@ from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVAN
 from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries,
-                          CTFTomo, TiltSeriesM)
+                          CTFTomo, TiltSeriesM, TiltImageM)
 from warp import Plugin
 from warp.constants import *
 from warp.utils import parseCtfXMLFile, tomoStarGenerate
@@ -341,10 +341,11 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         newEvenBinaryName = join(averageFolder, EVEN, f'{tsId}_{EVEN}{MRCS_EXT}')
 
         tiList = []
-        for tiM in tsMovie.iterItems(orderBy=TiltSeriesM.INDEX):
+        for i, tiM in enumerate(tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)):
             newTi = TiltImage()
             newTi.copyInfo(tiM)
             newTi.setFileName(newBinaryName)
+            newTi.setIndex(i + 1)
             newTi.setSamplingRate(self.outSamplingRate)
 
             # Mount the stacks
@@ -352,8 +353,9 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             newStack.append(ImageReadersRegistry.open(averageFn))
             if hasAverageHalves:
                 newTi.setOddEven([newOddBinaryName, newEvenBinaryName])
-                oddFileNames.append(ImageReadersRegistry.open(join(averageFolder, ODD, averageFn)))
-                evenFileNames.append(ImageReadersRegistry.open(join(averageFolder, EVEN, averageFn)))
+                averageBaseName = basename(averageFn)
+                oddFileNames.append(ImageReadersRegistry.open(join(averageFolder, ODD, averageBaseName)))
+                evenFileNames.append(ImageReadersRegistry.open(join(averageFolder, EVEN, averageBaseName)))
 
             tiList.append(newTi)
 
