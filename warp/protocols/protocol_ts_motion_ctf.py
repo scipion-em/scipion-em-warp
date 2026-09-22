@@ -335,7 +335,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         try:
             logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
-            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
+            writeTsStar(self.tsMDict[tsId], self._getAvgDir(), self._getOutTsStarFile(tsId))
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
@@ -361,6 +361,9 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def _getFrameSeriesDir(self) -> str:
         return abspath(self._getExtraPath(FRAMESERIES_FOLDER))
+
+    def _getAvgDir(self) -> str:
+        return join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
 
     def _getTsStarDir(self) -> str:
         return abspath(self._getExtraPath(TOMOSTAR_FOLDER))
@@ -453,7 +456,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def _prepareOutputTs(self, tsId: str) -> Tuple[TiltSeries, List[TiltImage]]:
         tsMovie = self.tsMDict[tsId]
-        averageFolder = join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
+        averageFolder = self._getAvgDir()
         properties = {"sr": self.outSamplingRate}
         newStack = ImageStack(properties=properties)
         oddFileNames = ImageStack(properties=properties)
