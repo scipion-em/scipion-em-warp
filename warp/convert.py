@@ -24,12 +24,10 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-from os.path import abspath, join
-
+from os.path import abspath, join, basename
 from emtable import Table
-
-from pyworkflow.utils import replaceBaseExt
 from tomo.objects import TiltSeriesM, TiltImage
+from warp import FRAMESERIES_FOLDER
 
 # TS motioncorr - star file fields
 WRP_MOVIE_NAME = 'wrpMovieName'
@@ -61,9 +59,9 @@ def writeTsStar(tsM: TiltSeriesM, averagesDir: str, outputStarFile: str):
     tsMTable = Table(columns=tsStarFileFields)
     acq = tsM.getAcquisition()
     for tiM in tsM.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD):
-        averageFn = join(averagesDir, replaceBaseExt(tiM.getFileName(), 'mrc'))
+        fn = join('..', FRAMESERIES_FOLDER, basename(tiM.getFileName()))
         tsMTable.addRow(
-            abspath(averageFn),
+            fn,
             - tiM.getTiltAngle(),  # Warp inverts the tilt angles at this level
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
