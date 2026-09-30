@@ -62,7 +62,7 @@ def writeTsStar(tsM: TiltSeriesM, averagesDir: str, outputStarFile: str):
         fn = join('..', FRAMESERIES_FOLDER, basename(tiM.getFileName()))
         tsMTable.addRow(
             fn,
-            - tiM.getTiltAngle(),  # Warp inverts the tilt angles at this level
+            tiM.getTiltAngle(),
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
             # so it is the dose pre-specimen
