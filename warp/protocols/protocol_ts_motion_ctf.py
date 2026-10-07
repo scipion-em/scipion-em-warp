@@ -273,6 +273,9 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         pId = self._insertFunctionStep(self.createTsMovSettings,
                                        prerequisites=[],
                                        needsGPU=False)
+        pId = self._insertFunctionStep(self.createTsSettings,
+                                       prerequisites=pId,
+                                       needsGPU=False)
         for tsId, tsM in self.tsMDict.items():
             pId = self._insertFunctionStep(self.processTsMStep, tsId,
                                            prerequisites=pId,
@@ -283,9 +286,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                                            needsGPU=False)
 
             if self.estimateCTF.get():
-                pId = self._insertFunctionStep(self.createTsSettings, tsId,
-                                               prerequisites=pId,
-                                               needsGPU=False)
                 pId = self._insertFunctionStep(self.createTsMStar, tsId,
                                                prerequisites=pId,
                                                needsGPU=False)
@@ -326,6 +326,15 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
             traceback.print_exc()
 
+    def createTsSettings(self):
+        logger.info(cyanStr(">>> Creating tilt-series settings..."))
+        try:
+            cmd = self._genCreateSettingsTsArgs()
+            self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+        except Exception as e:
+            logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
+            traceback.print_exc()
+
     def processTsMStep(self, tsId: str):
         logger.info(cyanStr(f">>> {tsId} - performing the motion-correction..."))
         try:
@@ -351,15 +360,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
-
-    def createTsSettings(self):
-        logger.info(cyanStr(">>> Creating tilt-series settings..."))
-        try:
-            cmd = self._genCreateSettingsTsArgs()
-            self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
-        except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
-            traceback.print_exc()
 
     def createTsMStar(self, tsId: str):
         if tsId in self.failedTsIds:
