@@ -52,8 +52,11 @@ EXT_MRC_EVEN_NAME = "even.mrc"
 EXT_MRC_ODD_NAME = "odd.mrc"
 EVEN = 'even'
 ODD = 'odd'
+
+# Extensions
 MRC_EXT = '.mrc'
 MRCS_EXT = '.mrcs'
+TOMOSTAR_EXT = '.tomostar'
 
 
 # --------- [WARPPTOOLS PROGRAMS] ---------------
@@ -89,7 +92,7 @@ FRAMES_FOLDER = 'frames'
 AVERAGE_FOLDER = 'average'
 SETTINGS_FOLDER = 'settings'
 TILTSERIES_FOLDER = 'warp_tiltseries'
-TILTSERIE_SETTINGS = "warp_tiltseries.settings"
+TILTSERIES_SETTINGS = "warp_tiltseries.settings"
 POWERSPECTRUM_FOLDER = 'powerspectrum'
 FRAMESERIES_FOLDER = 'warp_frameseries'
 FRAMESERIES_SETTINGS = "warp_frameseries.settings"

@@ -278,7 +278,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def createSourcesStep(self):
         self.info(">>> Creating sources...")
         populationPath = os.path.join(self._getExtraPath('m'))
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
             "--name": 'processing',
             "--population": os.path.join(populationPath, 'processing.population'),
@@ -392,7 +392,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation...")
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--range_high": tsSr * 3,
@@ -416,7 +416,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack')
         angpix = self.inputSet.get().getSamplingRate()
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
@@ -568,7 +568,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
     def exportParticles(self):
         self.info(">>> Exporting particles...")
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         matchinFolder = self._getExtraPath(MATCHING_FOLDER)
         output = self._getExtraPath(RELION_FOLDER)
         pwutils.makePath(output)

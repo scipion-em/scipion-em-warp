@@ -244,7 +244,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         self.info(">>> Generating ctf estimation file for %s..." % ts.getTsId())
         settingFile = self._getExtraPath(
             SETTINGS_FOLDER,
-            ts.getTsId() + '_' + TILTSERIE_SETTINGS
+            ts.getTsId() + '_' + TILTSERIES_SETTINGS
         )
 
         tsSr = ts.getSamplingRate()
@@ -287,7 +287,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
 
         self.info(">>> Starting import alignments...")
 
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
@@ -304,7 +304,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         self.tsImportAligments(ts)
         self.info(">>> Starting particle picking...")
         angpix = self.inputTomograms.get().getSamplingRate()
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--tomo_angpix": angpix,
@@ -343,7 +343,7 @@ class ProtWarpTSTemplateMatch(ProtWarpBase, ProtTomoPicking):
         """Apply a score threshold to particles picked through template-matching from tilt"""
         tsId = ts.getTsId()
         self.info(">>> Starting to apply a score threshold to particles picked to %s..." % tsId)
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIES_SETTINGS)
         if self.template_flip.get():
             suffix = 'flipx'
         else:

@@ -33,7 +33,7 @@ import pyworkflow.utils as pwutils
 import tomo.objects as tomoObj
 from tomo.protocols import ProtTomoBase
 
-from warp.constants import (TILTSERIE_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
+from warp.constants import (TILTSERIES_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
                             OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
                             RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
                             TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS, WARP_TOOLS)
@@ -155,7 +155,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     def tsCtfEstimation(self, ts):
         """CTF estimation"""
         self.info(">>> Generating ctf estimation file fo %s ..." % ts.getTsId())
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIES_SETTINGS)
         tsSr = ts.getSamplingRate()
         argsDict = {
             "--settings": os.path.abspath(settingFile),
@@ -194,7 +194,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         tltPath = os.path.join(tiltstackFolder,  f'{ts.getTsId()}.tlt')
         self._invertTiltAngles(tltPath)
         self.info(">>> Starting import aligments...")
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),
@@ -211,7 +211,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
         self.tsImportAligments(ts)
         self.info(">>> Starting tomogram reconstruction...")
         angpix = self.angpix.get()
-        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(SETTINGS_FOLDER, ts.getTsId() + '_' + TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--angpix": angpix,

@@ -179,7 +179,7 @@ class ProtWarpExportParticles(ProtWarpBase):
 
     def exportParticlesStep(self):
         self.info(">>> Exporting particles...")
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         matchinFolder = self._getExtraPath(MATCHING_FOLDER)
         output = self._getExtraPath(RELION_FOLDER)
         pwutils.makePath(output)
@@ -250,7 +250,7 @@ class ProtWarpExportParticles(ProtWarpBase):
         """CTF estimation"""
 
         self.info(">>> Generating ctf estimation...")
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             "--range_high": tsSr * 3,
@@ -273,7 +273,7 @@ class ProtWarpExportParticles(ProtWarpBase):
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         tiltstackFolder = os.path.join(processingFolder, 'tiltstack')
         angpix = self.inputSet.get().getSamplingRate()
-        settingFile = self._getExtraPath(TILTSERIE_SETTINGS)
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
             "--settings": os.path.abspath(settingFile),
             '--alignments': os.path.abspath(tiltstackFolder),

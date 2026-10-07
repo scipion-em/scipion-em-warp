@@ -40,7 +40,7 @@ from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfTiltSeriesM
 from warp import Plugin, WARP_TOOLS, MCORE
 from warp.constants import (CREATE_SETTINGS, TOMOSTAR_FOLDER, TILTIMAGES_FOLDER,
-                            AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIE_SETTINGS,
+                            AVERAGE_FOLDER, TILTSERIES_FOLDER, TILTSERIES_SETTINGS,
                             SETTINGS_FOLDER, WARP_TOOLS_GPU_ALGORITHMS, RELION_FOLDER)
 from warp.utils import tom_deconv, tomoStarGenerate
 
@@ -282,7 +282,7 @@ class ProtWarpBase(EMProtocol):
             pwutils.makePath(settingsFolder)
         processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
         pwutils.makePath(processingFolder)
-        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS if ts is not None else TILTSERIE_SETTINGS
+        tsSettingFile = tsId + '_' + TILTSERIES_SETTINGS if ts is not None else TILTSERIES_SETTINGS
         tsSettingFilePath = os.path.abspath(os.path.join(self._getExtraPath(settingsFolder), tsSettingFile))
         argsDict = {
             "--folder_data": folderPath,

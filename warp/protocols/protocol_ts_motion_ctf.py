@@ -24,26 +24,25 @@
 # *
 # ******************************************************************************
 import logging
-import os
 import math
 import traceback
 from enum import Enum
-from os.path import splitext, abspath, dirname, join, basename, exists
+from os.path import splitext, abspath, dirname, join, basename
 from typing import Union, Tuple, List
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pwem.protocols import EMProtocol
 from pyworkflow import BETA
-from pyworkflow.object import Set, Float, Boolean, Pointer
+from pyworkflow.object import Set, Float, Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
 from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
-                          TiltSeries, SetOfCTFTomoSeries, CTFTomoSeries,
-                          CTFTomo, TiltSeriesM, TiltImageM)
+                          TiltSeries, SetOfCTFTomoSeries,
+                          TiltSeriesM, TiltImageM)
 from warp import Plugin
 from warp.constants import *
 from warp.convert import writeTsStar
-from warp.utils import parseCtfXMLFile, tomoStarGenerate
+from warp.utils import tomoStarGenerate
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +53,15 @@ TARGET_SAMPLING_RATE = 1
 # EER grouping modes
 EER_NGROUPS = 0
 EER_GROUP_EXPOSURE = 1
+
+# Gain flip options
+NO_FLIP = 0
+FLIP_X = 1
+FLIP_Y = 2
+
+# Gain transpose options
+NO_SWAP = 0
+TRANSPOSE_XY = 1
 
 
 class WarpTsMcorrOutputs(Enum):
@@ -75,7 +83,13 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         super().__init__(**kwargs)
         self.samplingRate = None
         self.outSamplingRate = None
+        self.exposure = None
         self.tsMDict = None
+        self.tsmDir = None
+        self.tsDir = None
+        self.tsStarDir = None
+        self.gainFile = None
+        self.darkFile = None
         self.averageCorrelation = Float()
         self.failedTsIds = []
 
@@ -153,12 +167,13 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         form.addParam('gainSwap', EnumParam,
                       choices=['no swap', 'transpose X/Y'],
                       label="Transpose gain reference:",
-                      default=0,
+                      default=NO_SWAP,
                       display=EnumParam.DISPLAY_COMBO)
 
         form.addParam('gainFlip', EnumParam,
                       choices=['no flip', 'flip X', 'flip Y'],
-                      label="Flip gain reference:", default=0,
+                      label="Flip gain reference:",
+                      default=NO_FLIP,
                       display=EnumParam.DISPLAY_COMBO)
 
         form.addSection("EER")
@@ -255,7 +270,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _insertAllSteps(self):
         self._initialize()
         closeSetStepDeps = []
-        pId = self._insertFunctionStep(self.createFrameSeriesSettingStep,
+        pId = self._insertFunctionStep(self.createTsMovSettings,
                                        prerequisites=[],
                                        needsGPU=False)
         for tsId, tsM in self.tsMDict.items():
@@ -268,14 +283,15 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                                            needsGPU=False)
 
             if self.estimateCTF.get():
+                pId = self._insertFunctionStep(self.createTsSettings, tsId,
+                                               prerequisites=pId,
+                                               needsGPU=False)
                 pId = self._insertFunctionStep(self.createTsMStar, tsId,
                                                prerequisites=pId,
                                                needsGPU=False)
                 # self._insertFunctionStep(self.createTsSettingsStep,
                 #                          prerequisites=pId,
                 #                          needsGPU=False)
-
-
 
             closeSetStepDeps.append(pId)
 
@@ -287,14 +303,21 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _initialize(self):
         tsMSet = self.getInputTSMovies()
         self.samplingRate = tsMSet.getSamplingRate()
+        self.exposure = tsMSet.getAcquisition().getDosePerFrame()
         self.outSamplingRate = tsMSet.getSamplingRate() * self.binFactor.get()
         self.tsMDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
+        # Gain and defects
+        gainFile = tsMSet.getGain()
+        darkFile = tsMSet.getDark()
+        self.gainFile = abspath(gainFile) if gainFile else None
+        self.darkFile = abspath(darkFile) if darkFile else None
         # Make paths
-        processingFolder = self._getFrameSeriesDir()
-        tsStarDir = self._getTsStarDir()
-        makePath(*[processingFolder, tsStarDir])
+        self.tsmDir = self._getFrameSeriesDir()
+        self.tsDir = self._getTiltSeriesDir()
+        self.tsStarDir = self._getTsStarDir()
+        makePath(*[self.tsmDir, self.tsDir, self.tsStarDir])
 
-    def createFrameSeriesSettingStep(self):
+    def createTsMovSettings(self):
         logger.info(cyanStr(">>> Creating frame-series settings..."))
         try:
             cmd = self._genCreateSettingsArgs()
@@ -329,6 +352,15 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
+    def createTsSettings(self):
+        logger.info(cyanStr(">>> Creating tilt-series settings..."))
+        try:
+            cmd = self._genCreateSettingsTsArgs()
+            self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+        except Exception as e:
+            logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
+            traceback.print_exc()
+
     def createTsMStar(self, tsId: str):
         if tsId in self.failedTsIds:
             return
@@ -343,13 +375,11 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-
     def closeOutputStep(self):
         super()._closeOutputSet()
         outputTsSet = getattr(self, self._possibleOutputs.tiltSeries.name, ())
         if not outputTsSet or outputTsSet and len(outputTsSet) == 0:
             raise Exception('No outputs were generated. Please check the logs run.stdout and run.stderr.')
-
 
     # --------------------------- UTILS functions -----------------------------
     def getInputTSMovies(self, asPointer: bool = False) -> Union[SetOfTiltSeriesM, Pointer]:
@@ -369,45 +399,60 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         return abspath(self._getExtraPath(TOMOSTAR_FOLDER))
 
     def _getOutTsStarFile(self, tsId: str) -> str:
-        return join(self._getTsStarDir(), f'{tsId}.star')
+        return join(self.tsStarDir, f'{tsId}{TOMOSTAR_EXT}')
+
+    def _getTiltSeriesSettingsFn(self) -> str:
+        return abspath(self._getExtraPath(TILTSERIES_SETTINGS))
+
+    def _getTiltSeriesDir(self) -> str:
+        return abspath(self._getExtraPath(TILTSERIES_FOLDER))
 
     def _genCreateSettingsArgs(self) -> str:
-        tsMovies = self.getInputTSMovies()
-        firstTSMovie = tsMovies.getFirstItem()
-        fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
-        folderData = abspath(dirname(fileName))
-        exposure = tsMovies.getAcquisition().getDosePerFrame()
-        gainPath = abspath(tsMovies.getGain()) if tsMovies.getGain() else None
-        argsDict = {
-            "--folder_data": folderData,
-            "--extension": "'*%s'" % extension,
-            "--folder_processing": self._getFrameSeriesDir(),
-            "--bin": self.getBinFactor(),
-            "--angpix": self.samplingRate,
-            "--exposure": exposure,
-            "--output": self._getFrameSeriesSettingsFn(),
-        }
+        ts_movies = self.getInputTSMovies()
+        first_ts_movie = ts_movies.getFirstItem()
+        file_name, extension = splitext(first_ts_movie.getFirstItem().getFileName())
+        folder_data = abspath(dirname(file_name))
 
-        if extension == '.eer':
-            eerGroupingMode = self.eerGroupMode.get()
-            eerGroups = self.eer_ngroups.get()
-            eerGroupExp = self.eer_groupexposure.get()
-            if eerGroupingMode == EER_NGROUPS and eerGroups is not None:
-                argsDict['--eer_ngroups'] = eerGroups
-            if eerGroupingMode == EER_GROUP_EXPOSURE and eerGroupExp is not None:
-                argsDict['--eer_groupexposure'] = eerGroupExp
+        # Initialize argument list with base parameters
+        args = [
+            f"--folder_data {folder_data}",
+            f"--extension '*{extension}'",
+            f"--folder_processing {self.tsmDir}",
+            f"--bin {self._getBinFactor()}",
+            f"--angpix {self.samplingRate}",
+            f"--exposure {self.exposure}",
+            f"--output {self._getFrameSeriesSettingsFn()}",
+        ]
 
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        if gainPath:
-            cmd += " --gain_path %s" % gainPath
-            if self.gainFlip.get() == 1:
-                cmd += ' --gain_flip_x'
-            elif self.gainFlip.get() == 2:
-                cmd += ' --gain_flip_y'
-            if self.gainSwap.get() == 1:
-                cmd += ' --gain_transpose'
+        # Handle EER specific arguments
+        if extension == ".eer":
+            eer_grouping_mode = self.eerGroupMode.get()
+            eer_groups = self.eer_ngroups.get()
+            eer_group_exp = self.eer_groupexposure.get()
 
-        return cmd
+            if eer_grouping_mode == EER_NGROUPS and eer_groups is not None:
+                args.append(f"--eer_ngroups {eer_groups}")
+            elif eer_grouping_mode == EER_GROUP_EXPOSURE and eer_group_exp is not None:
+                args.append(f"--eer_groupexposure {eer_group_exp}")
+
+        # Handle gain file and transformations
+        self._genGainAndDarkCmd(args)
+
+        return " ".join(args)
+
+    def _genCreateSettingsTsArgs(self) -> str:
+        x, y, z = self._getTomoDims()
+        args = [
+            f'--output {self._getTiltSeriesSettingsFn()}',
+            f'--folder_processing {self.tsDir}',
+            f'--folder_data {self.tsStarDir}',
+            f'--extension *{TOMOSTAR_EXT}',
+            f'--angpix {self.samplingRate}',
+            f'--exposure {self.exposure}',
+            f'--tomo_dimensions {x}x{y}x{z}'
+        ]
+        self._genGainAndDarkCmd(args)
+        return ' '.join(args)
 
     def fsMotionAndCTF(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> None:
         # Prepare a list of absolute paths for the movies to process
@@ -428,13 +473,12 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             "--c_cs": inputTSAdquisition.getSphericalAberration(),
             "--c_amplitude": inputTSAdquisition.getAmplitudeContrast(),
             "--input_data": warpMoviesNames,
-            "--output_processing": self._getFrameSeriesDir(),
+            "--output_processing": self.tsmDir,
             "--perdevice": self.numberOfThreads.get()
         }
         gpuList = self.getGpuList()
         if gpuList:
             argsDict['--device_list'] = ' '.join(map(str, gpuList))
-
 
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
         cmd += ' --out_averages'
@@ -518,7 +562,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         outTsSet.write()
         self._store(outTsSet)
 
-
     def createTiltSeriesSettingStep(self, tsId):
         self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
         setOfTSMovies = self.inputTSMovies.get()
@@ -530,7 +573,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         makePath(settingsFolder)
         processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
         makePath(processingFolder)
-        tsSettingFile = tsId + '_' + TILTSERIE_SETTINGS
+        tsSettingFile = tsId + '_' + TILTSERIES_SETTINGS
         tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
         argsDict = {
             "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
@@ -541,7 +584,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         }
 
         if self.binfactorMode.get() == BINNING_FACTOR:
-            argsDict["--bin"] = self.getBinFactor(),
+            argsDict["--bin"] = self._getBinFactor(),
         else:
             argsDict["--bin_angpix"] = self.binTarget.get()
 
@@ -963,6 +1006,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             self._defineSourceRelation(tsMSetPointer, outputSetOfTiltSeries)
 
         return outputSetOfTiltSeries
+
     #
     # def getOutputSetOfCTFTomoSeries(self, outputSetName):
     #     outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
@@ -980,7 +1024,27 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     #
     #     return outputSetOfCTFTomoSeries
 
-    def getBinFactor(self):
+    def _getBinFactor(self) -> int:
         """2^x pre-binning factor, applied in Fourier space when loading raw data.
         0 = no binning, 1 = 2x2 binning, 2 = 4x4 binning"""
         return math.floor(math.log2(self.binFactor.get()))
+
+    def _getTomoDims(self) -> Tuple[int, int, int]:
+        tsMSet = self.getInputTSMovies()
+        x = int(tsMSet.getDimensions()[0])
+        y = int(tsMSet.getDimensions()[1])
+        z = int(max(x, y) / 3)
+        return x, y, z
+
+    def _genGainAndDarkCmd(self, args: List[str]) -> None:
+        if self.gainFile:
+            args.append(f'--gain_path {self.gainFile}')
+            if self.gainFlip.get() == FLIP_X:
+                args.append('--gain_flip_x')
+            elif self.gainFlip.get() == FLIP_Y:
+                args.append('--gain_flip_y')
+            if self.gainSwap.get() == TRANSPOSE_XY:
+                args.append('--gain_transpose')
+        if self.darkFile:
+            args.append(f'--defects_path {self.darkFile}')
+
