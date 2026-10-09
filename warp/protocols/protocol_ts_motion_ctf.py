@@ -292,15 +292,17 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                                                prerequisites=beginCtfReqDeps,
                                                needsGPU=False)
 
-                pId = self._insertFunctionStep(self.estimateCtfStep, tsId,
-                                               prerequisites=pId,
-                                               needsGPU=True)
+        if self.estimateCTF.get():
+            pId = self._insertFunctionStep(self.estimateCtfStep,
+                                           prerequisites=pId,
+                                           needsGPU=True)
 
+            for tsId, tsM in self.tsMDict.items():
                 pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
                                                prerequisites=pId,
                                                needsGPU=False)
 
-            closeSetStepDeps.append(pId)
+        closeSetStepDeps.append(pId)
 
         self._insertFunctionStep(self.closeOutputStep,
                                  prerequisites=closeSetStepDeps,
@@ -381,20 +383,15 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-    def estimateCtfStep(self, tsId: str):
-        if tsId in self.failedTsIds:
-            return
-
+    def estimateCtfStep(self):
         try:
-            logger.info(cyanStr(f">>> {tsId} - estimating the CTF..."))
-            tsMovie = self.tsMDict[tsId]
-            args = self._getCtfEstimationArgs(tsMovie)
+            logger.info(cyanStr(f">>> Estimating the CTF..."))
+            args = self._getCtfEstimationArgs()
             self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
 
         except Exception as e:
             logger.error(redStr(f"{WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
             logger.error(traceback.format_exc())
-            self.failedTsIds.append(tsId)
 
     def createOutputCtfStep(self, tsId: str):
         if tsId in self.failedTsIds:
@@ -548,7 +545,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         return " ".join(args)
 
     def _getCtfEstimationArgs(self, tsMovie: TiltSeriesM) -> str:
-        acq = tsMovie.getAcquisition()
+        acq = self.getInputTSMovies().getAcquisition()
         args = [
             f'--settings {self._getTiltSeriesSettingsFn()}',
             f'--window {self.window.get()}',
