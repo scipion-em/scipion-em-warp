@@ -28,7 +28,7 @@ import math
 import traceback
 from enum import Enum
 from os.path import splitext, abspath, dirname, join, basename
-from typing import Union, Tuple, List
+from typing import Union, Tuple, List, Optional
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pwem.protocols import EMProtocol
 from pyworkflow import BETA
@@ -632,7 +632,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _prepareOutputCtf(self, tsId: str) -> Tuple[CTFTomoSeries, List[CTFTomo]]:
         tsDir = self._getTiltSeriesDir()
         psdStack = join(tsDir, POWERSPECTRUM_FOLDER, tsId + '.mrc')
-        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name)
+        outTsSet = self._getOutputTsSet()
         ts = outTsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
         newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
         newCTFTomoSeries.copyInfo(ts)
@@ -674,7 +674,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def _registerOutputCtf(self, newCTFTomoSeries: CTFTomoSeries, ctfTomoList: List[CTFTomo]):
         # CTFTomoSeries set
-        outputCtfSet = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
+        outputCtfSet = self.getOutputSetOfCTFTomoSeries()
         # CTFTomoSeries
         outputCtfSet.append(newCTFTomoSeries)
         # Tilt-images
@@ -688,7 +688,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def getOutputSetOfTS(self) -> SetOfTiltSeries:
         outputName = self._possibleOutputs.tiltSeries.name
-        outputSetOfTiltSeries = getattr(self, outputName, None)
+        outputSetOfTiltSeries = self._getOutputTsSet()
 
         if outputSetOfTiltSeries:
             outputSetOfTiltSeries.enableAppend()
@@ -705,15 +705,16 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         return outputSetOfTiltSeries
 
 
-    def getOutputSetOfCTFTomoSeries(self, outputSetName):
-        outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
+    def getOutputSetOfCTFTomoSeries(self):
+        outputSetName = self._possibleOutputs.ctfs.name
+        outputSetOfCTFTomoSeries = self._getOutputCtfSet()
 
         if outputSetOfCTFTomoSeries:
             outputSetOfCTFTomoSeries.enableAppend()
         else:
             outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
                                                                  template='CTFmodels%s.sqlite')
-            tsSet = self.TiltSeries
+
             outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
@@ -760,14 +761,20 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         nTsM = len(tsMSet)
         return nTsM if nTsM < 10 else 10
 
+    def _getOutputTsSet(self) -> Optional[SetOfTiltSeries]:
+        return getattr(self, self._possibleOutputs.tiltSeries.name, None)
+
+    def _getOutputCtfSet(self) -> Optional[SetOfCTFTomoSeries]:
+        return getattr(self, self._possibleOutputs.ctfs.name, None)
+
     # -------------------------- INFO functions -------------------------------
     def _summary(self):
         summary = []
         tilseriesSize = 0
         ctfSize = 0
         inputMoviesSize = self.inputTSMovies.get().getSize()
-        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name, None)
-        outCtfSet = getattr(self, self._possibleOutputs.ctfs.name, None)
+        outTsSet = self._getOutputTsSet()
+        outCtfSet = self._getOutputCtfSet()
         if outTsSet:
             tilseriesSize = outTsSet.getSize()
         else:
