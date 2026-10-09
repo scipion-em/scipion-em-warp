@@ -577,14 +577,15 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         newOddBinaryName = join(averageFolder, ODD, f'{tsId}_{ODD}{MRCS_EXT}')
         newEvenBinaryName = join(averageFolder, EVEN, f'{tsId}_{EVEN}{MRCS_EXT}')
 
-        tiList = []
         inTiList = [ti.clone() for ti in tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)]
+        tiList = []
         for i, tiM in enumerate(inTiList):
             newTi = TiltImage()
             newTi.copyInfo(tiM)
             newTi.setFileName(newBinaryName)
             newTi.setIndex(i + 1)
             newTi.setSamplingRate(self.outSamplingRate)
+            newTi.setAcquisition(tiM.getAcquisition())
 
             # Mount the stacks
             averageFn = join(averageFolder, replaceBaseExt(tiM.getFileName(), 'mrc'))
