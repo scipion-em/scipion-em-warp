@@ -269,6 +269,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self._initialize()
+        beginCtfReqDeps = []
         closeSetStepDeps = []
         pId = self._insertFunctionStep(self.createTsMovSettingsStep,
                                        prerequisites=[],
@@ -285,10 +286,13 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
+            beginCtfReqDeps.append(pId)
+            closeSetStepDeps.append(pId)
 
-            if self.estimateCTF.get():
+        if self.estimateCTF.get():
+            for tsId, tsM in self.tsMDict.items():
                 pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
-                                               prerequisites=pId,
+                                               prerequisites=beginCtfReqDeps,
                                                needsGPU=False)
 
                 pId = self._insertFunctionStep(self.estimateCtfStep, tsId,
