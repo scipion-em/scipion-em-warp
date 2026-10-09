@@ -35,14 +35,15 @@ from pyworkflow import BETA
 from pyworkflow.object import Set, Float, Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
-from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt, yellowStr
+from pyworkflow.utils import cyanStr, Message, makePath, redStr, replaceBaseExt, yellowStr
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries,
                           TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
-from warp import Plugin
-from warp.constants import *
+from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF, FRAMESERIES_FOLDER, AVERAGE_FOLDER, \
+    FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, MRCS_EXT, EVEN, ODD, \
+    POWERSPECTRUM_FOLDER
 from warp.convert import writeTsStar
-from warp.utils import tomoStarGenerate, parseCtfXMLFile
+from warp.utils import parseCtfXMLFile
 
 logger = logging.getLogger(__name__)
 
@@ -577,7 +578,8 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         newEvenBinaryName = join(averageFolder, EVEN, f'{tsId}_{EVEN}{MRCS_EXT}')
 
         tiList = []
-        for i, tiM in enumerate(tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)):
+        inTiList = [ti.clone() for ti in tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)]
+        for i, tiM in inTiList:
             newTi = TiltImage()
             newTi.copyInfo(tiM)
             newTi.setFileName(newBinaryName)
