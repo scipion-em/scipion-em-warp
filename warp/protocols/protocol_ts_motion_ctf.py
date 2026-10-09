@@ -286,11 +286,8 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
-            beginCtfReqDeps.append(pId)
-            closeSetStepDeps.append(pId)
 
-        if self.estimateCTF.get():
-            for tsId, tsM in self.tsMDict.items():
+            if self.estimateCTF.get():
                 pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                                prerequisites=beginCtfReqDeps,
                                                needsGPU=False)
@@ -412,61 +409,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output CTF with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
-
-    def _prepareOutputCtf(self, tsId: str) -> Tuple[CTFTomoSeries, List[CTFTomo]]:
-        tsDir = self._getTiltSeriesDir()
-        psdStack = join(tsDir, POWERSPECTRUM_FOLDER, tsId + '.mrc')
-        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name)
-        ts = outTsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
-        newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
-        newCTFTomoSeries.copyInfo(ts)
-        newCTFTomoSeries.setTiltSeries(ts)
-
-        defocusFilePath = join(tsDir, tsId + '.xml')
-        ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
-        defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
-        defaultDefocusAngle = float(ctfData['DefocusAngle'])
-
-        ctfTomoList = []
-        acqOrderList = [ti.getAcquisitionOrder() for ti in ts.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD)]
-        for index, acqOrder in enumerate(acqOrderList):
-            if index not in gridCtfData["Nodes"]:
-                logger.info(yellowStr(f'\t>>> tsId = {tsId} - No Warp CTF defocus found for tilt index {index}'))
-                continue
-
-            defocus = gridCtfData["Nodes"][index]
-            defocusDelta = gridCtfData["DeltaNodes"].get(index, defaultDefocusDelta)
-            defocusAngle = gridCtfData["AngleNodes"].get(index, defaultDefocusAngle)
-            defocusU = defocus + defocusDelta
-            defocusV = defocus - defocusDelta
-
-            itemIndex = index + 1
-            newCTFTomo = CTFTomo()
-            newCTFTomo.setAcquisitionOrder(acqOrder)
-            newCTFTomo.setIndex(itemIndex)
-            newCTFTomo.setDefocusU(defocusU)
-            newCTFTomo.setDefocusV(defocusV)
-            newCTFTomo.setDefocusAngle(defocusAngle)
-            newCTFTomo.setResolution(0)
-            newCTFTomo.setFitQuality(0)
-            newCTFTomo.standardize()
-            newCTFTomo.setPsdFile(f"{itemIndex}@{psdStack}")
-
-            ctfTomoList.append(newCTFTomo)
-
-    def _registerOutputCtf(self, newCTFTomoSeries: CTFTomoSeries, ctfTomoList: List[CTFTomo]):
-        # CTFTomoSeries set
-        outputCtfSet = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
-        # CTFTomoSeries
-        outputCtfSet.append(newCTFTomoSeries)
-        # Tilt-images
-        for ctfTomo in ctfTomoList:
-            newCTFTomoSeries.append(ctfTomo)
-        # Data persistence
-        newCTFTomoSeries.write()
-        outputCtfSet.update(newCTFTomoSeries)
-        outputCtfSet.write()
-        self._store(outputCtfSet)
 
     def closeOutputStep(self):
         super()._closeOutputSet()
@@ -687,433 +629,63 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         outTsSet.write()
         self._store(outTsSet)
 
-    # def createTiltSeriesSettingStep(self, tsId):
-    #     self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
-    #     setOfTSMovies = self.inputTSMovies.get()
-    #     sr = setOfTSMovies.getSamplingRate()
-    #     exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
-    #     firstTSMovie = setOfTSMovies.getFirstItem()
-    #     fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
-    #     settingsFolder = abspath(self._getExtraPath(SETTINGS_FOLDER))
-    #     makePath(settingsFolder)
-    #     processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
-    #     makePath(processingFolder)
-    #     tsSettingFile = tsId + '_' + TILTSERIES_SETTINGS
-    #     tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
-    #     argsDict = {
-    #         "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-    #         "--extension": "%s.tomostar" % tsId,
-    #         "--folder_processing": processingFolder,
-    #         '--angpix': sr,
-    #         "--output": tsSettingFilePath
-    #     }
-    #
-    #     if self.binfactorMode.get() == BINNING_FACTOR:
-    #         argsDict["--bin"] = self._getBinFactor(),
-    #     else:
-    #         argsDict["--bin_angpix"] = self.binTarget.get()
-    #
-    #     if exposure is not None:
-    #         argsDict['--exposure'] = exposure
-    #
-    #     if hasattr(self, 'tomo_thickness'):
-    #         z = self.tomo_thickness.get()
-    #         x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
-    #         y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
-    #
-    #         argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
-    #
-    #     if extension == '.eer':
-    #         argsDict['--eer_ngroups'] = self.eer_ngroups.get()
-    #         if self.eer_groupexposure.get():
-    #             argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
-    #
-    #     cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-    #
-    #     self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
-    #
-    # # def dataPrepare(self, tsMovie):
-    #     """Creates the setting file that will be used by the different programs.
-    #        It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
-    #        the tiltimages."""
-    #     starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
-    #     makePath(starFolder)
-    #     imagesFolder = self._getExtraPath(FRAMES_FOLDER)
-    #     makePath(imagesFolder)
-    #
-    #     if tsMovie.isEnabled():
-    #         tsId = tsMovie.getTsId()
-    #         tiValues = {}
-    #         for ti in tsMovie.iterItems():
-    #             if ti.isEnabled():  # Excluding views
-    #                 dose = 0
-    #                 maskedFraction = 0
-    #                 shiftX = 0
-    #                 shiftY = 0
-    #                 axisAngle = 0
-    #                 amplitudeContrast = 0
-    #
-    #                 if tsMovie.hasAcquisition():
-    #                     axisAngle = tsMovie.getAcquisition().getTiltAxisAngle()
-    #                 if ti.getAcquisition():
-    #                     amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-    #                     dose = ti.getAcquisition().getAccumDose()
-    #                 fileName = ti.getFileName()
-    #                 newBinaryName = basename(fileName)
-    #                 createLink(abspath(fileName), join(imagesFolder, basename(fileName)))
-    #
-    #                 tiltAngle = ti.getTiltAngle()
-    #
-    #                 tiValues[tiltAngle] = [
-    #                     newBinaryName,
-    #                     -tiltAngle,
-    #                     axisAngle,
-    #                     shiftX,
-    #                     shiftY,
-    #                     dose,
-    #                     amplitudeContrast,
-    #                     maskedFraction
-    #                 ]
-    #
-    #         tomoStarGenerate(tsId, tiValues, starFolder, 0)
-    #
-    # def createHandednessSetting(self):
-    #     """Create a Warp settings file containing all tilt-series."""
-    #     tsMovies = self.inputTSMovies.get()
-    #     sr = tsMovies.getSamplingRate()
-    #     exposure = tsMovies.getAcquisition().getDosePerFrame()
-    #
-    #     settingsPath = abspath(
-    #         self._getExtraPath('defocus_hand.settings')
-    #     )
-    #     processingFolder = abspath(
-    #         self._getExtraPath(TILTSERIES_FOLDER)
-    #     )
-    #
-    #     argsDict = {
-    #         "--folder_data": abspath(
-    #             self._getExtraPath(TOMOSTAR_FOLDER)
-    #         ),
-    #         "--extension": "'*.tomostar'",
-    #         "--folder_processing": processingFolder,
-    #         "--bin": self.getBinFactor(),
-    #         "--angpix": sr,
-    #         "--output": settingsPath
-    #     }
-    #
-    #     if exposure is not None:
-    #         argsDict['--exposure'] = exposure
-    #
-    #     if hasattr(self, 'tomo_thickness'):
-    #         z = self.tomo_thickness.get()
-    #         x = self.x_dimension.get() or tsMovies.getDimensions()[0]
-    #         y = self.y_dimension.get() or tsMovies.getDimensions()[1]
-    #         argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
-    #
-    #     cmd = ' '.join(
-    #         ['%s %s' % (k, v) for k, v in argsDict.items()]
-    #     )
-    #
-    #     self.runJob(
-    #         Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS),
-    #         cmd,
-    #         executable='/bin/bash'
-    #     )
-    #
-    #     return settingsPath
-    #
-    # def tsDefocusHandStep(self):
-    #     """Check defocus handedness across the complete dataset."""
-    #     self.info(">>> Starting defocus handedness...")
-    #
-    #     settingsPath = self.createHandednessSetting()
-    #
-    #     argsDict = {
-    #         "--settings": settingsPath,
-    #     }
-    #
-    #     cmd = ' '.join(
-    #         ['%s %s' % (k, v) for k, v in argsDict.items()]
-    #     )
-    #     cmd += ' --check'
-    #
-    #     self.runJob(
-    #         self.getPlugin().getProgram(WARP_TOOLS, TS_DEFOCUS_HAND),
-    #         cmd,
-    #         executable='/bin/bash'
-    #     )
-    #
-    #     self.createOutputDefocusHand()
-    #
-    # def proccessTSMoviesStep(self, tsId) -> None:
-    #     """Estimate motion in frame series, produce aligned averages and register the output"""
-    #     tsMovie = self.getInputTSMovies().getItem(TiltSeries.TS_ID_FIELD, tsId)
-    #     warpMoviesNamesList = [abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
-    #     warpMoviesNamesList = " ".join(warpMoviesNamesList)
-    #     self.info(">>> Starting estimate motion for %s..." % tsId)
-    #     self.fsMotionAndCTF(tsMovie, warpMoviesNamesList)
-    #     if self.estimateCTF.get():
-    #         self.createTiltSeriesSettingStep(tsId)
-    #         self.dataPrepare(tsMovie)
-    #         self.tsCtfEstimationStep(tsId)
-    #     with self._lock:
-    #         self.createOutputTS(tsMovie)
-    #         if self.estimateCTF.get():
-    #             self.createOutputCTF(tsId)
-    #
-    # def insertFinalSteps(self, proccessTSMoviesSteps) -> list:
-    #     """The final steps inserted into the protocol"""
-    #     finalSteps = []
-    #     if self.handedness.get():
-    #         finalStep = self._insertFunctionStep(self.tsDefocusHandStep, prerequisites=proccessTSMoviesSteps,
-    #                                              needsGPU=True)
-    #         finalSteps.append(finalStep)
-    #     return finalSteps
-    #
-    # def tsCtfEstimationStep(self, tsId):
-    #     """CTF estimation"""
-    #     self.info(">>> Starting ctf estimation to %s" % tsId)
-    #     inputTSAdquisition = self.inputTSMovies.get().getFirstItem().getAcquisition()
-    #     settingFile = self._getExtraPath(SETTINGS_FOLDER, tsId + '_' + TILTSERIE_SETTINGS)
-    #     argsDict = {
-    #         "--settings": abspath(settingFile),
-    #         "--window": self.window.get(),
-    #         "--range_low": self.range_min.get(),
-    #         "--range_high": self.range_max.get(),
-    #         "--defocus_min": self.defocus_min.get(),
-    #         "--defocus_max": self.defocus_max.get(),
-    #         "--voltage": int(inputTSAdquisition.getVoltage()),
-    #         "--cs": inputTSAdquisition.getSphericalAberration(),
-    #         "--amplitude": inputTSAdquisition.getAmplitudeContrast(),
-    #     }
-    #
-    #     gpuList = self.getGpuList()
-    #     if gpuList:
-    #         argsDict['--device_list'] = ' '.join(map(str, gpuList))
-    #
-    #     cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-    #     self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_CTF), cmd, executable='/bin/bash')
-    #
-    # def createOutputTS(self, tsMovie):
-    #     self.info(">>> Generating output for %s..." % tsMovie.getTsId())
-    #     outputTS = self.getOutputSetOfTS(OUTPUT_TILTSERIES)
-    #     averageFolder = join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
-    #
-    #     tsId = tsMovie.getTsId()
-    #     newTs = TiltSeries(tsId=tsId)
-    #     outputTS.append(newTs)
-    #
-    #     tiOrderDict = {}
-    #     properties = {"sr": tsMovie.getSamplingRate()}
-    #     newStack = ImageStack(properties=properties)
-    #     oddFileNames = ImageStack(properties=properties)
-    #     evenFileNames = ImageStack(properties=properties)
-    #     newBinaryName = join(averageFolder, tsId + '.mrcs')
-    #     hasAverageHalves = self.average_halves.get()
-    #     newOddBinaryName = join(averageFolder, 'odd', tsId + '_odd.mrcs')
-    #     newEvenBinaryName = join(averageFolder, 'even', tsId + '_even.mrcs')
-    #
-    #     for index, tiM in enumerate(tsMovie):
-    #         fileName = splitext(basename(tiM.getFileName()))[0] + '.mrc'
-    #         newTi = TiltImage(location=(index + 1, newBinaryName))
-    #         newTi.copyInfo(tiM)
-    #         newTi.setAcquisition(tiM.getAcquisition().clone())
-    #         newTi.setSamplingRate(tiM.getSamplingRate() * self.binFactor.get())
-    #         tiOrderDict[newTi.getTiltAngle()] = (newTi, fileName)
-    #         if hasAverageHalves:
-    #             newTi.setOddEven([newOddBinaryName, newEvenBinaryName])
-    #
-    #     sortedTiltAngle = sorted(tiOrderDict.keys())
-    #
-    #     for angle in sortedTiltAngle:
-    #         fileName = tiOrderDict[angle][1]
-    #         newStack.append(ImageReadersRegistry.open(join(averageFolder, fileName)))
-    #         if hasAverageHalves:
-    #             oddFileNames.append(ImageReadersRegistry.open(join(averageFolder, 'odd', fileName)))
-    #             evenFileNames.append(ImageReadersRegistry.open(join(averageFolder, 'even', fileName)))
-    #
-    #     ImageReadersRegistry.write(newStack, newBinaryName, isStack=True)
-    #     if hasAverageHalves:
-    #         ImageReadersRegistry.write(oddFileNames, newOddBinaryName, isStack=True)
-    #         ImageReadersRegistry.write(evenFileNames, newEvenBinaryName, isStack=True)
-    #
-    #     for index, angle in enumerate(sortedTiltAngle):
-    #         ti = tiOrderDict[angle][0]
-    #         ti.setIndex(index + 1)
-    #         ti.setObjId(index + 1)
-    #         newTs.append(ti)
-    #
-    #     outputTS.update(newTs)
-    #     outputTS.write()
-    #     self._store(outputTS)
-    #
-    # def deleteIntermediateOutputsStep(self):
-    #     try:
-    #         averageFolder = join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
-    #         if not exists(averageFolder):
-    #             logger.info(f"The directory {averageFolder} does not exist.")
-    #             return
-    #         for filename in os.listdir(averageFolder):
-    #             if filename.endswith(".mrc") or filename.endswith(".json"):
-    #                 file_path = join(averageFolder, filename)
-    #                 os.remove(file_path)
-    #
-    #         logger.info("All .mrc files have been deleted.")
-    #
-    #     except Exception as e:
-    #         logger.error(f"An error occurred: {e}")
-    #
-    # def createOutputCTF(self, tsId):
-    #     self.info(">>> Generating outputs to %s" % tsId)
-    #     processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
-    #     tsSet = self.TiltSeries
-    #
-    #     if tsSet:
-    #         psdStack = join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
-    #         ts = tsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
-    #
-    #         if ts.isEnabled():
-    #             tsId = ts.getTsId()
-    #             outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
-    #
-    #             newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
-    #             newCTFTomoSeries.copyInfo(ts)
-    #             newCTFTomoSeries.setTiltSeries(ts)
-    #             outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
-    #
-    #             defocusFilePath = join(processingFolder, tsId + '.xml')
-    #             ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
-    #
-    #             defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
-    #             defaultDefocusAngle = float(ctfData['DefocusAngle'])
-    #
-    #             tiltImages = sorted(
-    #                 (ti for ti in ts.iterItems(iterate=False) if ti.isEnabled()),
-    #                 key=lambda ti: ti.getTiltAngle()
-    #             )
-    #
-    #             for index, ti in enumerate(tiltImages):
-    #                 if index not in gridCtfData["Nodes"]:
-    #                     raise ValueError(
-    #                         f'No Warp CTF defocus found for tilt index {index} '
-    #                         f'in tilt-series {tsId}'
-    #                     )
-    #
-    #                 defocus = gridCtfData["Nodes"][index]
-    #                 defocusDelta = gridCtfData["DeltaNodes"].get(
-    #                     index, defaultDefocusDelta
-    #                 )
-    #                 defocusAngle = gridCtfData["AngleNodes"].get(
-    #                     index, defaultDefocusAngle
-    #                 )
-    #
-    #                 defocusU = defocus + defocusDelta
-    #                 defocusV = defocus - defocusDelta
-    #
-    #                 itemIndex = index + 1
-    #
-    #                 newCTFTomo = CTFTomo()
-    #                 newCTFTomo.setAcquisitionOrder(ti.getAcquisitionOrder())
-    #                 newCTFTomo.setIndex(itemIndex)
-    #                 newCTFTomo.setDefocusU(defocusU)
-    #                 newCTFTomo.setDefocusV(defocusV)
-    #                 newCTFTomo.setDefocusAngle(defocusAngle)
-    #                 newCTFTomo.setResolution(0)
-    #                 newCTFTomo.setFitQuality(0)
-    #                 newCTFTomo.standardize()
-    #                 newCTFTomo.setPsdFile(f"{itemIndex}@{psdStack}")
-    #
-    #                 newCTFTomoSeries.append(newCTFTomo)
-    #
-    #             outputSetOfCTFTomoSeries.update(newCTFTomoSeries)
-    #             outputSetOfCTFTomoSeries.write()
-    #             self._store(outputSetOfCTFTomoSeries)
-    #
-    # def createOutputDefocusHand(self):
-    #     stdoutFile = abspath(
-    #         join(self.getPath(), 'logs', 'run.stdout')
-    #     )
-    #
-    #     correlation = None
-    #
-    #     with open(stdoutFile, 'r', encoding='utf-8') as file:
-    #         for line in reversed(file.readlines()):
-    #             if 'Average correlation:' in line:
-    #                 correlation = float(line.split()[-1])
-    #                 break
-    #
-    #     if correlation is None:
-    #         raise RuntimeError('Warp did not report an average defocus-hand correlation.')
-    #
-    #     self.averageCorrelation.set(correlation)
-    #
-    #     self._defineOutputs(
-    #         **{OUTPUT_HANDEDNESS: Boolean(correlation > 0)}
-    #     )
-    #
-    #     self._store(self.averageCorrelation)
+    def _prepareOutputCtf(self, tsId: str) -> Tuple[CTFTomoSeries, List[CTFTomo]]:
+        tsDir = self._getTiltSeriesDir()
+        psdStack = join(tsDir, POWERSPECTRUM_FOLDER, tsId + '.mrc')
+        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name)
+        ts = outTsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
+        newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
+        newCTFTomoSeries.copyInfo(ts)
+        newCTFTomoSeries.setTiltSeries(ts)
 
-    def _summary(self):
-        summary = []
-        tilseriesSize = 0
-        ctfSize = 0
-        if self.hasAttribute(OUTPUT_TILTSERIES):
-            tilseriesSize = self.TiltSeries.getSize()
-        else:
-            self.averageCorrelation = Float()
-        summary.append(f"Aligned tiltseries: {tilseriesSize} of {self.inputTSMovies.get().getSize()}")
+        defocusFilePath = join(tsDir, tsId + '.xml')
+        ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+        defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
+        defaultDefocusAngle = float(ctfData['DefocusAngle'])
 
-        if self.hasAttribute(OUTPUT_CTF_SERIES):
-            ctfSize = self.CTFTomoSeries.getSize()
-        summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
+        ctfTomoList = []
+        acqOrderList = [ti.getAcquisitionOrder() for ti in ts.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD)]
+        for index, acqOrder in enumerate(acqOrderList):
+            if index not in gridCtfData["Nodes"]:
+                logger.info(yellowStr(f'\t>>> tsId = {tsId} - No Warp CTF defocus found for tilt index {index}'))
+                continue
 
-        if self.handedness.get():
-            correlation = self.averageCorrelation.get()
+            defocus = gridCtfData["Nodes"][index]
+            defocusDelta = gridCtfData["DeltaNodes"].get(index, defaultDefocusDelta)
+            defocusAngle = gridCtfData["AngleNodes"].get(index, defaultDefocusAngle)
+            defocusU = defocus + defocusDelta
+            defocusV = defocus - defocusDelta
 
-            if correlation > 0:
-                summary.append(f'Defocus handedness: {correlation:.3f} '
-                               '(no flip required)')
-            elif correlation < 0:
-                summary.append(f'Defocus handedness: {correlation:.3f} '
-                               '(flip required)'
-                               )
-            else:
-                summary.append('Defocus handedness: Not ready')
+            itemIndex = index + 1
+            newCTFTomo = CTFTomo()
+            newCTFTomo.setAcquisitionOrder(acqOrder)
+            newCTFTomo.setIndex(itemIndex)
+            newCTFTomo.setDefocusU(defocusU)
+            newCTFTomo.setDefocusV(defocusV)
+            newCTFTomo.setDefocusAngle(defocusAngle)
+            newCTFTomo.setResolution(0)
+            newCTFTomo.setFitQuality(0)
+            newCTFTomo.standardize()
+            newCTFTomo.setPsdFile(f"{itemIndex}@{psdStack}")
 
-        return summary
+            ctfTomoList.append(newCTFTomo)
 
-    def _validate(self):
-        errorMsg = []
-        movieSampling = self.inputTSMovies.get().getSamplingRate()
-        outputSampling = movieSampling * self.binFactor.get()
-        nyquistFreq = 2 * outputSampling
-        resToFit = self.range_max.get()
+        return newCTFTomoSeries, ctfTomoList
 
-        if resToFit < nyquistFreq:
-            warnMs = (
-                f'The resolution to fit should be greater than nyquist. Currently, resolution to fit is {resToFit} '
-                f'and at this binning factor Nyquist is {nyquistFreq}\n')
-            errorMsg.append(warnMs)
+    def _registerOutputCtf(self, newCTFTomoSeries: CTFTomoSeries, ctfTomoList: List[CTFTomo]):
+        # CTFTomoSeries set
+        outputCtfSet = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
+        # CTFTomoSeries
+        outputCtfSet.append(newCTFTomoSeries)
+        # Tilt-images
+        for ctfTomo in ctfTomoList:
+            newCTFTomoSeries.append(ctfTomo)
+        # Data persistence
+        newCTFTomoSeries.write()
+        outputCtfSet.update(newCTFTomoSeries)
+        outputCtfSet.write()
+        self._store(outputCtfSet)
 
-        binMode = self.binFactorMode.get()
-        binFactor = self.binFactor.get()
-        binTarget = self.binTarget.get()
-        if binMode == BINNING_FACTOR:
-            if binFactor is None:
-                errorMsg.append('Binning factor cannot be empty.')
-            elif binFactor < 1:
-                errorMsg.append('Binning factor must be greater or equal than 1.')
-        if binMode == TARGET_SAMPLING_RATE:
-            if binTarget is None:
-                errorMsg.append('Target sampling rate for binning cannot be empty.')
-            elif binTarget <= 0:
-                errorMsg.append('Target sampling rate for binning must be greater than 0.')
-
-        return errorMsg
-
-    # def allowsDelete(self, obj):
-    #     return True
-    #
     def getOutputSetOfTS(self) -> SetOfTiltSeries:
         outputName = self._possibleOutputs.tiltSeries.name
         outputSetOfTiltSeries = getattr(self, outputName, None)
@@ -1187,3 +759,66 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         tsMSet = self.getInputTSMovies()
         nTsM = len(tsMSet)
         return nTsM if nTsM < 10 else 10
+
+    # -------------------------- INFO functions -------------------------------
+    def _summary(self):
+        summary = []
+        tilseriesSize = 0
+        ctfSize = 0
+        inputMoviesSize = self.inputTSMovies.get().getSize()
+        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name, None)
+        outCtfSet = getattr(self, self._possibleOutputs.ctfs.name, None)
+        if outTsSet:
+            tilseriesSize = outTsSet.getSize()
+        else:
+            self.averageCorrelation = Float()
+        summary.append(f"Aligned tiltseries: {tilseriesSize} of {inputMoviesSize}")
+
+        if outCtfSet:
+            ctfSize = outCtfSet.getSize()
+        summary.append(f"CTF estimated: {ctfSize} of {inputMoviesSize}")
+
+        # if self.handedness.get():
+        #     correlation = self.averageCorrelation.get()
+        #
+        #     if correlation > 0:
+        #         summary.append(f'Defocus handedness: {correlation:.3f} '
+        #                        '(no flip required)')
+        #     elif correlation < 0:
+        #         summary.append(f'Defocus handedness: {correlation:.3f} '
+        #                        '(flip required)'
+        #                        )
+        #     else:
+        #         summary.append('Defocus handedness: Not ready')
+
+        return summary
+
+    def _validate(self):
+        errorMsg = []
+        movieSampling = self.inputTSMovies.get().getSamplingRate()
+        outputSampling = movieSampling * self.binFactor.get()
+        nyquistFreq = 2 * outputSampling
+        resToFit = self.range_max.get()
+
+        if resToFit < nyquistFreq:
+            warnMs = (
+                f'The resolution to fit should be greater than nyquist. Currently, resolution to fit is {resToFit} '
+                f'and at this binning factor Nyquist is {nyquistFreq}\n')
+            errorMsg.append(warnMs)
+
+        binMode = self.binFactorMode.get()
+        binFactor = self.binFactor.get()
+        binTarget = self.binTarget.get()
+        if binMode == BINNING_FACTOR:
+            if binFactor is None:
+                errorMsg.append('Binning factor cannot be empty.')
+            elif binFactor < 1:
+                errorMsg.append('Binning factor must be greater or equal than 1.')
+        if binMode == TARGET_SAMPLING_RATE:
+            if binTarget is None:
+                errorMsg.append('Target sampling rate for binning cannot be empty.')
+            elif binTarget <= 0:
+                errorMsg.append('Target sampling rate for binning must be greater than 0.')
+
+        return errorMsg
+
