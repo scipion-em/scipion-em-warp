@@ -395,8 +395,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
 
         except Exception as e:
-            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
-                                f'with exception {e}. Skipping... '))
+            logger.error(redStr(f"{WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
@@ -615,7 +614,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             f'--range_high {self.range_max.get()}',
             f'--defocus_min {self.defocus_min.get()}',
             f'--defocus_max {self.defocus_max.get()}',
-            f'--voltage {acq.getVoltage()}',
+            f'--voltage {acq.getVoltage():.0f}',
             f'--cs {acq.getSphericalAberration()}',
             f'--amplitude {acq.getAmplitudeContrast()}',
             f'--auto_hand {self._getAutoHandNTs()}'
@@ -1157,9 +1156,12 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def _getTomoDims(self) -> Tuple[int, int, int]:
         tsMSet = self.getInputTSMovies()
+        doSwap = 45 < abs(tsMSet.getAcquisition().getTiltAxisAngle()) < 135
         x = int(tsMSet.getDimensions()[0])
         y = int(tsMSet.getDimensions()[1])
         z = int(max(x, y) / 3)
+        if doSwap:
+            x, y = y, x
         return x, y, z
 
     def _genGainAndDarkCmd(self, args: List[str]) -> None:
