@@ -579,7 +579,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         tiList = []
         inTiList = [ti.clone() for ti in tsMovie.iterItems(orderBy=TiltImageM.TILT_ANGLE_FIELD)]
-        for i, tiM in inTiList:
+        for i, tiM in enumerate(inTiList):
             newTi = TiltImage()
             newTi.copyInfo(tiM)
             newTi.setFileName(newBinaryName)
@@ -773,17 +773,17 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         if self.isFinished():
             tilseriesSize = 0
             ctfSize = 0
-            inputMoviesSize = self.inputTSMovies.get().getSize()
+            inputMoviesSize = len(self.inputTSMovies.get())
             outTsSet = self._getOutputTsSet()
             outCtfSet = self._getOutputCtfSet()
             if outTsSet:
-                tilseriesSize = outTsSet.getSize()
+                tilseriesSize = len(outTsSet)
             else:
                 self.averageCorrelation = Float()
             summary.append(f"Aligned tiltseries: {tilseriesSize} of {inputMoviesSize}")
 
             if outCtfSet:
-                ctfSize = outCtfSet.getSize()
+                ctfSize = len(outCtfSet)
             summary.append(f"CTF estimated: {ctfSize} of {inputMoviesSize}")
 
         # if self.handedness.get():
