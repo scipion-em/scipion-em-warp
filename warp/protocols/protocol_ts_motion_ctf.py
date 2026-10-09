@@ -544,7 +544,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         return " ".join(args)
 
-    def _getCtfEstimationArgs(self, tsMovie: TiltSeriesM) -> str:
+    def _getCtfEstimationArgs(self) -> str:
         acq = self.getInputTSMovies().getAcquisition()
         args = [
             f'--settings {self._getTiltSeriesSettingsFn()}',
@@ -768,20 +768,21 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     # -------------------------- INFO functions -------------------------------
     def _summary(self):
         summary = []
-        tilseriesSize = 0
-        ctfSize = 0
-        inputMoviesSize = self.inputTSMovies.get().getSize()
-        outTsSet = self._getOutputTsSet()
-        outCtfSet = self._getOutputCtfSet()
-        if outTsSet:
-            tilseriesSize = outTsSet.getSize()
-        else:
-            self.averageCorrelation = Float()
-        summary.append(f"Aligned tiltseries: {tilseriesSize} of {inputMoviesSize}")
+        if self.isFinished():
+            tilseriesSize = 0
+            ctfSize = 0
+            inputMoviesSize = self.inputTSMovies.get().getSize()
+            outTsSet = self._getOutputTsSet()
+            outCtfSet = self._getOutputCtfSet()
+            if outTsSet:
+                tilseriesSize = outTsSet.getSize()
+            else:
+                self.averageCorrelation = Float()
+            summary.append(f"Aligned tiltseries: {tilseriesSize} of {inputMoviesSize}")
 
-        if outCtfSet:
-            ctfSize = outCtfSet.getSize()
-        summary.append(f"CTF estimated: {ctfSize} of {inputMoviesSize}")
+            if outCtfSet:
+                ctfSize = outCtfSet.getSize()
+            summary.append(f"CTF estimated: {ctfSize} of {inputMoviesSize}")
 
         # if self.handedness.get():
         #     correlation = self.averageCorrelation.get()
