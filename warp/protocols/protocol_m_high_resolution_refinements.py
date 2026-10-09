@@ -649,7 +649,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
 
         if ts.isEnabled():
-            outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIE)
+            outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
 
             newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
             newCTFTomoSeries.copyInfo(ts)

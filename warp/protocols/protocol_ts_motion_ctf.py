@@ -35,14 +35,14 @@ from pyworkflow import BETA
 from pyworkflow.object import Set, Float, Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
-from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt
+from pyworkflow.utils import cyanStr, createLink, Message, makePath, redStr, replaceBaseExt, yellowStr
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries,
-                          TiltSeriesM, TiltImageM)
+                          TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
 from warp import Plugin
 from warp.constants import *
 from warp.convert import writeTsStar
-from warp.utils import tomoStarGenerate
+from warp.utils import tomoStarGenerate, parseCtfXMLFile
 
 logger = logging.getLogger(__name__)
 
@@ -270,10 +270,11 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
     def _insertAllSteps(self):
         self._initialize()
         closeSetStepDeps = []
-        pId = self._insertFunctionStep(self.createTsMovSettings,
+        pId = self._insertFunctionStep(self.createTsMovSettingsStep,
                                        prerequisites=[],
                                        needsGPU=False)
-        pId = self._insertFunctionStep(self.createTsSettings,
+
+        pId = self._insertFunctionStep(self.createTsSettingsStep,
                                        prerequisites=pId,
                                        needsGPU=False)
         for tsId, tsM in self.tsMDict.items():
@@ -286,12 +287,17 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                                            needsGPU=False)
 
             if self.estimateCTF.get():
-                pId = self._insertFunctionStep(self.createTsMStar, tsId,
+                pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                                prerequisites=pId,
                                                needsGPU=False)
-                # self._insertFunctionStep(self.createTsSettingsStep,
-                #                          prerequisites=pId,
-                #                          needsGPU=False)
+
+                pId = self._insertFunctionStep(self.estimateCtfStep, tsId,
+                                               prerequisites=pId,
+                                               needsGPU=True)
+
+                pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
+                                               prerequisites=pId,
+                                               needsGPU=False)
 
             closeSetStepDeps.append(pId)
 
@@ -317,31 +323,30 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         self.tsStarDir = self._getTsStarDir()
         makePath(*[self.tsmDir, self.tsDir, self.tsStarDir])
 
-    def createTsMovSettings(self):
+    def createTsMovSettingsStep(self):
         logger.info(cyanStr(">>> Creating frame-series settings..."))
         try:
             cmd = self._genCreateSettingsArgs()
             self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
         except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
-            traceback.print_exc()
+            raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
-    def createTsSettings(self):
+    def createTsSettingsStep(self):
         logger.info(cyanStr(">>> Creating tilt-series settings..."))
         try:
             cmd = self._genCreateSettingsTsArgs()
             self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
         except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}"))
-            traceback.print_exc()
+            raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
     def processTsMStep(self, tsId: str):
-        logger.info(cyanStr(f">>> {tsId} - performing the motion-correction..."))
         try:
+            logger.info(cyanStr(f">>> tsId = {tsId} - performing the motion-correction..."))
             tsMovie = self.tsMDict[tsId]
             warpMoviesNamesList = [abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
             warpMoviesNamesList = " ".join(warpMoviesNamesList)
-            self.fsMotionAndCTF(tsMovie, warpMoviesNamesList)
+            args = self._genFsMotionAndCTFArgs(tsMovie, warpMoviesNamesList)
+            self.runJob(Plugin.getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), args, executable='/bin/bash')
         except Exception as e:
             logger.error(redStr(f"{WARP_TOOLS} {FS_MOTION_AND_CTF} failed with the exception --> {e}"))
             traceback.print_exc()
@@ -352,16 +357,16 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             return
 
         try:
-            logger.info(cyanStr(f">>> {tsId} - creating the output tilt-series..."))
+            logger.info(cyanStr(f">>> tsId = {tsId} - creating the output tilt-series..."))
             newTs, tiList = self._prepareOutputTs(tsId)
             self._registerOutputTs(newTs, tiList)
 
         except Exception as e:
-            logger.error(redStr(f'tsId = {tsId} -> Unable to register the output with exception {e}. Skipping... '))
+            logger.error(redStr(f'tsId = {tsId} -> Unable to register the output TS with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-    def createTsMStar(self, tsId: str):
+    def createTsMStarStep(self, tsId: str):
         if tsId in self.failedTsIds:
             return
 
@@ -374,6 +379,91 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                                 f'with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
+
+    def estimateCtfStep(self, tsId: str):
+        if tsId in self.failedTsIds:
+            return
+
+        try:
+            logger.info(cyanStr(f">>> {tsId} - estimating the CTF..."))
+            tsMovie = self.tsMDict[tsId]
+            args = self._getCtfEstimationArgs(tsMovie)
+            self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
+
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
+                                f'with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
+
+    def createOutputCtfStep(self, tsId: str):
+        if tsId in self.failedTsIds:
+            return
+
+        try:
+            logger.info(cyanStr(f">>> tsId = {tsId} - creating the output CTF..."))
+            newCtfTomoSeries, ctfList = self._prepareOutputCtf(tsId)
+            self._registerOutputCtf(newCtfTomoSeries, ctfList)
+
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to register the output CTF with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
+
+    def _prepareOutputCtf(self, tsId: str) -> Tuple[CTFTomoSeries, List[CTFTomo]]:
+        tsDir = self._getTiltSeriesDir()
+        psdStack = join(tsDir, POWERSPECTRUM_FOLDER, tsId + '.mrc')
+        outTsSet = getattr(self, self._possibleOutputs.tiltSeries.name)
+        ts = outTsSet.getItem(TiltSeries.TS_ID_FIELD, tsId)
+        newCTFTomoSeries = CTFTomoSeries(tsId=tsId)
+        newCTFTomoSeries.copyInfo(ts)
+        newCTFTomoSeries.setTiltSeries(ts)
+
+        defocusFilePath = join(tsDir, tsId + '.xml')
+        ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
+        defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
+        defaultDefocusAngle = float(ctfData['DefocusAngle'])
+
+        ctfTomoList = []
+        acqOrderList = [ti.getAcquisitionOrder() for ti in ts.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD)]
+        for index, acqOrder in enumerate(acqOrderList):
+            if index not in gridCtfData["Nodes"]:
+                logger.info(yellowStr(f'\t>>> tsId = {tsId} - No Warp CTF defocus found for tilt index {index}'))
+                continue
+
+            defocus = gridCtfData["Nodes"][index]
+            defocusDelta = gridCtfData["DeltaNodes"].get(index, defaultDefocusDelta)
+            defocusAngle = gridCtfData["AngleNodes"].get(index, defaultDefocusAngle)
+            defocusU = defocus + defocusDelta
+            defocusV = defocus - defocusDelta
+
+            itemIndex = index + 1
+            newCTFTomo = CTFTomo()
+            newCTFTomo.setAcquisitionOrder(acqOrder)
+            newCTFTomo.setIndex(itemIndex)
+            newCTFTomo.setDefocusU(defocusU)
+            newCTFTomo.setDefocusV(defocusV)
+            newCTFTomo.setDefocusAngle(defocusAngle)
+            newCTFTomo.setResolution(0)
+            newCTFTomo.setFitQuality(0)
+            newCTFTomo.standardize()
+            newCTFTomo.setPsdFile(f"{itemIndex}@{psdStack}")
+
+            ctfTomoList.append(newCTFTomo)
+
+    def _registerOutputCtf(self, newCTFTomoSeries: CTFTomoSeries, ctfTomoList: List[CTFTomo]):
+        # CTFTomoSeries set
+        outputCtfSet = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
+        # CTFTomoSeries
+        outputCtfSet.append(newCTFTomoSeries)
+        # Tilt-images
+        for ctfTomo in ctfTomoList:
+            newCTFTomoSeries.append(ctfTomo)
+        # Data persistence
+        newCTFTomoSeries.write()
+        outputCtfSet.update(newCTFTomoSeries)
+        outputCtfSet.write()
+        self._store(outputCtfSet)
 
     def closeOutputStep(self):
         super()._closeOutputSet()
@@ -422,7 +512,10 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             f"--angpix {self.samplingRate}",
             f"--exposure {self.exposure}",
             f"--output {self._getFrameSeriesSettingsFn()}",
+
         ]
+        if self.fit_phase.get():
+            args.append("--fit_phase")
 
         # Handle EER specific arguments
         if extension == ".eer":
@@ -454,51 +547,80 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         self._genGainAndDarkCmd(args)
         return ' '.join(args)
 
-    def fsMotionAndCTF(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> None:
-        # Prepare a list of absolute paths for the movies to process
-        # Each movie name in micNamesList is converted to an absolute path and join them into a
-        # single string separated by spaces (warp specification)
-        inputTSAdquisition = tsMovie.getAcquisition()
-        argsDict = {
-            "--settings": self._getFrameSeriesSettingsFn(),
-            "--m_range_min": self.m_range_min.get(),
-            "--m_range_max": self.m_range_max.get(),
-            "--m_bfac": self.bfactor.get(),
-            '--c_window': self.window.get(),
-            '--c_range_min': self.range_min.get(),
-            '--c_range_max': self.range_max.get(),
-            '--c_defocus_min': self.defocus_min.get(),
-            '--c_defocus_max': self.defocus_max.get(),
-            "--c_voltage": int(inputTSAdquisition.getVoltage()),
-            "--c_cs": inputTSAdquisition.getSphericalAberration(),
-            "--c_amplitude": inputTSAdquisition.getAmplitudeContrast(),
-            "--input_data": warpMoviesNames,
-            "--output_processing": self.tsmDir,
-            "--perdevice": self.numberOfThreads.get()
-        }
-        gpuList = self.getGpuList()
-        if gpuList:
-            argsDict['--device_list'] = ' '.join(map(str, gpuList))
+    def _genFsMotionAndCTFArgs(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
+        """Execute frame series motion correction and CTF estimation using Warp tools.
 
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        cmd += ' --out_averages'
+        Args:
+            tsMovie (TiltSeriesM): The tilt series movie object containing acquisition parameters.
+            warpMoviesNames (str): Space-separated list or pattern of target movie absolute paths.
+        """
+        acquisition = tsMovie.getAcquisition()
+
+        # Construct base argument list directly
+        args = [
+            f"--settings {self._getFrameSeriesSettingsFn()}",
+            f"--m_range_min {self.m_range_min.get()}",
+            f"--m_range_max {self.m_range_max.get()}",
+            f"--m_bfac {self.bfactor.get()}",
+            f"--c_window {self.window.get()}",
+            f"--c_range_min {self.range_min.get()}",
+            f"--c_range_max {self.range_max.get()}",
+            f"--c_defocus_min {self.defocus_min.get()}",
+            f"--c_defocus_max {self.defocus_max.get()}",
+            f"--c_voltage {int(acquisition.getVoltage())}",
+            f"--c_cs {acquisition.getSphericalAberration()}",
+            f"--c_amplitude {acquisition.getAmplitudeContrast()}",
+            f"--input_data {warpMoviesNames}",
+            f"--output_processing {self.tsmDir}",
+        ]
+
+        # GPU and threads configuration
+        self._addThreadsAndGpusArgs(args)
+
+        # Default output parameters
+        args.append("--out_averages")
 
         if self.average_halves.get():
-            cmd += ' --out_average_halves'
+            args.append("--out_average_halves")
 
-        if self.x.get() and self.y.get() and self.z.get():
-            cmd += ' --m_grid %sx%sx%s' % (self.x.get(), self.y.get(), self.z.get())
+        # Motion grid dimensions
+        grid_x, grid_y, grid_z = self.x.get(), self.y.get(), self.z.get()
+        if grid_x and grid_y and grid_z:
+            args.append(f"--m_grid {grid_x}x{grid_y}x{grid_z}")
 
-        if self.c_x.get() and self.c_y.get() and self.c_z.get():
-            cmd += ' --c_grid %sx%sx%s' % (self.c_x.get(), self.c_y.get(), self.c_z.get())
+        # CTF grid dimensions
+        c_grid_x, c_grid_y, c_grid_z = self.c_x.get(), self.c_y.get(), self.c_z.get()
+        if c_grid_x and c_grid_y and c_grid_z:
+            args.append(f"--c_grid {c_grid_x}x{c_grid_y}x{c_grid_z}")
 
+        # Optional processing flags
         if self.fit_phase.get():
-            cmd += ' --c_fit_phase'
+            args.append("--c_fit_phase")
 
         if self.use_sum.get():
-            cmd += ' --c_use_sum'
+            args.append("--c_use_sum")
 
-        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), cmd, executable='/bin/bash')
+        return " ".join(args)
+
+    def _getCtfEstimationArgs(self, tsMovie: TiltSeriesM) -> str:
+        acq = tsMovie.getAcquisition()
+        args = [
+            f'--settings {self._getTiltSeriesSettingsFn()}',
+            f'--window {self.window.get()}',
+            f'--range_low {self.range_min.get()}',
+            f'--range_high {self.range_max.get()}',
+            f'--defocus_min {self.defocus_min.get()}',
+            f'--defocus_max {self.defocus_max.get()}',
+            f'--voltage {acq.getVoltage()}',
+            f'--cs {acq.getSphericalAberration()}',
+            f'--amplitude {acq.getAmplitudeContrast()}',
+            f'--auto_hand {self._getAutoHandNTs()}'
+        ]
+
+        # GPU and threads configuration
+        self._addThreadsAndGpusArgs(args)
+
+        return " ".join(args)
 
     def _prepareOutputTs(self, tsId: str) -> Tuple[TiltSeries, List[TiltImage]]:
         tsMovie = self.tsMDict[tsId]
@@ -562,96 +684,96 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         outTsSet.write()
         self._store(outTsSet)
 
-    def createTiltSeriesSettingStep(self, tsId):
-        self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
-        setOfTSMovies = self.inputTSMovies.get()
-        sr = setOfTSMovies.getSamplingRate()
-        exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
-        firstTSMovie = setOfTSMovies.getFirstItem()
-        fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
-        settingsFolder = abspath(self._getExtraPath(SETTINGS_FOLDER))
-        makePath(settingsFolder)
-        processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        makePath(processingFolder)
-        tsSettingFile = tsId + '_' + TILTSERIES_SETTINGS
-        tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
-        argsDict = {
-            "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
-            "--extension": "%s.tomostar" % tsId,
-            "--folder_processing": processingFolder,
-            '--angpix': sr,
-            "--output": tsSettingFilePath
-        }
-
-        if self.binfactorMode.get() == BINNING_FACTOR:
-            argsDict["--bin"] = self._getBinFactor(),
-        else:
-            argsDict["--bin_angpix"] = self.binTarget.get()
-
-        if exposure is not None:
-            argsDict['--exposure'] = exposure
-
-        if hasattr(self, 'tomo_thickness'):
-            z = self.tomo_thickness.get()
-            x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
-            y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
-
-            argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
-
-        if extension == '.eer':
-            argsDict['--eer_ngroups'] = self.eer_ngroups.get()
-            if self.eer_groupexposure.get():
-                argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
-
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-
-        self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
-
-    def dataPrepare(self, tsMovie):
-        """Creates the setting file that will be used by the different programs.
-           It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
-           the tiltimages."""
-        starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
-        makePath(starFolder)
-        imagesFolder = self._getExtraPath(FRAMES_FOLDER)
-        makePath(imagesFolder)
-
-        if tsMovie.isEnabled():
-            tsId = tsMovie.getTsId()
-            tiValues = {}
-            for ti in tsMovie.iterItems():
-                if ti.isEnabled():  # Excluding views
-                    dose = 0
-                    maskedFraction = 0
-                    shiftX = 0
-                    shiftY = 0
-                    axisAngle = 0
-                    amplitudeContrast = 0
-
-                    if tsMovie.hasAcquisition():
-                        axisAngle = tsMovie.getAcquisition().getTiltAxisAngle()
-                    if ti.getAcquisition():
-                        amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
-                        dose = ti.getAcquisition().getAccumDose()
-                    fileName = ti.getFileName()
-                    newBinaryName = basename(fileName)
-                    createLink(abspath(fileName), join(imagesFolder, basename(fileName)))
-
-                    tiltAngle = ti.getTiltAngle()
-
-                    tiValues[tiltAngle] = [
-                        newBinaryName,
-                        -tiltAngle,
-                        axisAngle,
-                        shiftX,
-                        shiftY,
-                        dose,
-                        amplitudeContrast,
-                        maskedFraction
-                    ]
-
-            tomoStarGenerate(tsId, tiValues, starFolder, 0)
-
+    # def createTiltSeriesSettingStep(self, tsId):
+    #     self.info(">>> Starting tilt-series settings creation (%s)..." % tsId)
+    #     setOfTSMovies = self.inputTSMovies.get()
+    #     sr = setOfTSMovies.getSamplingRate()
+    #     exposure = setOfTSMovies.getAcquisition().getDosePerFrame()
+    #     firstTSMovie = setOfTSMovies.getFirstItem()
+    #     fileName, extension = splitext(firstTSMovie.getFirstItem().getFileName())
+    #     settingsFolder = abspath(self._getExtraPath(SETTINGS_FOLDER))
+    #     makePath(settingsFolder)
+    #     processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+    #     makePath(processingFolder)
+    #     tsSettingFile = tsId + '_' + TILTSERIES_SETTINGS
+    #     tsSettingFilePath = abspath(join(self._getExtraPath(settingsFolder), tsSettingFile))
+    #     argsDict = {
+    #         "--folder_data": abspath(self._getExtraPath(TOMOSTAR_FOLDER)),
+    #         "--extension": "%s.tomostar" % tsId,
+    #         "--folder_processing": processingFolder,
+    #         '--angpix': sr,
+    #         "--output": tsSettingFilePath
+    #     }
+    #
+    #     if self.binfactorMode.get() == BINNING_FACTOR:
+    #         argsDict["--bin"] = self._getBinFactor(),
+    #     else:
+    #         argsDict["--bin_angpix"] = self.binTarget.get()
+    #
+    #     if exposure is not None:
+    #         argsDict['--exposure'] = exposure
+    #
+    #     if hasattr(self, 'tomo_thickness'):
+    #         z = self.tomo_thickness.get()
+    #         x = self.x_dimension.get() or setOfTSMovies.getDimensions()[0]
+    #         y = self.y_dimension.get() or setOfTSMovies.getDimensions()[1]
+    #
+    #         argsDict['--tomo_dimensions'] = f'{x}x{y}x{z}'
+    #
+    #     if extension == '.eer':
+    #         argsDict['--eer_ngroups'] = self.eer_ngroups.get()
+    #         if self.eer_groupexposure.get():
+    #             argsDict['--eer_groupexposure'] = self.eer_groupexposure.get()
+    #
+    #     cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
+    #
+    #     self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+    #
+    # # def dataPrepare(self, tsMovie):
+    #     """Creates the setting file that will be used by the different programs.
+    #        It also extracts the tiltimages from the tiltseries and generates the *.tomostar files based on
+    #        the tiltimages."""
+    #     starFolder = self._getExtraPath(TOMOSTAR_FOLDER)
+    #     makePath(starFolder)
+    #     imagesFolder = self._getExtraPath(FRAMES_FOLDER)
+    #     makePath(imagesFolder)
+    #
+    #     if tsMovie.isEnabled():
+    #         tsId = tsMovie.getTsId()
+    #         tiValues = {}
+    #         for ti in tsMovie.iterItems():
+    #             if ti.isEnabled():  # Excluding views
+    #                 dose = 0
+    #                 maskedFraction = 0
+    #                 shiftX = 0
+    #                 shiftY = 0
+    #                 axisAngle = 0
+    #                 amplitudeContrast = 0
+    #
+    #                 if tsMovie.hasAcquisition():
+    #                     axisAngle = tsMovie.getAcquisition().getTiltAxisAngle()
+    #                 if ti.getAcquisition():
+    #                     amplitudeContrast = ti.getAcquisition().getAmplitudeContrast()
+    #                     dose = ti.getAcquisition().getAccumDose()
+    #                 fileName = ti.getFileName()
+    #                 newBinaryName = basename(fileName)
+    #                 createLink(abspath(fileName), join(imagesFolder, basename(fileName)))
+    #
+    #                 tiltAngle = ti.getTiltAngle()
+    #
+    #                 tiValues[tiltAngle] = [
+    #                     newBinaryName,
+    #                     -tiltAngle,
+    #                     axisAngle,
+    #                     shiftX,
+    #                     shiftY,
+    #                     dose,
+    #                     amplitudeContrast,
+    #                     maskedFraction
+    #                 ]
+    #
+    #         tomoStarGenerate(tsId, tiValues, starFolder, 0)
+    #
     # def createHandednessSetting(self):
     #     """Create a Warp settings file containing all tilt-series."""
     #     tsMovies = self.inputTSMovies.get()
@@ -938,7 +1060,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             self.averageCorrelation = Float()
         summary.append(f"Aligned tiltseries: {tilseriesSize} of {self.inputTSMovies.get().getSize()}")
 
-        if self.hasAttribute(OUTPUT_CTF_SERIE):
+        if self.hasAttribute(OUTPUT_CTF_SERIES):
             ctfSize = self.CTFTomoSeries.getSize()
         summary.append(f"CTF estimated: {ctfSize} of {self.inputTSMovies.get().getSize()}")
 
@@ -1007,22 +1129,22 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         return outputSetOfTiltSeries
 
-    #
-    # def getOutputSetOfCTFTomoSeries(self, outputSetName):
-    #     outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
-    #
-    #     if outputSetOfCTFTomoSeries:
-    #         outputSetOfCTFTomoSeries.enableAppend()
-    #     else:
-    #         outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
-    #                                                              template='CTFmodels%s.sqlite')
-    #         tsSet = self.TiltSeries
-    #         outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
-    #         outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
-    #         self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
-    #         self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
-    #
-    #     return outputSetOfCTFTomoSeries
+
+    def getOutputSetOfCTFTomoSeries(self, outputSetName):
+        outputSetOfCTFTomoSeries = getattr(self, outputSetName, None)
+
+        if outputSetOfCTFTomoSeries:
+            outputSetOfCTFTomoSeries.enableAppend()
+        else:
+            outputSetOfCTFTomoSeries = SetOfCTFTomoSeries.create(self._getPath(),
+                                                                 template='CTFmodels%s.sqlite')
+            tsSet = self.TiltSeries
+            outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
+            outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
+            self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
+            self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
+
+        return outputSetOfCTFTomoSeries
 
     def _getBinFactor(self) -> int:
         """2^x pre-binning factor, applied in Fourier space when loading raw data.
@@ -1048,3 +1170,14 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         if self.darkFile:
             args.append(f'--defects_path {self.darkFile}')
 
+    def _addThreadsAndGpusArgs(self, args: List[str]) -> None:
+        args.append(f"--perdevice {self.numberOfThreads.get()}")
+        gpu_list = self.getGpuList()
+        if gpu_list:
+            device_ids = " ".join(map(str, gpu_list))
+            args.append(f"--device_list {device_ids}")
+
+    def _getAutoHandNTs(self) -> int:
+        tsMSet = self.getInputTSMovies()
+        nTsM = len(tsMSet)
+        return nTsM if nTsM < 10 else 10

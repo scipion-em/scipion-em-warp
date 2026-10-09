@@ -101,6 +101,25 @@ class ProtWarpExportParticles(ProtWarpBase):
                       default=None,
                       help='Particle diameter in angstroms')
 
+        form.addSection(label='Geometry / handedness')
+        form.addParam('flipZHand', params.BooleanParam, default=False,
+                      label='Invert Z coordinate (handedness)',
+                      help="Mirror particle Z coordinates through the tomogram mid-plane "
+                           "(z -> Nz-1-z) to reconcile the geometric handedness between the "
+                           "picking tomogram and Warp/M.\n\n"
+                           "NOTE: this is an improper (chirality-inverting) transform. It is "
+                           "correct for picking-stage coordinates whose orientations are the "
+                           "identity (the common case). If the input coordinates carry refined "
+                           "orientations, those Euler angles must be mirror-transformed "
+                           "consistently, which this option does NOT do.")
+        form.addParam('invertDefocusHand', params.BooleanParam, default=False,
+                      label='Invert defocus handedness',
+                      help="Run 'WarpTools ts_defocus_hand --set_flip' before export so the "
+                           "exported RELION tomogram hand (rlnTomoHand, derived from Warp's "
+                           "AreAnglesInverted flag) is flipped. Use this if M/RELION refinement "
+                           "converges to a mirror-image map. Independent of the Z-coordinate "
+                           "option above. Unchecked leaves Warp's default handedness untouched.")
+
         # form.addParam('writeStacks', params.EnumParam,
         #               label='Export type',
         #               default=0,
@@ -136,6 +155,8 @@ class ProtWarpExportParticles(ProtWarpBase):
         self.tsCtfEstimation(tsSr)
         self.updateCTFValues()
         self.tsImportAligments()
+        if self.invertDefocusHand.get():
+            self.tsDefocusHand()
 
         sRate = coordSet.getSamplingRate()
         outPath = self._getExtraPath(MATCHING_FOLDER)
@@ -162,10 +183,18 @@ class ProtWarpExportParticles(ProtWarpBase):
                 particlesTable = Table(columns=tomoStarFields)
 
             angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
+            zCoord = coord.getZ(BOTTOM_LEFT_CORNER)
+            if self.flipZHand.get():
+                # Mirror Z through the tomogram mid-plane (corner origin, 0-indexed
+                # voxels) to reconcile Warp/M handedness with the picking tomogram.
+                # Improper transform: only valid for identity-orientation coordinates
+                # (see the 'Invert Z coordinate' help). Normalisation by tomoDim[2]
+                # below is kept identical to X/Y to preserve the existing convention.
+                zCoord = (tomoDim[2] - 1) - zCoord
             particlesTable.addRow(
                 coord.getX(BOTTOM_LEFT_CORNER) / tomoDim[0],
                 coord.getY(BOTTOM_LEFT_CORNER) / tomoDim[1],
-                coord.getZ(BOTTOM_LEFT_CORNER) / tomoDim[2],
+                zCoord / tomoDim[2],
                 angles[0],
                 angles[1],
                 angles[2],
@@ -267,6 +296,17 @@ class ProtWarpExportParticles(ProtWarpBase):
             processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
             defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
             updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
+
+    def tsDefocusHand(self):
+        """Flip the per-tilt-series defocus/geometric handedness (Warp's
+        AreAnglesInverted flag), which ts_export_particles writes out as the RELION
+        tomogram hand (rlnTomoHand) for M. '--set_flip' is a pure metadata setter and
+        does not require the per-movie 2x2x1 defocus grid that '--check'/'--set_auto'
+        need."""
+        self.info(">>> Flipping defocus handedness (ts_defocus_hand --set_flip)...")
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
+        argsDict = {"--settings": os.path.abspath(settingFile)}
+        self.runProgram(argsDict, WARP_TOOLS, TS_DEFOCUS_HAND, othersCmds='--set_flip')
 
     def tsImportAligments(self):
         self.info(">>> Starting import alignments...")

@@ -34,7 +34,7 @@ import tomo.objects as tomoObj
 from tomo.protocols import ProtTomoBase
 
 from warp.constants import (TILTSERIES_SETTINGS, TILTSERIES_FOLDER, TS_CTF,
-                            OUTPUT_CTF_SERIE, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
+                            OUTPUT_CTF_SERIES, TS_RECONSTRUCTION, MRC_EXT, OUTPUT_TOMOGRAMS_NAME,
                             RECONSTRUCTION_FOLDER, RECONSTRUCTION_ODD_FOLDER, RECONSTRUCTION_EVEN_FOLDER,
                             TILTIMAGES_FOLDER, SETTINGS_FOLDER, TS_IMPORT_ALIGNMENTS, WARP_TOOLS)
 from warp.protocols.protocol_base import ProtWarpBase
@@ -51,7 +51,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
     """
 
     _label = 'tomo reconstruction'
-    _possibleOutputs = {OUTPUT_CTF_SERIE: tomoObj.SetOfCTFTomoSeries,
+    _possibleOutputs = {OUTPUT_CTF_SERIES: tomoObj.SetOfCTFTomoSeries,
                         OUTPUT_TOMOGRAMS_NAME: tomoObj.SetOfTomograms}
     _devStatus = BETA
 
@@ -284,7 +284,7 @@ class ProtWarpTomoReconstruct(ProtWarpBase, ProtTomoBase):
 
     def _summary(self):
         summary = []
-        if self.hasAttribute(OUTPUT_CTF_SERIE) and self.hasAttribute(OUTPUT_TOMOGRAMS_NAME):
+        if self.hasAttribute(OUTPUT_CTF_SERIES) and self.hasAttribute(OUTPUT_TOMOGRAMS_NAME):
             summary.append(f"Input tilt-series: {self.inputSet.get().getSize()}\n"
                            f"CTF Estimation: {self.CTFTomoSeries.getSize()}\n"
                            f"Tomograms: {self.Tomograms.getSize()}")
