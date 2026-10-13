@@ -62,7 +62,8 @@ def writeTsStar(tsM: TiltSeriesM, averagesDir: str, outputStarFile: str):
         fn = join('..', FRAMESERIES_FOLDER, basename(tiM.getFileName()))
         tsMTable.addRow(
             fn,
-            tiM.getTiltAngle(), # Don't invert angles option assumed (--dont_invert flips map handedness away from IMOD)
+            - tiM.getTiltAngle(), # Invert angles option assumed (--dont_invert flips map handedness away from
+            # IMOD)
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
             # so it is the dose pre-specimen
