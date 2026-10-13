@@ -45,6 +45,8 @@ from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF,
 from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile
 
+from tomo.tests import tiltAxisAngle
+
 logger = logging.getLogger(__name__)
 
 # Binning modes
@@ -730,13 +732,17 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
     def _getTomoDims(self) -> Tuple[int, int, int]:
         tsMSet = self.getInputTSMovies()
-        doSwap = 45 < abs(tsMSet.getAcquisition().getTiltAxisAngle()) < 135
         x = int(tsMSet.getDimensions()[0])
         y = int(tsMSet.getDimensions()[1])
-        z = int(max(x, y) / 3)
-        if doSwap:
-            x, y = y, x
-        return x, y, z
+        # The binary swap is exact only near φ∈{0,90}. Near 45°, the detector rectangle rotated into
+        # the tomogram frame needs a box larger than either W×H or H×W. The exact axis-aligned bounding
+        # box of the rotated rectangle covers every imaged pixel at any angle and self-pads near 45°I
+        tiltAxisAngle = tsMSet.getAcquisition().getTiltAxisAngle()
+        c, s = abs(math.cos(tiltAxisAngle)), abs(math.sin(tiltAxisAngle))
+        tomoX = math.ceil(x * c + y * s)
+        tomoY = math.ceil(x * s + y * c)
+        tomoZ = int(max(x, y) / 3)
+        return tomoX, tomoY, tomoZ
 
     def _genGainAndDarkCmd(self, args: List[str]) -> None:
         if self.gainFile:
