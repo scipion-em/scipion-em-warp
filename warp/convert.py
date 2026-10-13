@@ -51,7 +51,7 @@ tsStarFileFields = [
 ]
 
 
-def writeTsStar(tsM: TiltSeriesM, averagesDir: str, outputStarFile: str):
+def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
     """It creates a star file for a given tilt-series.
     It is expected to be executed after WarpTools fs_motion_and_ctf
     with the option --out_averages.

@@ -378,7 +378,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
         try:
             logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
-            writeTsStar(self.tsMDict[tsId], self._getAvgDir(), self._getOutTsStarFile(tsId))
+            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
@@ -741,7 +741,7 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         c, s = abs(math.cos(tiltAxisAngle)), abs(math.sin(tiltAxisAngle))
         tomoX = math.ceil(x * c + y * s)
         tomoY = math.ceil(x * s + y * c)
-        tomoZ = int(max(x, y) / 3)
+        tomoZ = int(max(tomoX, tomoY) / 3)
         return tomoX, tomoY, tomoZ
 
     def _genGainAndDarkCmd(self, args: List[str]) -> None:
