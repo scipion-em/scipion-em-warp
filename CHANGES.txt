@@ -1,4 +1,6 @@
-3.6.3: Validation added to prevent failure if binning is applied in the motioncorection
+3.6.3:
+ - Update installer to warp 2.0.0dev41 and cuda 12.9.
+ - Motioncorr for tilt-series fully refactored, unstreamified. Auto-handedness estimation added.
 3.6.2: Hotfix - fix the management of the command generation using the variable WARP_LOADER.
 3.6.1: Deploy test.
 3.6.0: Adding M refinement protocol
