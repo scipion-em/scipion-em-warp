@@ -23,6 +23,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # ******************************************************************************
+import glob
 import logging
 import math
 import traceback
@@ -43,7 +44,7 @@ from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF,
     FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, MRCS_EXT, EVEN, ODD, \
     POWERSPECTRUM_FOLDER
 from warp.convert import writeTsStar
-from warp.utils import parseCtfXMLFile
+from warp.utils import parseCtfXMLFile, _getDefocusHand
 
 from tomo.tests import tiltAxisAngle
 
@@ -719,6 +720,11 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
 
             tsSet = self._getOutputTsSet()
             outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
+            # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
+            # will read one and set the value as a set attribute
+            tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
+            defocusHand = _getDefocusHand(tsXmlFiles[0])
+            outputSetOfCTFTomoSeries.setHandedness(defocusHand)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
             self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
