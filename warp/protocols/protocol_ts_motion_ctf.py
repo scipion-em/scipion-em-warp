@@ -101,8 +101,9 @@ class ProtWarpTSMotionCorr(EMProtocol):
                       important=True,
                       label=Message.LABEL_INPUT_MOVS,
                       help='Select a set of previously imported tilt series movies.')
-        form.addSection('Alignment')
         self._defineAlignmentParams(form)
+        self._defineCtfParams(form)
+        self._defineEerParams(form)
         form.addParallelSection(threads=2, mpi=0)
         form.addHidden(GPU_LIST, StringParam, default='0',
                        expertLevel=LEVEL_ADVANCED,
@@ -113,6 +114,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
     @staticmethod
     def _defineAlignmentParams(form):
+        form.addSection('Alignment')
         form.addParam('binFactorMode', EnumParam,
                       display=EnumParam.DISPLAY_HLIST,
                       choices=['Binning factor', 'Target sampling rate (Angst/pix)'],
@@ -159,7 +161,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         form.addParam('average_halves', BooleanParam,
                       default=False,
-                      label='Do even and odd ?',
+                      label='Do even and odd?',
                       help='Export aligned averages of odd and even frames separately, e.g. for '
                            'noise2noise-based denoisers.')
 
@@ -176,6 +178,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
                       default=NO_FLIP,
                       display=EnumParam.DISPLAY_COMBO)
 
+    @staticmethod
+    def _defineEerParams(form):
         form.addSection("EER")
         form.addParam('EERtext', LabelParam,
                       label="These options are ignored for non-EER files.")
@@ -202,6 +206,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
                            "\nFractionate such that each fraction "
                            "has about 0.5 to 1.25 e/A2.")
 
+    @staticmethod
+    def _defineCtfParams(form):
         form.addSection(label="CTF")
         form.addParam('estimateCTF', BooleanParam, default=True,
                       label='Estimate the CTF ?',
