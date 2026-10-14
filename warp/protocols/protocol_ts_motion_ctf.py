@@ -79,7 +79,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
     _label = 'tilt-series motion correction and ctf estimation'
     _devStatus = BETA
     _possibleOutputs = WarpTsMcorrOutputs
-    evenOddCapable = True
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -92,7 +91,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
         self.tsStarDir = None
         self.gainFile = None
         self.darkFile = None
-        self.averageCorrelation = Float()
         self.failedTsIds = []
 
     # -------------------------- DEFINE param functions -----------------------
