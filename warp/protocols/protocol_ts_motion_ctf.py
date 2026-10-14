@@ -46,8 +46,6 @@ from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF,
 from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
-from tomo.tests import tiltAxisAngle
-
 logger = logging.getLogger(__name__)
 
 # Binning modes
@@ -73,7 +71,7 @@ class WarpTsMcorrOutputs(Enum):
     ctfs = SetOfCTFTomoSeries
 
 
-class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
+class ProtWarpTSMotionCorr(EMProtocol):
     """ This protocol wraps WarpTools programs.
         Estimate motion in frame series, produce aligned averages, estimate CTF
     """
@@ -107,7 +105,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                       help='Select a set of previously imported tilt series movies.')
         form.addSection('Alignment')
         self._defineAlignmentParams(form)
-        # ProtTSMovieAlignBase._defineStreamingParams(self, form)
         form.addParallelSection(threads=2, mpi=0)
         form.addHidden(GPU_LIST, StringParam, default='0',
                        expertLevel=LEVEL_ADVANCED,
@@ -165,7 +162,8 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
         form.addParam('average_halves', BooleanParam,
                       default=False,
                       label='Do even and odd ?',
-                      help='Export aligned averages of odd and even frames separately, e.g. for denoiser training')
+                      help='Export aligned averages of odd and even frames separately, e.g. for '
+                           'noise2noise-based denoisers.')
 
         form.addSection(label="Gain and defects")
         form.addParam('gainSwap', EnumParam,
@@ -205,8 +203,8 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                            "have this exposure in e-/A^2; this overrides EER fractionation"
                            "\nFractionate such that each fraction "
                            "has about 0.5 to 1.25 e/A2.")
-        form.addSection(label="CTF")
 
+        form.addSection(label="CTF")
         form.addParam('estimateCTF', BooleanParam, default=True,
                       label='Estimate the CTF ?',
                       help='Estimate the CTF')
@@ -263,12 +261,6 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
                       label='Use the movie average',
                       help='Use the movie average spectrum instead of the average of individual '
                            'frames spectra. Can help in the absence of an energy filter, or when signal is low')
-
-        form.addParam('handedness', BooleanParam, default=False,
-                      condition='estimateCTF',
-                      expertLevel=LEVEL_ADVANCED,
-                      label='Check the handedness ?',
-                      help='Checking defocus handedness across a dataset ')
 
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
