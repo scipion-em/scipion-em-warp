@@ -791,26 +791,19 @@ class ProtWarpTSMotionCorr(EMProtocol):  # , ProtTSMovieAlignBase):
             outCtfSet = self._getOutputCtfSet()
             if outTsSet:
                 tilseriesSize = len(outTsSet)
-            else:
-                self.averageCorrelation = Float()
             summary.append(f"Aligned tiltseries: {tilseriesSize} of {inputMoviesSize}")
 
             if outCtfSet:
                 ctfSize = len(outCtfSet)
             summary.append(f"CTF estimated: {ctfSize} of {inputMoviesSize}")
 
-        # if self.handedness.get():
-        #     correlation = self.averageCorrelation.get()
-        #
-        #     if correlation > 0:
-        #         summary.append(f'Defocus handedness: {correlation:.3f} '
-        #                        '(no flip required)')
-        #     elif correlation < 0:
-        #         summary.append(f'Defocus handedness: {correlation:.3f} '
-        #                        '(flip required)'
-        #                        )
-        #     else:
-        #         summary.append('Defocus handedness: Not ready')
+            if self.estimateCTF.get():
+                if not outCtfSet:
+                    summary.append("*Error: No CTF estimated!*\n"
+                                   "Check the Output Log > run.stderr to check the error.")
+                elif outCtfSet and tilseriesSize > ctfSize:
+                    summary.append("*Warning: some CTF were not estimated!*\n"
+                                   "Check the Output Log > run.stderr to check the details.")
 
         return summary
 
