@@ -378,7 +378,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
             self.failedTsIds.append(tsId)
 
     def createTsMStarStep(self, tsId: str):
-        if not not self.estimateCtf.get() or tsId in self.failedTsIds:
+        if not self.estimateCtf.get() or tsId in self.failedTsIds:
             return
         try:
             logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
