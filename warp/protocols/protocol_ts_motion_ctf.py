@@ -269,6 +269,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self._initialize()
+        mcDeps = []
         closeSetStepDeps = []
         pId = self._insertFunctionStep(self.createTsMovSettingsStep,
                                        prerequisites=[],
@@ -277,6 +278,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
         pId = self._insertFunctionStep(self.createTsSettingsStep,
                                        prerequisites=pId,
                                        needsGPU=False)
+
         for tsId, tsM in self.tsMDict.items():
             pId = self._insertFunctionStep(self.processTsMStep, tsId,
                                            prerequisites=pId,
@@ -285,20 +287,23 @@ class ProtWarpTSMotionCorr(EMProtocol):
             pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
+            mcDeps.append(pId)
 
-            pId = self._insertFunctionStep(self.estimateCtfStep,
-                                           prerequisites=pId,
-                                           needsGPU=True)
+        # Warp estimates the CTFs all at once
+        ctfId = self._insertFunctionStep(self.estimateCtfStep,
+                                         prerequisites=mcDeps,
+                                         needsGPU=True)
 
+        for tsId, tsM in self.tsMDict.items():
             pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
-                                           prerequisites=pId,
+                                           prerequisites=ctfId,
                                            needsGPU=False)
 
             pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
 
-        closeSetStepDeps.append(pId)
+            closeSetStepDeps.append(pId)
 
         self._insertFunctionStep(self.closeOutputStep,
                                  prerequisites=closeSetStepDeps,
@@ -711,7 +716,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         return outputSetOfTiltSeries
 
-
     def getOutputSetOfCTFTomoSeries(self):
         outputSetName = self._possibleOutputs.ctfs.name
         outputSetOfCTFTomoSeries = self._getOutputCtfSet()
@@ -834,4 +838,3 @@ class ProtWarpTSMotionCorr(EMProtocol):
                 errorMsg.append('Target sampling rate for binning must be greater than 0.')
 
         return errorMsg
-
