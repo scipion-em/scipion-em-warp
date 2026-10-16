@@ -356,6 +356,31 @@ class ProtWarpTSMotionCorr(EMProtocol):
             traceback.print_exc()
             self.failedTsIds.append(tsId)
 
+    def createTsMStarStep(self, tsId: str):
+        if not self.estimateCTF.get() or tsId in self.failedTsIds:
+            return
+        try:
+            logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
+            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
+
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
+                                f'with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
+
+    def estimateCtfStep(self):
+        if not self.estimateCTF.get():
+            return
+        try:
+            logger.info(cyanStr(f">>> Estimating the CTF..."))
+            args = self._getCtfEstimationArgs()
+            self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
+
+        except Exception as e:
+            logger.error(redStr(f"{WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
+            logger.error(traceback.format_exc())
+
     def createOutputTsStep(self, tsId: str):
         if tsId in self.failedTsIds:
             return
@@ -376,31 +401,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output TS with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
-
-    def createTsMStarStep(self, tsId: str):
-        if not self.estimateCtf.get() or tsId in self.failedTsIds:
-            return
-        try:
-            logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
-            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
-
-        except Exception as e:
-            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
-                                f'with exception {e}. Skipping... '))
-            logger.error(traceback.format_exc())
-            self.failedTsIds.append(tsId)
-
-    def estimateCtfStep(self):
-        if not self.estimateCtf.get():
-            return
-        try:
-            logger.info(cyanStr(f">>> Estimating the CTF..."))
-            args = self._getCtfEstimationArgs()
-            self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
-
-        except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
-            logger.error(traceback.format_exc())
 
     def createOutputCtfStep(self, tsId: str):
         if tsId in self.failedTsIds:
