@@ -362,7 +362,12 @@ class ProtWarpTSMotionCorr(EMProtocol):
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - creating the output tilt-series..."))
             newTs, tiList = self._prepareOutputTs(tsId)
-            self._registerOutputTs(newTs, tiList)
+            # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
+            # will read one and set the value as a set attribute
+            tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
+            defocusHand = _getDefocusHand(tsXmlFiles[0])
+            newTs.setHandedness(defocusHand)
+            self._registerOutputTs(newTs, tiList, defocusHand)
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output TS with exception {e}. Skipping... '))
@@ -614,9 +619,9 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         return newTs, tiList
 
-    def _registerOutputTs(self, newTs: TiltSeries, tiList: List[TiltImage]):
+    def _registerOutputTs(self, newTs: TiltSeries, tiList: List[TiltImage], defocusHand: int):
         # TS set
-        outTsSet = self.getOutputSetOfTS()
+        outTsSet = self.getOutputSetOfTS(defocusHand)
         # TS
         outTsSet.append(newTs)
         # Tilt-images
@@ -685,7 +690,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
         outputCtfSet.write()
         self._store(outputCtfSet)
 
-    def getOutputSetOfTS(self) -> SetOfTiltSeries:
+    def getOutputSetOfTS(self, defocusHand: int) -> SetOfTiltSeries:
         outputName = self._possibleOutputs.tiltSeries.name
         outputSetOfTiltSeries = self._getOutputTsSet()
 
@@ -697,6 +702,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
             tsMovieSet = tsMSetPointer.get()
             outputSetOfTiltSeries.setSamplingRate(self.outSamplingRate)
             outputSetOfTiltSeries.setAcquisition(tsMovieSet.getAcquisition())
+            outputSetOfTiltSeries.setHandedness(defocusHand)
             outputSetOfTiltSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputName: outputSetOfTiltSeries})
             self._defineSourceRelation(tsMSetPointer, outputSetOfTiltSeries)
@@ -716,11 +722,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
             tsSet = self._getOutputTsSet()
             outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
-            # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
-            # will read one and set the value as a set attribute
-            tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
-            defocusHand = _getDefocusHand(tsXmlFiles[0])
-            outputSetOfCTFTomoSeries.setHandedness(defocusHand)
             outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
             self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
