@@ -269,7 +269,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self._initialize()
-        beginCtfReqDeps = []
         closeSetStepDeps = []
         pId = self._insertFunctionStep(self.createTsMovSettingsStep,
                                        prerequisites=[],
@@ -283,24 +282,21 @@ class ProtWarpTSMotionCorr(EMProtocol):
                                            prerequisites=pId,
                                            needsGPU=True)
 
-            pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
+            pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
 
-            if self.estimateCTF.get():
-                pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
-                                               prerequisites=beginCtfReqDeps,
-                                               needsGPU=False)
-
-        if self.estimateCTF.get():
             pId = self._insertFunctionStep(self.estimateCtfStep,
                                            prerequisites=pId,
                                            needsGPU=True)
 
-            for tsId, tsM in self.tsMDict.items():
-                pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
-                                               prerequisites=pId,
-                                               needsGPU=False)
+            pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=False)
+
+            pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=False)
 
         closeSetStepDeps.append(pId)
 
@@ -361,11 +357,13 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - creating the output tilt-series..."))
+            defocusHand = None
             newTs, tiList = self._prepareOutputTs(tsId)
-            # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
-            # will read one and set the value as a set attribute
-            tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
-            defocusHand = _getDefocusHand(tsXmlFiles[0])
+            if self.estimateCTF.get():
+                # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
+                # will read one and set the value as a set attribute
+                tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
+                defocusHand = _getDefocusHand(tsXmlFiles[0])
             newTs.setHandedness(defocusHand)
             self._registerOutputTs(newTs, tiList, defocusHand)
 
@@ -375,9 +373,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
             self.failedTsIds.append(tsId)
 
     def createTsMStarStep(self, tsId: str):
-        if tsId in self.failedTsIds:
+        if not not self.estimateCtf.get() or tsId in self.failedTsIds:
             return
-
         try:
             logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
             writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
@@ -389,6 +386,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
             self.failedTsIds.append(tsId)
 
     def estimateCtfStep(self):
+        if not self.estimateCtf.get():
+            return
         try:
             logger.info(cyanStr(f">>> Estimating the CTF..."))
             args = self._getCtfEstimationArgs()
@@ -619,7 +618,10 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         return newTs, tiList
 
-    def _registerOutputTs(self, newTs: TiltSeries, tiList: List[TiltImage], defocusHand: int):
+    def _registerOutputTs(self,
+                          newTs: TiltSeries,
+                          tiList: List[TiltImage],
+                          defocusHand: Optional[int]):
         # TS set
         outTsSet = self.getOutputSetOfTS(defocusHand)
         # TS
@@ -690,7 +692,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
         outputCtfSet.write()
         self._store(outputCtfSet)
 
-    def getOutputSetOfTS(self, defocusHand: int) -> SetOfTiltSeries:
+    def getOutputSetOfTS(self, defocusHand: Optional[int]) -> SetOfTiltSeries:
         outputName = self._possibleOutputs.tiltSeries.name
         outputSetOfTiltSeries = self._getOutputTsSet()
 
