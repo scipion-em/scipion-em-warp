@@ -23,26 +23,26 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # ******************************************************************************
-import glob
 import logging
 import math
 import traceback
+from collections import Counter
 from enum import Enum
-from os.path import splitext, abspath, dirname, join, basename
+from os.path import splitext, abspath, dirname, join, basename, exists
 from typing import Union, Tuple, List, Optional
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from pwem.protocols import EMProtocol
 from pyworkflow import BETA
-from pyworkflow.object import Set, Float, Pointer
+from pyworkflow.object import Set, Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
 from pyworkflow.utils import cyanStr, Message, makePath, redStr, replaceBaseExt, yellowStr
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries,
-                          TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
-from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF, FRAMESERIES_FOLDER, AVERAGE_FOLDER, \
-    FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, MRCS_EXT, EVEN, ODD, \
-    POWERSPECTRUM_FOLDER
+                          TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo, TomoAcquisition)
+from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF, TS_DEFOCUS_HAND, FRAMESERIES_FOLDER, \
+    AVERAGE_FOLDER, FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, \
+    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION
 from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
@@ -64,6 +64,11 @@ FLIP_Y = 2
 # Gain transpose options
 NO_SWAP = 0
 TRANSPOSE_XY = 1
+
+# Fixed motion-correction patch size used by Warp fs_motion (WarpLib Movie.ProcessShift.cs).
+# If binning shrinks the frame below this on either axis, the patch grid degenerates and the
+# native worker crashes with a cuFFT CUFFT_INVALID_SIZE error.
+MOTION_WINDOW = 768
 
 
 class WarpTsMcorrOutputs(Enum):
@@ -92,11 +97,13 @@ class ProtWarpTSMotionCorr(EMProtocol):
         self.gainFile = None
         self.darkFile = None
         self.failedTsIds = []
+        # Per-tilt-series defocus handedness (+1 / -1)
+        self.tsHandednessDict = {}
 
     # -------------------------- DEFINE param functions -----------------------
 
     def _defineParams(self, form):
-        form.addSection('Input')
+        form.addSection(Message.LABEL_INPUT)
         form.addParam('inputTSMovies', PointerParam, pointerClass=SetOfTiltSeriesM,
                       important=True,
                       label=Message.LABEL_INPUT_MOVS,
@@ -269,7 +276,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self._initialize()
-        mcDeps = []
         closeSetStepDeps = []
         pId = self._insertFunctionStep(self.createTsMovSettingsStep,
                                        prerequisites=[],
@@ -287,16 +293,17 @@ class ProtWarpTSMotionCorr(EMProtocol):
             pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
-            mcDeps.append(pId)
 
-        # Warp estimates the CTFs all at once
-        ctfId = self._insertFunctionStep(self.estimateCtfStep,
-                                         prerequisites=mcDeps,
-                                         needsGPU=True)
+            pId = self._insertFunctionStep(self.estimateCtfStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=True)
 
-        for tsId, tsM in self.tsMDict.items():
+            pId = self._insertFunctionStep(self.estimateHandednessStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=True)
+
             pId = self._insertFunctionStep(self.createOutputTsStep, tsId,
-                                           prerequisites=ctfId,
+                                           prerequisites=pId,
                                            needsGPU=False)
 
             pId = self._insertFunctionStep(self.createOutputCtfStep, tsId,
@@ -313,8 +320,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
     def _initialize(self):
         tsMSet = self.getInputTSMovies()
         self.samplingRate = tsMSet.getSamplingRate()
+        self.outSamplingRate = self._getOutputSamplingRate()
         self.exposure = tsMSet.getAcquisition().getDosePerFrame()
-        self.outSamplingRate = tsMSet.getSamplingRate() * self.binFactor.get()
         self.tsMDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
         # Gain and defects
         gainFile = tsMSet.getGain()
@@ -344,15 +351,16 @@ class ProtWarpTSMotionCorr(EMProtocol):
             raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
     def processTsMStep(self, tsId: str):
+        program = FS_MOTION_AND_CTF if self.estimateCTF.get() else FS_MOTION
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - performing the motion-correction..."))
             tsMovie = self.tsMDict[tsId]
             warpMoviesNamesList = [abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
             warpMoviesNamesList = " ".join(warpMoviesNamesList)
-            args = self._genFsMotionAndCTFArgs(tsMovie, warpMoviesNamesList)
-            self.runJob(Plugin.getProgram(WARP_TOOLS, FS_MOTION_AND_CTF), args, executable='/bin/bash')
+            args = self._genMcArgs(program, tsMovie, warpMoviesNamesList)
+            self.runJob(Plugin.getProgram(WARP_TOOLS, program), args, executable='/bin/bash')
         except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {FS_MOTION_AND_CTF} failed with the exception --> {e}"))
+            logger.error(redStr(f"{WARP_TOOLS} {program} failed with the exception --> {e}"))
             traceback.print_exc()
             self.failedTsIds.append(tsId)
 
@@ -369,17 +377,41 @@ class ProtWarpTSMotionCorr(EMProtocol):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-    def estimateCtfStep(self):
-        if not self.estimateCTF.get():
+    def estimateCtfStep(self, tsId: str):
+        if not self.estimateCTF.get() or tsId in self.failedTsIds:
             return
+
         try:
-            logger.info(cyanStr(f">>> Estimating the CTF..."))
-            args = self._getCtfEstimationArgs()
+            # CTF estimation for this single tilt-series (.tomostar)
+            logger.info(cyanStr(f">>> tsId = {tsId} - estimating the CTF..."))
+            args = self._getCtfEstimationArgs(tsId)
             self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
 
         except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
+            logger.error(redStr(f"tsId = {tsId} -> {WARP_TOOLS} {TS_CTF} failed with the exception --> {e}"))
             logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
+
+    def estimateHandednessStep(self, tsId: str):
+        if not self.estimateCTF.get() or tsId in self.failedTsIds:
+            return
+
+        try:
+            # Defocus handedness for this single tilt-series
+            logger.info(cyanStr(f">>> tsId = {tsId} - estimating the defocus handedness..."))
+            args = [
+                f'--settings {self._getTiltSeriesSettingsFn()}',
+                f'--input_data {self._getOutTsStarFile(tsId)}',
+                '--set_auto',
+            ]
+            self.runJob(Plugin.getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), ' '.join(args), executable='/bin/bash')
+            xmlPath = join(self._getTiltSeriesDir(), tsId + '.xml')
+            self.tsHandednessDict[tsId] = _getDefocusHand(xmlPath)
+
+        except Exception as e:
+            logger.warning(yellowStr(f"tsId = {tsId} -> {WARP_TOOLS} {TS_DEFOCUS_HAND} failed with the exception "
+                                     f"--> {e}. This tilt-series will not contribute to the handedness vote."))
+            logger.warning(traceback.format_exc())
 
     def createOutputTsStep(self, tsId: str):
         if tsId in self.failedTsIds:
@@ -387,15 +419,19 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - creating the output tilt-series..."))
-            defocusHand = None
             newTs, tiList = self._prepareOutputTs(tsId)
+            perTsHand = None
+            majorityHand = None
             if self.estimateCTF.get():
-                # Defocus handedness: although it is estimated for the whole set, it is stored per ts, so we
-                # will read one and set the value as a set attribute
-                tsXmlFiles = glob.glob(join(self._getTiltSeriesDir(), '*.xml'))
-                defocusHand = _getDefocusHand(tsXmlFiles[0])
-            newTs.setHandedness(defocusHand)
-            self._registerOutputTs(newTs, tiList, defocusHand)
+                # Per-tilt-series handedness (this series' own XML) for the TS, and the
+                # dataset-wide majority vote for the output set metadata object.
+                xmlPath = join(self._getTiltSeriesDir(), tsId + '.xml')
+                if exists(xmlPath):
+                    perTsHand = _getDefocusHand(xmlPath)
+                majorityHand = self._getMajorityHandedness()
+            # Fall back to the majority if this single series' value is unavailable
+            newTs.setHandedness(perTsHand if perTsHand is not None else majorityHand)
+            self._registerOutputTs(newTs, tiList, majorityHand)
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output TS with exception {e}. Skipping... '))
@@ -403,7 +439,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
             self.failedTsIds.append(tsId)
 
     def createOutputCtfStep(self, tsId: str):
-        if tsId in self.failedTsIds:
+        if not self.estimateCTF.get() or tsId in self.failedTsIds:
             return
 
         try:
@@ -448,6 +484,11 @@ class ProtWarpTSMotionCorr(EMProtocol):
     def _getTiltSeriesDir(self) -> str:
         return abspath(self._getExtraPath(TILTSERIES_FOLDER))
 
+    def _genBinningArgs(self):
+        binMode = self.binFactorMode.get()
+        binTarget = self.binTarget.get()
+        return f"--bin {self._getBinFactor()}" if binMode == BINNING_FACTOR else f"--bin_angpix {binTarget}"
+
     def _genCreateSettingsArgs(self) -> str:
         ts_movies = self.getInputTSMovies()
         first_ts_movie = ts_movies.getFirstItem()
@@ -459,11 +500,10 @@ class ProtWarpTSMotionCorr(EMProtocol):
             f"--folder_data {folder_data}",
             f"--extension '*{extension}'",
             f"--folder_processing {self.tsmDir}",
-            f"--bin {self._getBinFactor()}",
+            self._genBinningArgs(),
             f"--angpix {self.samplingRate}",
             f"--exposure {self.exposure}",
             f"--output {self._getFrameSeriesSettingsFn()}",
-
         ]
         if self.fit_phase.get():
             args.append("--fit_phase")
@@ -492,57 +532,68 @@ class ProtWarpTSMotionCorr(EMProtocol):
             f'--folder_data {self.tsStarDir}',
             f'--extension *{TOMOSTAR_EXT}',
             f'--angpix {self.samplingRate}',
+            # self._genBinningArgs(),
             f'--exposure {self.exposure}',
             f'--tomo_dimensions {x}x{y}x{z}'
         ]
         self._genGainAndDarkCmd(args)
         return ' '.join(args)
 
-    def _genFsMotionAndCTFArgs(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
-        """Execute frame series motion correction and CTF estimation using Warp tools.
-
-        Args:
-            tsMovie (TiltSeriesM): The tilt series movie object containing acquisition parameters.
-            warpMoviesNames (str): Space-separated list or pattern of target movie absolute paths.
-        """
+    def _genMcArgs(self, program: str, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
         acquisition = tsMovie.getAcquisition()
-
-        # Construct base argument list directly
-        args = [
+        commonArgs = [
             f"--settings {self._getFrameSeriesSettingsFn()}",
-            f"--m_range_min {self.m_range_min.get()}",
-            f"--m_range_max {self.m_range_max.get()}",
-            f"--m_bfac {self.bfactor.get()}",
-            f"--c_window {self.window.get()}",
-            f"--c_range_min {self.range_min.get()}",
-            f"--c_range_max {self.range_max.get()}",
-            f"--c_defocus_min {self.defocus_min.get()}",
-            f"--c_defocus_max {self.defocus_max.get()}",
-            f"--c_voltage {int(acquisition.getVoltage())}",
-            f"--c_cs {acquisition.getSphericalAberration()}",
-            f"--c_amplitude {acquisition.getAmplitudeContrast()}",
             f"--input_data {warpMoviesNames}",
             f"--output_processing {self.tsmDir}",
         ]
 
         # GPU and threads configuration
-        self._addThreadsAndGpusArgs(args)
+        self._addThreadsAndGpusArgs(commonArgs)
 
-        # Default output parameters
-        args.append("--out_averages")
+        # Motion grid dimensions
+        grid_x, grid_y, grid_z = self.x.get(), self.y.get(), self.z.get()
+
+        if program == FS_MOTION_AND_CTF:
+            if grid_x and grid_y and grid_z:
+                commonArgs.append(f"--m_grid {grid_x}x{grid_y}x{grid_z}")
+            return self._genFsMotionAndCTFArgs(commonArgs, acquisition)
+
+        else:  # Only motion-correction
+            args = [f"--range_min {self.m_range_min.get()}",
+                    f"--range_max {self.m_range_max.get()}",
+                    f"--bfac {self.bfactor.get()}",
+                    '--averages']
+            if grid_x and grid_y and grid_z:
+                commonArgs.append(f"--grid {grid_x}x{grid_y}x{grid_z}")
+            if self.average_halves.get():
+                commonArgs.append("--average_halves")
+            return " ".join(commonArgs + args)
+
+    def _genFsMotionAndCTFArgs(self, commonArgs: List[str], acq: TomoAcquisition) -> str:
+        args = [f"--m_range_min {self.m_range_min.get()}",
+                f"--m_range_max {self.m_range_max.get()}",
+                f"--m_bfac {self.bfactor.get()}",
+                f"--c_window {self.window.get()}",
+                f"--c_range_min {self.range_min.get()}",
+                f"--c_range_max {self.range_max.get()}",
+                f"--c_defocus_min {self.defocus_min.get()}",
+                f"--c_defocus_max {self.defocus_max.get()}",
+                f"--c_voltage {int(acq.getVoltage())}",
+                f"--c_cs {acq.getSphericalAberration()}",
+                f"--c_amplitude {acq.getAmplitudeContrast()}",
+                "--out_averages"]
 
         if self.average_halves.get():
             args.append("--out_average_halves")
 
-        # Motion grid dimensions
-        grid_x, grid_y, grid_z = self.x.get(), self.y.get(), self.z.get()
-        if grid_x and grid_y and grid_z:
-            args.append(f"--m_grid {grid_x}x{grid_y}x{grid_z}")
-
-        # CTF grid dimensions
+        # CTF grid dimensions. ts_defocus_hand needs a local defocus gradient, i.e. a
+        # frame-series CTF grid of at least 2x2x1, so fall back to that minimum when the
+        # user did not specify an explicit grid and the CTF is being estimated.
         c_grid_x, c_grid_y, c_grid_z = self.c_x.get(), self.c_y.get(), self.c_z.get()
         if c_grid_x and c_grid_y and c_grid_z:
             args.append(f"--c_grid {c_grid_x}x{c_grid_y}x{c_grid_z}")
+        elif self.estimateCTF.get():
+            args.append("--c_grid 2x2x1")
 
         # Optional processing flags
         if self.fit_phase.get():
@@ -551,12 +602,15 @@ class ProtWarpTSMotionCorr(EMProtocol):
         if self.use_sum.get():
             args.append("--c_use_sum")
 
-        return " ".join(args)
+        allArgs = commonArgs + args
 
-    def _getCtfEstimationArgs(self) -> str:
+        return " ".join(allArgs)
+
+    def _getCtfEstimationArgs(self, tsId: str) -> str:
         acq = self.getInputTSMovies().getAcquisition()
         args = [
             f'--settings {self._getTiltSeriesSettingsFn()}',
+            f'--input_data {self._getOutTsStarFile(tsId)}',
             f'--window {self.window.get()}',
             f'--range_low {self.range_min.get()}',
             f'--range_high {self.range_max.get()}',
@@ -565,7 +619,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
             f'--voltage {acq.getVoltage():.0f}',
             f'--cs {acq.getSphericalAberration()}',
             f'--amplitude {acq.getAmplitudeContrast()}',
-            f'--auto_hand {self._getAutoHandNTs()}'
         ]
 
         # GPU and threads configuration
@@ -710,7 +763,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
             outputSetOfTiltSeries.setSamplingRate(self.outSamplingRate)
             outputSetOfTiltSeries.setAcquisition(tsMovieSet.getAcquisition())
             outputSetOfTiltSeries.setHandedness(defocusHand)
-            outputSetOfTiltSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputName: outputSetOfTiltSeries})
             self._defineSourceRelation(tsMSetPointer, outputSetOfTiltSeries)
 
@@ -728,7 +780,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
             tsSet = self._getOutputTsSet()
             outputSetOfCTFTomoSeries.setSetOfTiltSeries(tsSet)
-            outputSetOfCTFTomoSeries.setStreamState(Set.STREAM_OPEN)
             self._defineOutputs(**{outputSetName: outputSetOfCTFTomoSeries})
             self._defineCtfRelation(outputSetOfCTFTomoSeries, tsSet)
 
@@ -772,16 +823,51 @@ class ProtWarpTSMotionCorr(EMProtocol):
             device_ids = " ".join(map(str, gpu_list))
             args.append(f"--device_list {device_ids}")
 
-    def _getAutoHandNTs(self) -> int:
-        tsMSet = self.getInputTSMovies()
-        nTsM = len(tsMSet)
-        return nTsM if nTsM < 10 else 10
+    def _getMajorityHandedness(self) -> Optional[int]:
+        """Majority vote of the per-tilt-series defocus handedness (+1 / -1).
+
+        Uses the values recorded during CTF estimation; on a continued execution
+        (where those steps are skipped) it falls back to reading each ``<tsId>.xml``.
+        Returns None if no handedness could be determined. A tie falls back to -1
+        (AreAnglesInverted = False, Warp's 'no flip' default)."""
+        votes = list(self.tsHandednessDict.values())
+        if not votes:  # continued run: recover from the persisted XMLs
+            tsDir = self._getTiltSeriesDir()
+            for tsId in self.tsMDict:
+                if tsId in self.failedTsIds:
+                    continue
+                xmlPath = join(tsDir, tsId + '.xml')
+                if not exists(xmlPath):
+                    continue
+                try:
+                    votes.append(_getDefocusHand(xmlPath))
+                except Exception:
+                    continue
+
+        if not votes:
+            return None
+
+        counts = Counter(votes)
+        plus, minus = counts.get(1, 0), counts.get(-1, 0)
+        logger.info(cyanStr(f">>> Defocus handedness vote across {len(votes)} tilt-series: "
+                            f"flip(+1)={plus}, no-flip(-1)={minus}"))
+        if plus == minus:
+            logger.warning(yellowStr(">>> Handedness vote tied; defaulting to -1 (no flip)."))
+            return -1
+        return 1 if plus > minus else -1
 
     def _getOutputTsSet(self) -> Optional[SetOfTiltSeries]:
         return getattr(self, self._possibleOutputs.tiltSeries.name, None)
 
     def _getOutputCtfSet(self) -> Optional[SetOfCTFTomoSeries]:
         return getattr(self, self._possibleOutputs.ctfs.name, None)
+
+    def _getOutputSamplingRate(self) -> float:
+        binMode = self.binFactorMode.get()
+        binFactor = self.binFactor.get()
+        binTarget = self.binTarget.get()
+        movieSampling = self.inputTSMovies.get().getSamplingRate()
+        return movieSampling * binFactor if binMode == BINNING_FACTOR else binTarget
 
     # -------------------------- INFO functions -------------------------------
     def _summary(self):
@@ -812,20 +898,13 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
     def _validate(self):
         errorMsg = []
-        movieSampling = self.inputTSMovies.get().getSamplingRate()
-        outputSampling = movieSampling * self.binFactor.get()
-        nyquistFreq = 2 * outputSampling
-        resToFit = self.range_max.get()
-
-        if self.estimateCTF.get() and resToFit < nyquistFreq:
-            warnMs = (
-                f'The resolution to fit should be greater than nyquist. Currently, resolution to fit is {resToFit} '
-                f'and at this binning factor Nyquist is {nyquistFreq}\n')
-            errorMsg.append(warnMs)
-
         binMode = self.binFactorMode.get()
         binFactor = self.binFactor.get()
         binTarget = self.binTarget.get()
+        outputSampling = self._getOutputSamplingRate()
+        nyquistFreq = 2 * outputSampling
+        resToFit = self.range_max.get()
+
         if binMode == BINNING_FACTOR:
             if binFactor is None:
                 errorMsg.append('Binning factor cannot be empty.')
@@ -837,4 +916,49 @@ class ProtWarpTSMotionCorr(EMProtocol):
             elif binTarget <= 0:
                 errorMsg.append('Target sampling rate for binning must be greater than 0.')
 
+        if self.estimateCTF.get() and resToFit < nyquistFreq:
+            warnMs = (
+                f'The resolution to fit should be greater than nyquist. Currently, resolution to fit is {resToFit} '
+                f'and at this binning factor Nyquist is {nyquistFreq}\n')
+            errorMsg.append(warnMs)
+
+        # Warp tiles the frame with fixed windows: fs_motion uses a MOTION_WINDOW (768) patch, and
+        # when the CTF is also estimated (fs_motion_and_ctf) it additionally tiles with a 2 x window
+        # region. If the binned frame falls below the required window on either axis, the patch grid
+        # degenerates and the native worker crashes with a cuFFT CUFFT_INVALID_SIZE error.
+        binParamsOk = ((binMode == BINNING_FACTOR and binFactor is not None and binFactor >= 1) or
+                       (binMode == TARGET_SAMPLING_RATE and binTarget is not None and binTarget > 0))
+        if binParamsOk:
+            tsMSet = self.inputTSMovies.get()
+            movieSampling = tsMSet.getSamplingRate()
+            dims = tsMSet.getDimensions()
+            if dims is not None and movieSampling:
+                rawX, rawY = int(dims[0]), int(dims[1])
+                # Downsample factor as Warp actually applies it: 2^floor(log2(binFactor)) in
+                # binning-factor mode, or target/raw pixel size in target-sampling mode.
+                if binMode == BINNING_FACTOR:
+                    downsample = 2 ** self._getBinFactor()
+                else:
+                    downsample = binTarget / movieSampling
+                if downsample > 0:
+                    binnedX = round(rawX / downsample)
+                    binnedY = round(rawY / downsample)
+                    # Minimum frame size: the motion window, raised to the CTF tiling window
+                    # (2 x c_window) when the CTF is estimated (fs_motion_and_ctf).
+                    minFrame = MOTION_WINDOW
+                    if self.estimateCTF.get():
+                        minFrame = max(MOTION_WINDOW, 2 * self.window.get())
+                    if min(binnedX, binnedY) < minFrame:
+                        maxBinAngpix = movieSampling * min(rawX, rawY) / minFrame
+                        program = FS_MOTION_AND_CTF if self.estimateCTF.get() else FS_MOTION
+                        errorMsg.append(
+                            f"Binning is too strong: the binned frame would be {binnedX}x{binnedY} px, "
+                            f"smaller than the {minFrame}-px window required by Warp {program}. This "
+                            f"makes it crash with a cuFFT CUFFT_INVALID_SIZE error.\nReduce the binning "
+                            f"so the binned frame stays >= {minFrame} px on both axes, i.e. use an "
+                            f"output pixel size <= {maxBinAngpix:.2f} A/px (raw frame {rawX}x{rawY} px "
+                            f"at {movieSampling:.4f} A/px).\n")
+
         return errorMsg
+
+

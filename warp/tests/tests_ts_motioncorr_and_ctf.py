@@ -24,7 +24,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from pyworkflow.tests import setupTestProject, DataSet
 from pyworkflow.utils import cyanStr, magentaStr
 from tomo.objects import SetOfCTFTomoSeries, SetOfTiltSeries
@@ -58,6 +58,15 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
         cls.importedTsM = cls._runImportTiltSeriesM()
 
     @classmethod
+    def getWarpExpectedTsDimsTargetSr(cls,
+                                      inDims: List[int],
+                                      targetSr: float) -> List[int]:
+        downsample = targetSr / cls.unbinnedApix  # == 2**bintimes
+        binnedDims = [(round(d / downsample) // 2) * 2 for d in inDims[:2]]
+        binnedDims.append(inDims[-1])
+        return binnedDims
+
+    @classmethod
     def _runImportTiltSeriesM(cls):
         print(magentaStr("\n==> Importing data - tilt-series movies:"))
         protImport = cls.newProtocol(ProtImportTsMovies,
@@ -74,7 +83,8 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                                 estimateCtf: bool = True,
                                 doOddEven: bool = False,
                                 binningFactorMode: int = BINNING_FACTOR,
-                                binningtargetVal: int = 1) \
+                                binningtargetVal: float = 1.,
+                                ctfRangeMax: float = 4.) \
             -> Tuple[Optional[SetOfTiltSeries], Optional[SetOfCTFTomoSeries]]:
 
         if binningFactorMode == BINNING_FACTOR:
@@ -98,26 +108,31 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                                average_halves=doOddEven,
                                gainFlip=FLIP_Y,
                                estimateCTF=estimateCtf,
+                               range_max=ctfRangeMax
                                )
         ctfLabel = ' CTF' if estimateCtf else ''
         oeLabel = ' OE' if doOddEven else ''
         label = f'MC{ctfLabel}{oeLabel}{binModeLabel}'
         prot.setObjLabel(label)
         cls.launchProtocol(prot)
-        return (getattr(prot, prot._possibleOutputs.tiltSeries.value, None),
-                getattr(prot, prot._possibleOutputs.ctfs.value, None))
+        return (getattr(prot, prot._possibleOutputs.tiltSeries.name, None),
+                getattr(prot, prot._possibleOutputs.ctfs.name, None))
 
     def _checkTsSet(self,
                     tsSet: SetOfTiltSeries,
                     estimateCtf: bool,
                     testSRate: float,
-                    hasOddEven: bool) -> None:
+                    hasOddEven: bool,
+                    targetSRateMode: bool) -> None:
         testNAngles = DataSetEmpiar10491.nAngles.value
+        expectedDims = DataSetEmpiar10491.tsDims.value
+        if targetSRateMode:
+            expectedDims = self.getWarpExpectedTsDimsTargetSr(expectedDims, testSRate)
         self.checkTiltSeries(tsSet,
                              expectedSetSize=DataSetEmpiar10491.numTs.value,
                              expectedSRate=testSRate,
                              imported=True,
-                             expectedDimensions=DataSetEmpiar10491.tsDims.value,
+                             expectedDimensions=expectedDims,
                              testSetAcqObj=self.testAcq,
                              testAcqObj=self.testAcq,
                              hasOddEven=hasOddEven,
@@ -125,7 +140,8 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                              anglesCountSet=testNAngles,
                              isHeterogeneousSet=False,
                              presentTsIds=[TS_1, TS_32],
-                             defocusHandedness=1 if estimateCtf else None)
+                             defocusHandedness=1 if estimateCtf else None,
+                             tiltAnglesTolDeg=0.02)
 
     def _checkCtfSet(self,
                      ctfSet: SetOfCTFTomoSeries):
@@ -138,18 +154,21 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                       ctfSet: Optional[SetOfCTFTomoSeries],
                       estimateCtf: bool,
                       testSRate: float = -1.,
-                      hasOddEven: bool = False) -> None:
+                      hasOddEven: bool = False,
+                      targetSRateMode: bool = False) -> None:
         if isinstance(tsSet, SetOfTiltSeries):
             self._checkTsSet(tsSet,
                              estimateCtf=estimateCtf,
                              testSRate=testSRate,
-                             hasOddEven=hasOddEven)
+                             hasOddEven=hasOddEven,
+                             targetSRateMode=targetSRateMode)
         else:
             raise Exception(f'Output SetOfTiltSeries is of type {tsSet}')
-        if isinstance(ctfSet, SetOfCTFTomoSeries):
+
+        if estimateCtf and ctfSet is None:
+            raise Exception(f'Output SetOfCTF is unexpectedly empty.')
+        elif isinstance(ctfSet, SetOfCTFTomoSeries):
             self._checkCtfSet(ctfSet)
-        else:
-            raise Exception(f'Output SetOfCTFTomoSeries is of type {ctfSet}')
 
     def test_01(self):
         estimateCtf = True
@@ -169,7 +188,7 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
     def test_02(self):
         estimateCtf = False
         doOddEven = True
-        binningTargetVal = 10
+        binningTargetVal = 4
         tsSet, ctfSet = self._runMotioncorrAndCtfEst(
             estimateCtf=estimateCtf,
             doOddEven=doOddEven,
@@ -180,20 +199,23 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                            ctfSet,
                            estimateCtf=estimateCtf,
                            testSRate=binningTargetVal,
-                           hasOddEven=doOddEven)
+                           hasOddEven=doOddEven,
+                           targetSRateMode=True)
 
     def test_03(self):
         estimateCtf = True
         doOddEven = True
-        binningTargetVal = 6
+        binningTargetVal = 3.12
         tsSet, ctfSet = self._runMotioncorrAndCtfEst(
             estimateCtf=estimateCtf,
             doOddEven=doOddEven,
             binningFactorMode=TARGET_SAMPLING_RATE,
-            binningtargetVal=binningTargetVal
+            binningtargetVal=binningTargetVal,
+            ctfRangeMax=8
         )
         self._checkResults(tsSet,
                            ctfSet,
                            estimateCtf=estimateCtf,
                            testSRate=binningTargetVal,
-                           hasOddEven=doOddEven)
+                           hasOddEven=doOddEven,
+                           targetSRateMode=True)
