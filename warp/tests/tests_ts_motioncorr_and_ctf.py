@@ -32,7 +32,7 @@ from tomo.protocols import ProtImportTsMovies
 from tomo.tests import EMPIAR_10491, DataSetEmpiar10491, TS_1, TS_32
 from tomo.tests.test_base_centralized_layer import TestBaseCentralizedLayer
 from warp.protocols import ProtWarpTSMotionCorr
-from warp.protocols.protocol_ts_motion_ctf import BINNING_FACTOR, FLIP_Y
+from warp.protocols.protocol_ts_motion_ctf import BINNING_FACTOR, FLIP_Y, TARGET_SAMPLING_RATE
 
 
 class TestWarpMCandCTF(TestBaseCentralizedLayer):
@@ -43,7 +43,7 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
         setupTestProject(cls)
         cls.dataset = DataSet.getDataSet(EMPIAR_10491)
         cls.testAcq = DataSetEmpiar10491.acq.value
-        cls.unbinnedApix = DataSetEmpiar10491.unbinnedApix
+        cls.unbinnedApix = DataSetEmpiar10491.unbinnedApix.value
         cls.runPrevProtocols()
 
     @classmethod
@@ -74,7 +74,7 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                                 estimateCtf: bool = True,
                                 doOddEven: bool = False,
                                 binningFactorMode: int = BINNING_FACTOR,
-                                binningtargetVal: int = 2) \
+                                binningtargetVal: int = 1) \
             -> Tuple[Optional[SetOfTiltSeries], Optional[SetOfCTFTomoSeries]]:
 
         if binningFactorMode == BINNING_FACTOR:
@@ -109,6 +109,7 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
 
     def _checkTsSet(self,
                     tsSet: SetOfTiltSeries,
+                    estimateCtf: bool,
                     testSRate: float,
                     hasOddEven: bool) -> None:
         testNAngles = DataSetEmpiar10491.nAngles.value
@@ -123,11 +124,76 @@ class TestWarpMCandCTF(TestBaseCentralizedLayer):
                              anglesCount=testNAngles,
                              anglesCountSet=testNAngles,
                              isHeterogeneousSet=False,
-                             presentTsIds=[TS_1, TS_32])
+                             presentTsIds=[TS_1, TS_32],
+                             defocusHandedness=1 if estimateCtf else None)
 
     def _checkCtfSet(self,
-                     ctfSet: SetOfCTFTomoSeries, ):
+                     ctfSet: SetOfCTFTomoSeries):
         self.checkCTFs(ctfSet,
                        expectedSetSize=DataSetEmpiar10491.numTs.value,
-                       expectedPsdFile=True,
-                       handedness=1)
+                       expectedPsdFile=True)
+
+    def _checkResults(self,
+                      tsSet: Optional[SetOfTiltSeries],
+                      ctfSet: Optional[SetOfCTFTomoSeries],
+                      estimateCtf: bool,
+                      testSRate: float = -1.,
+                      hasOddEven: bool = False) -> None:
+        if isinstance(tsSet, SetOfTiltSeries):
+            self._checkTsSet(tsSet,
+                             estimateCtf=estimateCtf,
+                             testSRate=testSRate,
+                             hasOddEven=hasOddEven)
+        else:
+            raise Exception(f'Output SetOfTiltSeries is of type {tsSet}')
+        if isinstance(ctfSet, SetOfCTFTomoSeries):
+            self._checkCtfSet(ctfSet)
+        else:
+            raise Exception(f'Output SetOfCTFTomoSeries is of type {ctfSet}')
+
+    def test_01(self):
+        estimateCtf = True
+        doOddEven = False
+        tsSet, ctfSet = self._runMotioncorrAndCtfEst(
+            estimateCtf=estimateCtf,
+            doOddEven=doOddEven,
+            binningFactorMode=BINNING_FACTOR,
+            binningtargetVal=1
+        )
+        self._checkResults(tsSet,
+                           ctfSet,
+                           estimateCtf=estimateCtf,
+                           testSRate=self.unbinnedApix,
+                           hasOddEven=doOddEven)
+
+    def test_02(self):
+        estimateCtf = False
+        doOddEven = True
+        binningTargetVal = 10
+        tsSet, ctfSet = self._runMotioncorrAndCtfEst(
+            estimateCtf=estimateCtf,
+            doOddEven=doOddEven,
+            binningFactorMode=TARGET_SAMPLING_RATE,
+            binningtargetVal=binningTargetVal
+        )
+        self._checkResults(tsSet,
+                           ctfSet,
+                           estimateCtf=estimateCtf,
+                           testSRate=binningTargetVal,
+                           hasOddEven=doOddEven)
+
+    def test_03(self):
+        estimateCtf = True
+        doOddEven = True
+        binningTargetVal = 6
+        tsSet, ctfSet = self._runMotioncorrAndCtfEst(
+            estimateCtf=estimateCtf,
+            doOddEven=doOddEven,
+            binningFactorMode=TARGET_SAMPLING_RATE,
+            binningtargetVal=binningTargetVal
+        )
+        self._checkResults(tsSet,
+                           ctfSet,
+                           estimateCtf=estimateCtf,
+                           testSRate=binningTargetVal,
+                           hasOddEven=doOddEven)
