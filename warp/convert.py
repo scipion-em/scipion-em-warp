@@ -52,9 +52,15 @@ tsStarFileFields = [
 
 
 def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
-    """It creates a star file for a given tilt-series.
-    It is expected to be executed after WarpTools fs_motion_and_ctf
-    with the option --out_averages.
+    """Create a .tomostar file for a given tilt-series (replaces WarpTools ts_import).
+    It is expected to be executed after WarpTools fs_motion with aligned averages.
+
+    Handedness note: the negated tilt angle below sets ONLY the map / visual (tilt-angle)
+    handedness, i.e. the `wrpAngleTilt` sign. This is a SEPARATE convention from the
+    `AreAnglesInverted` defocus-handedness flag stored in the per-series <tsId>.xml, which
+    `ts_import`/`.tomostar` never touch: that flag defaults to False and is set only later by
+    `ts_defocus_hand`/`ts_ctf --auto_hand` from the data. So `AreAnglesInverted="False"` after
+    import is expected and is NOT a contradiction with inverting the tilt angles here.
     """
     tsMTable = Table(columns=tsStarFileFields)
     acq = tsM.getAcquisition()
@@ -62,8 +68,10 @@ def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
         fn = join('..', FRAMESERIES_FOLDER, basename(tiM.getFileName()))
         tsMTable.addRow(
             fn,
-            - tiM.getTiltAngle(), # Invert angles option assumed (--dont_invert flips map handedness away from
-            # IMOD). Map / visual (tilt-angle) handedness
+            # Negated tilt angle = inverted angles (equivalent to NOT passing ts_import's
+            # --dont_invert) -> matches IMOD's map/visual handedness. This is the wrpAngleTilt
+            # sign ONLY; it does not affect the AreAnglesInverted defocus-handedness flag.
+            - tiM.getTiltAngle(),
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
             # so it is the dose pre-specimen
