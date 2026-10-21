@@ -25,6 +25,7 @@
 # ******************************************************************************
 import logging
 import math
+import re
 import traceback
 from collections import Counter
 from enum import Enum
@@ -70,6 +71,10 @@ TRANSPOSE_XY = 1
 # native worker crashes with a cuFFT CUFFT_INVALID_SIZE error.
 MOTION_WINDOW = 768
 
+# Below this |correlation|, ts_defocus_hand's handedness decision is near-zero (noise-level) and
+# the per-tilt-series vote should be treated as low confidence.
+HANDEDNESS_MIN_CORR = 0.1
+
 
 class WarpTsMcorrOutputs(Enum):
     tiltSeries = SetOfTiltSeries
@@ -99,6 +104,8 @@ class ProtWarpTSMotionCorr(EMProtocol):
         self.failedTsIds = []
         # Per-tilt-series defocus handedness (+1 / -1)
         self.tsHandednessDict = {}
+        # Per-tilt-series handedness correlation reported by ts_defocus_hand (confidence)
+        self.tsHandednessCorr = {}
 
     # -------------------------- DEFINE param functions -----------------------
 
@@ -290,6 +297,12 @@ class ProtWarpTSMotionCorr(EMProtocol):
                                            prerequisites=pId,
                                            needsGPU=True)
 
+            # Frame-series CTF (unbinned). Must run before ts_ctf and ts_defocus_hand, which both
+            # rely on the per-movie local defocus grid it produces.
+            pId = self._insertFunctionStep(self.estimateTsMCtfParams, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=True)
+
             pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
@@ -425,21 +438,57 @@ class ProtWarpTSMotionCorr(EMProtocol):
             return
 
         try:
-            # Defocus handedness for this single tilt-series
+            # Defocus handedness for this single tilt-series. The command's output is redirected to a
+            # per-series log so we can parse the "Average correlation" value (the decision confidence).
             logger.info(cyanStr(f">>> tsId = {tsId} - estimating the defocus handedness..."))
+            logFile = self._getDefocusHandLog(tsId)
             args = [
                 f'--settings {self._getTiltSeriesSettingsFn()}',
                 f'--input_data {self._getOutTsStarFile(tsId)}',
                 '--set_auto',
+                f'> {logFile} 2>&1',
             ]
             self.runJob(Plugin.getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), ' '.join(args), executable='/bin/bash')
             xmlPath = join(self._getTiltSeriesDir(), tsId + '.xml')
-            self.tsHandednessDict[tsId] = _getDefocusHand(xmlPath)
+            hand = _getDefocusHand(xmlPath)
+            self.tsHandednessDict[tsId] = hand
+            self._logHandednessConfidence(tsId, hand, logFile)
 
         except Exception as e:
             logger.warning(yellowStr(f"tsId = {tsId} -> {WARP_TOOLS} {TS_DEFOCUS_HAND} failed with the exception "
                                      f"--> {e}. This tilt-series will not contribute to the handedness vote."))
             logger.warning(traceback.format_exc())
+
+    def _getDefocusHandLog(self, tsId: str) -> str:
+        return join(self._getTiltSeriesDir(), f'{tsId}_defocus_hand.log')
+
+    @staticmethod
+    def _parseDefocusHandCorrelation(logPath: str) -> Optional[float]:
+        """Extract the 'Average correlation' value printed by ts_defocus_hand, or None."""
+        try:
+            with open(logPath) as f:
+                content = f.read()
+        except OSError:
+            return None
+        matches = re.findall(r'Average correlation:\s*(-?\d+(?:\.\d+)?)', content)
+        return float(matches[-1]) if matches else None
+
+    def _logHandednessConfidence(self, tsId: str, hand: int, logFile: str) -> None:
+        """Parse and log the per-tilt-series handedness correlation (|r| = confidence).
+        A near-zero |r| means the sign (and thus this vote) is noise-level / unreliable."""
+        corr = self._parseDefocusHandCorrelation(logFile)
+        self.tsHandednessCorr[tsId] = corr
+        handStr = 'flip(+1)' if hand > 0 else 'no-flip(-1)'
+        if corr is None:
+            logger.info(cyanStr(f">>> tsId = {tsId} - handedness = {handStr} (correlation not parsed)"))
+            return
+        msg = (f">>> tsId = {tsId} - handedness = {handStr}, correlation = {corr:+.3f} "
+               f"(|r| = {abs(corr):.3f})")
+        if abs(corr) < HANDEDNESS_MIN_CORR:
+            logger.warning(yellowStr(f"{msg} - LOW CONFIDENCE: near-zero correlation, this vote is "
+                                     f"unreliable (|r| < {HANDEDNESS_MIN_CORR})."))
+        else:
+            logger.info(cyanStr(msg))
 
     def createOutputTsStep(self, tsId: str):
         if tsId in self.failedTsIds:
@@ -886,6 +935,17 @@ class ProtWarpTSMotionCorr(EMProtocol):
         plus, minus = counts.get(1, 0), counts.get(-1, 0)
         logger.info(cyanStr(f">>> Defocus handedness vote across {len(votes)} tilt-series: "
                             f"flip(+1)={plus}, no-flip(-1)={minus}"))
+
+        # Overall confidence summary from the per-series correlation magnitudes. Handedness is a fixed
+        # physical property, so a split vote reflects noisy per-series estimates: a low mean |r| or many
+        # low-confidence series means the (majority) result should be treated with caution.
+        corrs = [abs(c) for c in self.tsHandednessCorr.values() if c is not None]
+        if corrs:
+            meanAbs = sum(corrs) / len(corrs)
+            nLow = sum(1 for c in corrs if c < HANDEDNESS_MIN_CORR)
+            logger.info(cyanStr(f">>> Handedness confidence: mean|r| = {meanAbs:.3f}, "
+                                f"{nLow}/{len(corrs)} series with |r| < {HANDEDNESS_MIN_CORR} "
+                                f"(low confidence)"))
         if plus == minus:
             logger.warning(yellowStr(">>> Handedness vote tied; defaulting to -1 (no flip)."))
             return -1
