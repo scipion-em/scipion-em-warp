@@ -63,7 +63,7 @@ def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
         tsMTable.addRow(
             fn,
             - tiM.getTiltAngle(), # Invert angles option assumed (--dont_invert flips map handedness away from
-            # IMOD)
+            # IMOD). Map / visual (tilt-angle) handedness
             acq.getTiltAxisAngle(),
             tiM.getAcquisition().getDoseInitial(),  # In the example of the tutorial, the tilt = 0 has dose = 0,
             # so it is the dose pre-specimen

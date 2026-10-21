@@ -39,10 +39,10 @@ from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVAN
 from pyworkflow.utils import cyanStr, Message, makePath, redStr, replaceBaseExt, yellowStr
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries,
-                          TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo, TomoAcquisition)
-from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, FS_MOTION_AND_CTF, TS_CTF, TS_DEFOCUS_HAND, FRAMESERIES_FOLDER, \
+                          TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
+from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TS_CTF, TS_DEFOCUS_HAND, FRAMESERIES_FOLDER, \
     AVERAGE_FOLDER, FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, \
-    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION
+    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF
 from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
@@ -286,7 +286,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
                                        needsGPU=False)
 
         for tsId, tsM in self.tsMDict.items():
-            pId = self._insertFunctionStep(self.processTsMStep, tsId,
+            pId = self._insertFunctionStep(self.motionCorrStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=True)
 
@@ -294,7 +294,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
                                            prerequisites=pId,
                                            needsGPU=False)
 
-            pId = self._insertFunctionStep(self.estimateCtfStep, tsId,
+            pId = self._insertFunctionStep(self.estimateTsCtfStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=True)
 
@@ -339,6 +339,14 @@ class ProtWarpTSMotionCorr(EMProtocol):
         try:
             cmd = self._genCreateSettingsArgs()
             self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
+            # Second, unbinned settings used only for the frame-series CTF, so that the CTF
+            # (and the defocus handedness it feeds) is estimated at full resolution regardless
+            # of the motion-correction binning.
+            if self.estimateCTF.get():
+                logger.info(cyanStr(">>> Creating unbinned frame-series CTF settings..."))
+                cmd = self._genCreateSettingsArgs(settingsFn=self._getFrameSeriesCtfSettingsFn(),
+                                                  binningArg="--bin 0")
+                self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
         except Exception as e:
             raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
@@ -350,17 +358,37 @@ class ProtWarpTSMotionCorr(EMProtocol):
         except Exception as e:
             raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
-    def processTsMStep(self, tsId: str):
-        program = FS_MOTION_AND_CTF if self.estimateCTF.get() else FS_MOTION
+    def motionCorrStep(self, tsId: str):
+        """Motion correction (+ aligned averages) at the requested binning."""
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - performing the motion-correction..."))
             tsMovie = self.tsMDict[tsId]
-            warpMoviesNamesList = [abspath(tiName.getFileName()) for tiName in tsMovie.iterItems()]
-            warpMoviesNamesList = " ".join(warpMoviesNamesList)
-            args = self._genMcArgs(program, tsMovie, warpMoviesNamesList)
-            self.runJob(Plugin.getProgram(WARP_TOOLS, program), args, executable='/bin/bash')
+            warpMoviesNamesList = " ".join([abspath(ti.getFileName()) for ti in tsMovie.iterItems()])
+            args = self._genMcArgs(tsMovie, warpMoviesNamesList)
+            self.runJob(Plugin.getProgram(WARP_TOOLS, FS_MOTION), args, executable='/bin/bash')
+
         except Exception as e:
-            logger.error(redStr(f"{WARP_TOOLS} {program} failed with the exception --> {e}"))
+            logger.error(redStr(f"{WARP_TOOLS} {FS_MOTION} failed with the exception --> {e}"))
+            traceback.print_exc()
+            self.failedTsIds.append(tsId)
+            return
+
+    def estimateTsMCtfParams(self, tsId: str):
+        """Frame-series CTF, estimated UNBINNED (decoupled from the motion binning) so that the
+        defocus gradient and handedness stay reliable. Writes physical CTF into the same movie
+        XMLs as the motion step."""
+        if not self.estimateCTF.get() or tsId in self.failedTsIds:
+            return
+
+        try:
+            logger.info(cyanStr(f">>> tsId = {tsId} - estimating the frame-series CTF (unbinned)..."))
+            tsMovie = self.tsMDict[tsId]
+            warpMoviesNamesList = " ".join([abspath(ti.getFileName()) for ti in tsMovie.iterItems()])
+            args = self._genFsCtfArgs(tsMovie, warpMoviesNamesList)
+            self.runJob(Plugin.getProgram(WARP_TOOLS, FS_CTF), args, executable='/bin/bash')
+
+        except Exception as e:
+            logger.error(redStr(f"{WARP_TOOLS} {FS_CTF} failed with the exception --> {e}"))
             traceback.print_exc()
             self.failedTsIds.append(tsId)
 
@@ -377,13 +405,13 @@ class ProtWarpTSMotionCorr(EMProtocol):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-    def estimateCtfStep(self, tsId: str):
+    def estimateTsCtfStep(self, tsId: str):
         if not self.estimateCTF.get() or tsId in self.failedTsIds:
             return
 
         try:
             # CTF estimation for this single tilt-series (.tomostar)
-            logger.info(cyanStr(f">>> tsId = {tsId} - estimating the CTF..."))
+            logger.info(cyanStr(f">>> tsId = {tsId} - estimating the tilt-series CTF..."))
             args = self._getCtfEstimationArgs(tsId)
             self.runJob(Plugin.getProgram(WARP_TOOLS, TS_CTF), args, executable='/bin/bash')
 
@@ -466,6 +494,12 @@ class ProtWarpTSMotionCorr(EMProtocol):
     def _getFrameSeriesSettingsFn(self) -> str:
         return abspath(self._getExtraPath(FRAMESERIES_SETTINGS))
 
+    def _getFrameSeriesCtfSettingsFn(self) -> str:
+        """Unbinned frame-series settings used only for the frame CTF, so that the
+        CTF (and hence the defocus handedness) is estimated at full resolution
+        regardless of the motion-correction binning."""
+        return abspath(self._getExtraPath('warp_frameseries_ctf.settings'))
+
     def _getFrameSeriesDir(self) -> str:
         return abspath(self._getExtraPath(FRAMESERIES_FOLDER))
 
@@ -489,21 +523,28 @@ class ProtWarpTSMotionCorr(EMProtocol):
         binTarget = self.binTarget.get()
         return f"--bin {self._getBinFactor()}" if binMode == BINNING_FACTOR else f"--bin_angpix {binTarget}"
 
-    def _genCreateSettingsArgs(self) -> str:
+    def _genCreateSettingsArgs(self, settingsFn: Optional[str] = None,
+                               binningArg: Optional[str] = None) -> str:
         ts_movies = self.getInputTSMovies()
         first_ts_movie = ts_movies.getFirstItem()
         file_name, extension = splitext(first_ts_movie.getFirstItem().getFileName())
         folder_data = abspath(dirname(file_name))
+
+        # Defaults: the main (possibly binned) frame-series settings.
+        if settingsFn is None:
+            settingsFn = self._getFrameSeriesSettingsFn()
+        if binningArg is None:
+            binningArg = self._genBinningArgs()
 
         # Initialize argument list with base parameters
         args = [
             f"--folder_data {folder_data}",
             f"--extension '*{extension}'",
             f"--folder_processing {self.tsmDir}",
-            self._genBinningArgs(),
+            binningArg,
             f"--angpix {self.samplingRate}",
             f"--exposure {self.exposure}",
-            f"--output {self._getFrameSeriesSettingsFn()}",
+            f"--output {settingsFn}",
         ]
         if self.fit_phase.get():
             args.append("--fit_phase")
@@ -539,8 +580,9 @@ class ProtWarpTSMotionCorr(EMProtocol):
         self._genGainAndDarkCmd(args)
         return ' '.join(args)
 
-    def _genMcArgs(self, program: str, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
-        acquisition = tsMovie.getAcquisition()
+    def _genMcArgs(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
+        """fs_motion arguments: motion correction + aligned averages at the requested binning.
+        The frame-series CTF is handled separately (unbinned) by _genFsCtfArgs."""
         commonArgs = [
             f"--settings {self._getFrameSeriesSettingsFn()}",
             f"--input_data {warpMoviesNames}",
@@ -550,61 +592,54 @@ class ProtWarpTSMotionCorr(EMProtocol):
         # GPU and threads configuration
         self._addThreadsAndGpusArgs(commonArgs)
 
+        args = [f"--range_min {self.m_range_min.get()}",
+                f"--range_max {self.m_range_max.get()}",
+                f"--bfac {self.bfactor.get()}",
+                '--averages']
+
         # Motion grid dimensions
         grid_x, grid_y, grid_z = self.x.get(), self.y.get(), self.z.get()
-
-        if program == FS_MOTION_AND_CTF:
-            if grid_x and grid_y and grid_z:
-                commonArgs.append(f"--m_grid {grid_x}x{grid_y}x{grid_z}")
-            return self._genFsMotionAndCTFArgs(commonArgs, acquisition)
-
-        else:  # Only motion-correction
-            args = [f"--range_min {self.m_range_min.get()}",
-                    f"--range_max {self.m_range_max.get()}",
-                    f"--bfac {self.bfactor.get()}",
-                    '--averages']
-            if grid_x and grid_y and grid_z:
-                commonArgs.append(f"--grid {grid_x}x{grid_y}x{grid_z}")
-            if self.average_halves.get():
-                commonArgs.append("--average_halves")
-            return " ".join(commonArgs + args)
-
-    def _genFsMotionAndCTFArgs(self, commonArgs: List[str], acq: TomoAcquisition) -> str:
-        args = [f"--m_range_min {self.m_range_min.get()}",
-                f"--m_range_max {self.m_range_max.get()}",
-                f"--m_bfac {self.bfactor.get()}",
-                f"--c_window {self.window.get()}",
-                f"--c_range_min {self.range_min.get()}",
-                f"--c_range_max {self.range_max.get()}",
-                f"--c_defocus_min {self.defocus_min.get()}",
-                f"--c_defocus_max {self.defocus_max.get()}",
-                f"--c_voltage {int(acq.getVoltage())}",
-                f"--c_cs {acq.getSphericalAberration()}",
-                f"--c_amplitude {acq.getAmplitudeContrast()}",
-                "--out_averages"]
-
+        if grid_x and grid_y and grid_z:
+            commonArgs.append(f"--grid {grid_x}x{grid_y}x{grid_z}")
         if self.average_halves.get():
-            args.append("--out_average_halves")
+            commonArgs.append("--average_halves")
+        return " ".join(commonArgs + args)
 
-        # CTF grid dimensions. ts_defocus_hand needs a local defocus gradient, i.e. a
-        # frame-series CTF grid of at least 2x2x1, so fall back to that minimum when the
-        # user did not specify an explicit grid and the CTF is being estimated.
+    def _genFsCtfArgs(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
+        """Frame-series CTF (fs_ctf) on the UNBINNED settings. Decoupling the CTF from the
+        motion-correction binning keeps the local defocus gradient (and the defocus
+        handedness read by ts_defocus_hand) reliable. Writes physical CTF values into the
+        same movie XMLs as the motion step, which the tilt-series steps then consume."""
+        acq = tsMovie.getAcquisition()
+        args = [
+            f"--settings {self._getFrameSeriesCtfSettingsFn()}",
+            f"--input_data {warpMoviesNames}",
+            f"--output_processing {self.tsmDir}",
+            f"--window {self.window.get()}",
+            f"--range_min {self.range_min.get()}",
+            f"--range_max {self.range_max.get()}",
+            f"--defocus_min {self.defocus_min.get()}",
+            f"--defocus_max {self.defocus_max.get()}",
+            f"--voltage {int(acq.getVoltage())}",
+            f"--cs {acq.getSphericalAberration()}",
+            f"--amplitude {acq.getAmplitudeContrast()}",
+        ]
+        self._addThreadsAndGpusArgs(args)
+
+        # Defocus model grid. ts_defocus_hand needs a local defocus gradient, i.e. a grid of
+        # at least 2x2x1, so fall back to that minimum when no explicit grid is given.
         c_grid_x, c_grid_y, c_grid_z = self.c_x.get(), self.c_y.get(), self.c_z.get()
         if c_grid_x and c_grid_y and c_grid_z:
-            args.append(f"--c_grid {c_grid_x}x{c_grid_y}x{c_grid_z}")
-        elif self.estimateCTF.get():
-            args.append("--c_grid 2x2x1")
+            args.append(f"--grid {c_grid_x}x{c_grid_y}x{c_grid_z}")
+        else:
+            args.append("--grid 2x2x1")
 
-        # Optional processing flags
         if self.fit_phase.get():
-            args.append("--c_fit_phase")
-
+            args.append("--fit_phase")
         if self.use_sum.get():
-            args.append("--c_use_sum")
+            args.append("--use_sum")
 
-        allArgs = commonArgs + args
-
-        return " ".join(allArgs)
+        return " ".join(args)
 
     def _getCtfEstimationArgs(self, tsId: str) -> str:
         acq = self.getInputTSMovies().getAcquisition()
@@ -943,21 +978,17 @@ class ProtWarpTSMotionCorr(EMProtocol):
                 if downsample > 0:
                     binnedX = round(rawX / downsample)
                     binnedY = round(rawY / downsample)
-                    # Minimum frame size: the motion window, raised to the CTF tiling window
-                    # (2 x c_window) when the CTF is estimated (fs_motion_and_ctf).
-                    minFrame = MOTION_WINDOW
-                    if self.estimateCTF.get():
-                        minFrame = max(MOTION_WINDOW, 2 * self.window.get())
-                    if min(binnedX, binnedY) < minFrame:
-                        maxBinAngpix = movieSampling * min(rawX, rawY) / minFrame
-                        program = FS_MOTION_AND_CTF if self.estimateCTF.get() else FS_MOTION
+                    # The binned frame is only used for motion correction (fs_motion); the CTF is
+                    # estimated separately on the unbinned frame, so only the motion window applies.
+                    if min(binnedX, binnedY) < MOTION_WINDOW:
+                        maxBinAngpix = movieSampling * min(rawX, rawY) / MOTION_WINDOW
                         errorMsg.append(
                             f"Binning is too strong: the binned frame would be {binnedX}x{binnedY} px, "
-                            f"smaller than the {minFrame}-px window required by Warp {program}. This "
-                            f"makes it crash with a cuFFT CUFFT_INVALID_SIZE error.\nReduce the binning "
-                            f"so the binned frame stays >= {minFrame} px on both axes, i.e. use an "
-                            f"output pixel size <= {maxBinAngpix:.2f} A/px (raw frame {rawX}x{rawY} px "
-                            f"at {movieSampling:.4f} A/px).\n")
+                            f"smaller than the {MOTION_WINDOW}-px window required by Warp {FS_MOTION}. "
+                            f"This makes it crash with a cuFFT CUFFT_INVALID_SIZE error.\nReduce the "
+                            f"binning so the binned frame stays >= {MOTION_WINDOW} px on both axes, i.e. "
+                            f"use an output pixel size <= {maxBinAngpix:.2f} A/px (raw frame "
+                            f"{rawX}x{rawY} px at {movieSampling:.4f} A/px).\n")
 
         return errorMsg
 
