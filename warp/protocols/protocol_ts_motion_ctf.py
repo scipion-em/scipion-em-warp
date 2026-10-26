@@ -23,12 +23,15 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # ******************************************************************************
+import glob
 import logging
 import math
 import re
+import shutil
 import traceback
 from collections import Counter
 from enum import Enum
+from os import remove
 from os.path import splitext, abspath, dirname, join, basename, exists
 from typing import Union, Tuple, List, Optional
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
@@ -43,7 +46,7 @@ from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
 from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TS_CTF, TS_DEFOCUS_HAND, FRAMESERIES_FOLDER, \
     AVERAGE_FOLDER, FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, \
-    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF
+    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF, MRC_EXT
 from warp.convert import writeTsStar
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
@@ -115,6 +118,15 @@ class ProtWarpTSMotionCorr(EMProtocol):
                       important=True,
                       label=Message.LABEL_INPUT_MOVS,
                       help='Select a set of previously imported tilt series movies.')
+        form.addParam('doCleanFiles', BooleanParam,
+                      default=True,
+                      label='Remove unnecessary files?',
+                      expertLevel=LEVEL_ADVANCED,
+                      help='If set to Yes, it will remove:\n'
+                           '- Per-tilt averages.\n'
+                           '- Folder powerspectrum.\n'
+                           '- motion json files, as this info is also stored in each per-movie .xml file (kept).\n'
+                           '- ')
         self._defineAlignmentParams(form)
         self._defineCtfParams(form)
         self._defineEerParams(form)
@@ -497,23 +509,26 @@ class ProtWarpTSMotionCorr(EMProtocol):
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - creating the output tilt-series..."))
             newTs, tiList = self._prepareOutputTs(tsId)
-            perTsHand = None
             majorityHand = None
             if self.estimateCTF.get():
-                # Per-tilt-series handedness (this series' own XML) for the TS, and the
-                # dataset-wide majority vote for the output set metadata object.
-                xmlPath = join(self._getTiltSeriesDir(), tsId + '.xml')
-                if exists(xmlPath):
-                    perTsHand = _getDefocusHand(xmlPath)
                 majorityHand = self._getMajorityHandedness()
-            # Fall back to the majority if this single series' value is unavailable
-            newTs.setHandedness(perTsHand if perTsHand is not None else majorityHand)
             self._registerOutputTs(newTs, tiList, majorityHand)
+
+            # Clean unnecessary files if requested
+            self._cleanFiles()
 
         except Exception as e:
             logger.error(redStr(f'tsId = {tsId} -> Unable to register the output TS with exception {e}. Skipping... '))
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
+
+    def _cleanFiles(self):
+        if self.doCleanFiles.get():
+            perFrameAvgFiles = glob.glob(join(self._getAvgDir(), f'*{MRC_EXT}'))
+            motionJsonFiles = glob.glob(join(self._getAvgDir(), '*_motion.json'))
+            for file in perFrameAvgFiles + motionJsonFiles:
+                remove(file)
+            shutil.rmtree(join(self._getFrameSeriesDir(), POWERSPECTRUM_FOLDER))
 
     def createOutputCtfStep(self, tsId: str):
         if not self.estimateCTF.get() or tsId in self.failedTsIds:
@@ -846,10 +861,11 @@ class ProtWarpTSMotionCorr(EMProtocol):
             tsMovieSet = tsMSetPointer.get()
             outputSetOfTiltSeries.setSamplingRate(self.outSamplingRate)
             outputSetOfTiltSeries.setAcquisition(tsMovieSet.getAcquisition())
-            outputSetOfTiltSeries.setHandedness(defocusHand)
             self._defineOutputs(**{outputName: outputSetOfTiltSeries})
             self._defineSourceRelation(tsMSetPointer, outputSetOfTiltSeries)
 
+        # Defocus handedness is based on the majority, so it will be updated each time a new TS is created
+        outputSetOfTiltSeries.setHandedness(defocusHand)
         return outputSetOfTiltSeries
 
     def getOutputSetOfCTFTomoSeries(self):
