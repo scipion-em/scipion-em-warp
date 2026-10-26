@@ -25,8 +25,10 @@
 # *
 # **************************************************************************
 from os.path import abspath, join, basename
+from typing import Union
+
 from emtable import Table
-from tomo.objects import TiltSeriesM, TiltImage
+from tomo.objects import TiltSeriesM, TiltImage, TiltSeries
 from warp import FRAMESERIES_FOLDER
 
 # TS motioncorr - star file fields
@@ -51,7 +53,7 @@ tsStarFileFields = [
 ]
 
 
-def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
+def writeTsStar(inObj: Union[TiltSeriesM, TiltSeries], outputStarFile: str):
     """Create a .tomostar file for a given tilt-series (replaces WarpTools ts_import).
     It is expected to be executed after WarpTools fs_motion with aligned averages.
 
@@ -63,8 +65,8 @@ def writeTsStar(tsM: TiltSeriesM, outputStarFile: str):
     import is expected and is NOT a contradiction with inverting the tilt angles here.
     """
     tsMTable = Table(columns=tsStarFileFields)
-    acq = tsM.getAcquisition()
-    for tiM in tsM.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD):
+    acq = inObj.getAcquisition()
+    for tiM in inObj.iterItems(orderBy=TiltImage.TILT_ANGLE_FIELD):
         fn = join('..', FRAMESERIES_FOLDER, basename(tiM.getFileName()))
         tsMTable.addRow(
             fn,

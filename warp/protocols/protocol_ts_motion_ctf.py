@@ -48,6 +48,7 @@ from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TS_CTF, TS_DEFOCUS_HAND, F
     AVERAGE_FOLDER, FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, \
     MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF, MRC_EXT
 from warp.convert import writeTsStar
+from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class WarpTsMcorrOutputs(Enum):
     ctfs = SetOfCTFTomoSeries
 
 
-class ProtWarpTSMotionCorr(EMProtocol):
+class ProtWarpTSMotionCorr(ProtWarpTomoBase):
     """ This protocol wraps WarpTools programs.
         Estimate motion in frame series, produce aligned averages, estimate CTF
     """
@@ -95,16 +96,16 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.samplingRate = None
+        # self.samplingRate = None
         self.outSamplingRate = None
-        self.exposure = None
-        self.tsMDict = None
-        self.tsmDir = None
-        self.tsDir = None
-        self.tsStarDir = None
+        # self.exposure = None
+        # self.seriesDict = None
+        # self.tsmDir = None
+        # self.tsDir = None
+        # self.tsStarDir = None
         self.gainFile = None
         self.darkFile = None
-        self.failedTsIds = []
+        # self.failedTsIds = []
         # Per-tilt-series defocus handedness (+1 / -1)
         self.tsHandednessDict = {}
         # Per-tilt-series handedness correlation reported by ts_defocus_hand (confidence)
@@ -304,7 +305,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
                                        prerequisites=pId,
                                        needsGPU=False)
 
-        for tsId, tsM in self.tsMDict.items():
+        for tsId, tsM in self.seriesDict.items():
             pId = self._insertFunctionStep(self.motionCorrStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=True)
@@ -343,21 +344,22 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
     # --------------------------- STEPS functions -----------------------------
     def _initialize(self):
+        super()._initialize()
         tsMSet = self.getInputTSMovies()
-        self.samplingRate = tsMSet.getSamplingRate()
+        # self.samplingRate = tsMSet.getSamplingRate()
         self.outSamplingRate = self._getOutputSamplingRate()
-        self.exposure = tsMSet.getAcquisition().getDosePerFrame()
-        self.tsMDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
+        # self.exposure = tsMSet.getAcquisition().getDosePerFrame()
+        self.seriesDict = {tsM.getTsId(): tsM.clone() for tsM in tsMSet.iterItems()}
         # Gain and defects
         gainFile = tsMSet.getGain()
         darkFile = tsMSet.getDark()
         self.gainFile = abspath(gainFile) if gainFile else None
         self.darkFile = abspath(darkFile) if darkFile else None
-        # Make paths
-        self.tsmDir = self._getFrameSeriesDir()
-        self.tsDir = self._getTiltSeriesDir()
-        self.tsStarDir = self._getTsStarDir()
-        makePath(*[self.tsmDir, self.tsDir, self.tsStarDir])
+        # # Make paths
+        # self.tsmDir = self._getFrameSeriesDir()
+        # self.tsDir = self._getTiltSeriesDir()
+        # self.tsStarDir = self._getTsStarDir()
+        # makePath(*[self.tsmDir, self.tsDir, self.tsStarDir])
 
     def createTsMovSettingsStep(self):
         logger.info(cyanStr(">>> Creating frame-series settings..."))
@@ -375,19 +377,11 @@ class ProtWarpTSMotionCorr(EMProtocol):
         except Exception as e:
             raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
 
-    def createTsSettingsStep(self):
-        logger.info(cyanStr(">>> Creating tilt-series settings..."))
-        try:
-            cmd = self._genCreateSettingsTsArgs()
-            self.runJob(Plugin.getProgram(WARP_TOOLS, CREATE_SETTINGS), cmd, executable='/bin/bash')
-        except Exception as e:
-            raise Exception(f"{WARP_TOOLS} {CREATE_SETTINGS} failed with the exception --> {e}")
-
     def motionCorrStep(self, tsId: str):
         """Motion correction (+ aligned averages) at the requested binning."""
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - performing the motion-correction..."))
-            tsMovie = self.tsMDict[tsId]
+            tsMovie = self.seriesDict[tsId]
             warpMoviesNamesList = " ".join([abspath(ti.getFileName()) for ti in tsMovie.iterItems()])
             args = self._genMcArgs(tsMovie, warpMoviesNamesList)
             self.runJob(Plugin.getProgram(WARP_TOOLS, FS_MOTION), args, executable='/bin/bash')
@@ -407,7 +401,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
 
         try:
             logger.info(cyanStr(f">>> tsId = {tsId} - estimating the frame-series CTF (unbinned)..."))
-            tsMovie = self.tsMDict[tsId]
+            tsMovie = self.seriesDict[tsId]
             warpMoviesNamesList = " ".join([abspath(ti.getFileName()) for ti in tsMovie.iterItems()])
             args = self._genFsCtfArgs(tsMovie, warpMoviesNamesList)
             self.runJob(Plugin.getProgram(WARP_TOOLS, FS_CTF), args, executable='/bin/bash')
@@ -420,15 +414,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
     def createTsMStarStep(self, tsId: str):
         if not self.estimateCTF.get() or tsId in self.failedTsIds:
             return
-        try:
-            logger.info(cyanStr(f">>> {tsId} - Creating the star file..."))
-            writeTsStar(self.tsMDict[tsId], self._getOutTsStarFile(tsId))
-
-        except Exception as e:
-            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
-                                f'with exception {e}. Skipping... '))
-            logger.error(traceback.format_exc())
-            self.failedTsIds.append(tsId)
+        super().createTsMStarStep(tsId)
 
     def estimateTsCtfStep(self, tsId: str):
         if not self.estimateCTF.get() or tsId in self.failedTsIds:
@@ -551,6 +537,9 @@ class ProtWarpTSMotionCorr(EMProtocol):
             raise Exception('No outputs were generated. Please check the logs run.stdout and run.stderr.')
 
     # --------------------------- UTILS functions -----------------------------
+    def _getInSet(self) -> SetOfTiltSeriesM:
+        return self.getInputTSMovies()
+
     def getInputTSMovies(self, asPointer: bool = False) -> Union[SetOfTiltSeriesM, Pointer]:
         inTsMSetPointer = self.inputTSMovies
         return inTsMSetPointer if asPointer else inTsMSetPointer.get()
@@ -564,23 +553,9 @@ class ProtWarpTSMotionCorr(EMProtocol):
         regardless of the motion-correction binning."""
         return abspath(self._getExtraPath('warp_frameseries_ctf.settings'))
 
-    def _getFrameSeriesDir(self) -> str:
-        return abspath(self._getExtraPath(FRAMESERIES_FOLDER))
-
     def _getAvgDir(self) -> str:
         return join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
 
-    def _getTsStarDir(self) -> str:
-        return abspath(self._getExtraPath(TOMOSTAR_FOLDER))
-
-    def _getOutTsStarFile(self, tsId: str) -> str:
-        return join(self.tsStarDir, f'{tsId}{TOMOSTAR_EXT}')
-
-    def _getTiltSeriesSettingsFn(self) -> str:
-        return abspath(self._getExtraPath(TILTSERIES_SETTINGS))
-
-    def _getTiltSeriesDir(self) -> str:
-        return abspath(self._getExtraPath(TILTSERIES_FOLDER))
 
     def _genBinningArgs(self):
         binMode = self.binFactorMode.get()
@@ -628,21 +603,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
         self._genGainAndDarkCmd(args)
 
         return " ".join(args)
-
-    def _genCreateSettingsTsArgs(self) -> str:
-        x, y, z = self._getTomoDims()
-        args = [
-            f'--output {self._getTiltSeriesSettingsFn()}',
-            f'--folder_processing {self.tsDir}',
-            f'--folder_data {self.tsStarDir}',
-            f'--extension *{TOMOSTAR_EXT}',
-            f'--angpix {self.samplingRate}',
-            # self._genBinningArgs(),
-            f'--exposure {self.exposure}',
-            f'--tomo_dimensions {x}x{y}x{z}'
-        ]
-        self._genGainAndDarkCmd(args)
-        return ' '.join(args)
 
     def _genMcArgs(self, tsMovie: TiltSeriesM, warpMoviesNames: str) -> str:
         """fs_motion arguments: motion correction + aligned averages at the requested binning.
@@ -726,7 +686,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
         return " ".join(args)
 
     def _prepareOutputTs(self, tsId: str) -> Tuple[TiltSeries, List[TiltImage]]:
-        tsMovie = self.tsMDict[tsId]
+        tsMovie = self.seriesDict[tsId]
         averageFolder = self._getAvgDir()
         properties = {"sr": self.outSamplingRate}
         newStack = ImageStack(properties=properties)
@@ -890,20 +850,6 @@ class ProtWarpTSMotionCorr(EMProtocol):
         0 = no binning, 1 = 2x2 binning, 2 = 4x4 binning"""
         return math.floor(math.log2(self.binFactor.get()))
 
-    def _getTomoDims(self) -> Tuple[int, int, int]:
-        tsMSet = self.getInputTSMovies()
-        x = int(tsMSet.getDimensions()[0])
-        y = int(tsMSet.getDimensions()[1])
-        # The binary swap is exact only near φ∈{0,90}. Near 45°, the detector rectangle rotated into
-        # the tomogram frame needs a box larger than either W×H or H×W. The exact axis-aligned bounding
-        # box of the rotated rectangle covers every imaged pixel at any angle and self-pads near 45°I
-        tiltAxisAngle = tsMSet.getAcquisition().getTiltAxisAngle()
-        c, s = abs(math.cos(tiltAxisAngle)), abs(math.sin(tiltAxisAngle))
-        tomoX = math.ceil(x * c + y * s)
-        tomoY = math.ceil(x * s + y * c)
-        tomoZ = int(max(tomoX, tomoY) / 3)
-        return tomoX, tomoY, tomoZ
-
     def _genGainAndDarkCmd(self, args: List[str]) -> None:
         if self.gainFile:
             args.append(f'--gain_path {self.gainFile}')
@@ -933,7 +879,7 @@ class ProtWarpTSMotionCorr(EMProtocol):
         votes = list(self.tsHandednessDict.values())
         if not votes:  # continued run: recover from the persisted XMLs
             tsDir = self._getTiltSeriesDir()
-            for tsId in self.tsMDict:
+            for tsId in self.seriesDict:
                 if tsId in self.failedTsIds:
                     continue
                 xmlPath = join(tsDir, tsId + '.xml')

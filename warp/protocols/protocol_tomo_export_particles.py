@@ -23,32 +23,36 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # ******************************************************************************
-
+import logging
 import os
-import time
+import traceback
 from enum import Enum
+from os.path import join
 
 from emtable import Table
-
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
 from pyworkflow.object import Integer
-from pyworkflow.utils import Message
+from pyworkflow.utils import Message, redStr, makePath
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
 from tomo.constants import BOTTOM_LEFT_CORNER
-
-from warp.constants import *
-from warp.protocols.protocol_base import ProtWarpBase
+from tomo.objects import SetOfTiltSeries
+from warp import MATCHING_FOLDER, TILTSERIES_SETTINGS, RELION_FOLDER, WARP_TOOLS, TS_EXPORT_PARTICLES, \
+    OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, TS_CTF, TILTSERIES_FOLDER, TS_DEFOCUS_HAND, \
+    TS_IMPORT_ALIGNMENTS, TILTIMAGES_FOLDER, tomoStarFields, TILTSTACK_FOLDER
+from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
+
+logger = logging.getLogger(__name__)
 
 
 class outputObjects(Enum):
     relionParticles = RelionSetOfPseudoSubtomograms
 
 
-class ProtWarpExportParticles(ProtWarpBase):
+class ProtWarpExportParticles(ProtWarpTomoBase):
     """
     Export particles as 3D volumes or 2D image series
     More info:
@@ -59,7 +63,7 @@ class ProtWarpExportParticles(ProtWarpBase):
     _devStatus = BETA
 
     def __init__(self, **kwargs):
-        ProtWarpBase.__init__(self, **kwargs)
+        super().__init__(**kwargs)
 
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
@@ -101,6 +105,34 @@ class ProtWarpExportParticles(ProtWarpBase):
                       default=None,
                       help='Particle diameter in angstroms')
 
+        form.addParam('nTilts', params.IntParam,
+                      label='Number of tilts per particle',
+                      default=None, allowsNull=True,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      help='Number of tilt images to include per particle in the output; images '
+                           'with the lowest overall exposure are included first. Leave empty to '
+                           'use all tilts (WarpTools --n_tilts).')
+        form.addParam('maxMissingTilts', params.IntParam,
+                      label='Max. missing tilts',
+                      default=5,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      help='Particles not visible in more than this number of tilts are excluded '
+                           '(WarpTools --max_missing_tilts; only applies to 2D particle series, '
+                           'which is what this protocol exports).')
+        form.addParam('dontNormalizeInput', params.BooleanParam,
+                      label="Don't normalize input images",
+                      default=False,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      help='Skip normalization of the input tilt images (WarpTools '
+                           '--dont_normalize_input).')
+        form.addParam('dontPremultiply', params.BooleanParam,
+                      label="Don't premultiply by CTF / weights",
+                      default=False,
+                      expertLevel=params.LEVEL_ADVANCED,
+                      help="Don't premultiply the 2D particle series by CTFs or RELION weights "
+                           '(WarpTools --dont_premultiply). Set this if your downstream STA tool '
+                           'expects un-weighted particles.')
+
         form.addSection(label='Geometry / handedness')
         form.addParam('flipZHand', params.BooleanParam, default=False,
                       label='Invert Z coordinate (handedness)',
@@ -129,11 +161,42 @@ class ProtWarpExportParticles(ProtWarpBase):
         #                    'the particle (particle series). If set to 3D, this program will write output '
         #                    'particles as 3d images (subtomograms)')
 
+    # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep(self.prepareDataStep, needsGPU=True)
+        self._initialize()
+        pId = self._insertFunctionStep(self.createTsSettingsStep,
+                                       prerequisites=[],
+                                       needsGPU=False)
+
+        for tsId, tsM in self.seriesDict.items():
+            pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=False)
+
+
+
+        # self._insertFunctionStep(self.prepareDataStep, needsGPU=False)
         self._insertFunctionStep(self.exportParticlesStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
+
+    # --------------------------- STEPS functions -----------------------------
+    def _initialize(self):
+        super()._initialize()
+        makePath(self._getTiltStackDir())
+
+    def createTsAliFilesStep(self, tsId: str):
+        """Take advantage of Scipion's method to generate IMOD files (compatible with Warp)."""
+        if tsId in self.failedTsIds:
+            return
+        try:
+            ts = self.seriesDict[tsId]
+            self.createImodFiles(ts)
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to create the TS star file '
+                                f'with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
 
     def prepareDataStep(self):
         inputTs = self.inputSet.get()
@@ -182,7 +245,13 @@ class ProtWarpExportParticles(ProtWarpBase):
                 f = open(filePath, 'w')
                 particlesTable = Table(columns=tomoStarFields)
 
-            angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
+            # Orientations: use the coordinate's transform when present; otherwise (pure picks
+            # with no orientation, e.g. a de-novo STA start) write zeroed Euler angles so Warp
+            # gets valid rlnAngleRot/Tilt/Psi instead of choking on a missing transform.
+            if coord.hasTransform():
+                angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
+            else:
+                angles = (0., 0., 0.)
             zCoord = coord.getZ(BOTTOM_LEFT_CORNER)
             if self.flipZHand.get():
                 # Mirror Z through the tomogram mid-plane (corner origin, 0-indexed
@@ -222,6 +291,15 @@ class ProtWarpExportParticles(ProtWarpBase):
             "--diameter": self.diameter.get(),
         }
         cmd = '--relative_output_paths --normalized_coords --2d'
+        # Tilt-sampling controls
+        if self.nTilts.get() is not None:
+            cmd += f' --n_tilts {self.nTilts.get()}'
+        cmd += f' --max_missing_tilts {self.maxMissingTilts.get()}'
+        # Normalization / premultiply flags
+        if self.dontNormalizeInput.get():
+            cmd += ' --dont_normalize_input'
+        if self.dontPremultiply.get():
+            cmd += ' --dont_premultiply'
         self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
 
     def writeOptimisationSetStar(self, relionFolder):
@@ -335,20 +413,31 @@ class ProtWarpExportParticles(ProtWarpBase):
             for angle in angles:
                 f.write(f'{-angle}\n')
 
-    def createImodFiles(self, ts):
-        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
-        pwutils.makePath(tiltstackFolder)
-
-        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
-
-        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
-        self._invertTiltAngles(tltPath)
-
     def cleanIntermediateResults(self):
         self.info(">>> Cleaning intermediate results...")
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
         pwutils.cleanPath(imagesFolder)
+
+    # --------------------------- UTILS functions -----------------------------
+    def _getInSet(self) -> SetOfTiltSeries:
+        return self.inputSet.get()
+
+    def _getTiltStackDir(self) -> str:
+        return join(self._getTiltSeriesDir(), TILTSTACK_FOLDER)
+
+    def _getTsTiltStackDir(self, tsId: str) -> str:
+        return join(self._getTiltStackDir(), tsId)
+
+    def createImodFiles(self, ts):
+        tsId = ts.getTsId()
+        tiltstackFolder = makePath(self._getTsTiltStackDir(tsId))
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
+        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
+        # The .tomostar is generated with NEGATED tilt angles (convert method writeTsStar use -tiltAngle).
+        # ts_import_alignments must receive the alignment
+        # in the SAME sign convention, so the native IMOD .tlt angles are inverted here.
+        # If the tomostar negation ever changes, this inversion must change in lockstep.
+        self._invertTiltAngles(tltPath)
 
 
 
