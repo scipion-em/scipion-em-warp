@@ -172,6 +172,9 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
                                            prerequisites=pId,
                                            needsGPU=False)
+            pId = self._insertFunctionStep(self.createTsAliFilesStep, tsId,
+                                           prerequisites=pId,
+                                           needsGPU=False)
 
 
 
