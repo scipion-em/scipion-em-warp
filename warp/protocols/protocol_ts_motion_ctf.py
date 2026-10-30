@@ -35,19 +35,16 @@ from os import remove
 from os.path import splitext, abspath, dirname, join, basename, exists
 from typing import Union, Tuple, List, Optional
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
-from pwem.protocols import EMProtocol
 from pyworkflow import BETA
-from pyworkflow.object import Set, Pointer
+from pyworkflow.object import Pointer
 from pyworkflow.protocol import GPU_LIST, PointerParam, StringParam, LEVEL_ADVANCED, EnumParam, \
     FloatParam, IntParam, BooleanParam, LabelParam
-from pyworkflow.utils import cyanStr, Message, makePath, redStr, replaceBaseExt, yellowStr
+from pyworkflow.utils import cyanStr, Message, redStr, replaceBaseExt, yellowStr
 from tomo.objects import (SetOfTiltSeriesM, SetOfTiltSeries, TiltImage,
                           TiltSeries, SetOfCTFTomoSeries,
                           TiltSeriesM, TiltImageM, CTFTomoSeries, CTFTomo)
 from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TS_CTF, TS_DEFOCUS_HAND, FRAMESERIES_FOLDER, \
-    AVERAGE_FOLDER, FRAMESERIES_SETTINGS, TOMOSTAR_FOLDER, TILTSERIES_SETTINGS, TOMOSTAR_EXT, TILTSERIES_FOLDER, \
-    MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF, MRC_EXT
-from warp.convert import writeTsStar
+    AVERAGE_FOLDER, FRAMESERIES_SETTINGS, MRCS_EXT, EVEN, ODD, POWERSPECTRUM_FOLDER, FS_MOTION, FS_CTF, MRC_EXT
 from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import parseCtfXMLFile, _getDefocusHand
 
@@ -96,17 +93,9 @@ class ProtWarpTSMotionCorr(ProtWarpTomoBase):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # self.samplingRate = None
         self.outSamplingRate = None
-        # self.exposure = None
-        # self.seriesDict = None
-        # self.tsmDir = None
-        # self.tsDir = None
-        # self.tsStarDir = None
         self.gainFile = None
         self.darkFile = None
-        # self.failedTsIds = []
-        # Per-tilt-series defocus handedness (+1 / -1)
         self.tsHandednessDict = {}
         # Per-tilt-series handedness correlation reported by ts_defocus_hand (confidence)
         self.tsHandednessCorr = {}

@@ -31,6 +31,7 @@ import math
 import scipy.fft
 import xml.etree.ElementTree as eTree
 
+from pwem import logger
 from pwem.convert import transformations
 from pwem.convert.transformations import translation_from_matrix, euler_from_matrix
 from tomo.constants import TR_RELION
@@ -55,18 +56,17 @@ from warp import TILTIMAGES_FOLDER, FRAMESERIES_FOLDER
 
 def tom_ctf1d(length, pixelsize, voltage, cs, defocus,
               amplitude, phaseshift, bfactor):
-
     ny = 1 / pixelsize
     lambda1 = 12.2643247 / np.sqrt(voltage * (1.0 + voltage * 0.978466e-6)) * 1e-10
     lambda2 = lambda1 * 2
 
     k2 = (np.arange(length, dtype=np.float32) / (2 * length) * ny) ** 2
-    term1 = lambda1**3 * cs * k2**2
+    term1 = lambda1 ** 3 * cs * k2 ** 2
 
-    w = np.pi/2 * (term1 + lambda2 * defocus * k2) - phaseshift
+    w = np.pi / 2 * (term1 + lambda2 * defocus * k2) - phaseshift
 
     acurve = np.cos(w) * amplitude
-    pcurve = -np.sqrt(1 - amplitude**2) * np.sin(w)
+    pcurve = -np.sqrt(1 - amplitude ** 2) * np.sin(w)
     bfactor = np.exp(-bfactor * k2 * 0.25)
     ctf = (pcurve + acurve) * bfactor
 
@@ -97,8 +97,8 @@ def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1
     """
 
     # Precompute highpass filter
-    data = np.arange(0, 1+1/2047, 1/2047, dtype=np.float32)
-    highpass = np.minimum(1, data/highpassnyquist) * np.pi
+    data = np.arange(0, 1 + 1 / 2047, 1 / 2047, dtype=np.float32)
+    highpass = np.minimum(1, data / highpassnyquist) * np.pi
     highpass = 1 - np.cos(highpass)
 
     snr = np.exp(-data * snrfalloff * 100 / angpix) * (10 ** (3 * deconvstrength)) * highpass + 1e-6
@@ -113,26 +113,26 @@ def tom_deconv(vol, angpix=1.0, voltage=300.0, cs=2.7, defocus=3, snrfalloff=1.1
     ctf = tom_ctf1d(2048, angpix, voltage, cs, defocus, 0.07, phaseshift, 0)
     if phaseflipped:
         ctf = np.abs(ctf)
-    wiener = ctf / (ctf*ctf + 1.0/snr)
+    wiener = ctf / (ctf * ctf + 1.0 / snr)
 
-    s1, f1 = -math.floor(vol.shape[0]/2), -math.floor(vol.shape[0]/2) + vol.shape[0] - 1
+    s1, f1 = -math.floor(vol.shape[0] / 2), -math.floor(vol.shape[0] / 2) + vol.shape[0] - 1
     m1 = np.arange(s1, f1 + 1, dtype=np.int32)
-    s2, f2 = -math.floor(vol.shape[1]/2), -math.floor(vol.shape[1]/2) + vol.shape[1] - 1
+    s2, f2 = -math.floor(vol.shape[1] / 2), -math.floor(vol.shape[1] / 2) + vol.shape[1] - 1
     m2 = np.arange(s2, f2 + 1, dtype=np.int32)
 
     if vol.ndim == 3:
-        s3, f3 = -math.floor(vol.shape[2]/2), -math.floor(vol.shape[2]/2) + vol.shape[2] - 1
+        s3, f3 = -math.floor(vol.shape[2] / 2), -math.floor(vol.shape[2] / 2) + vol.shape[2] - 1
         m3 = np.arange(s3, f3 + 1, dtype=np.int32)
         x, y, z = np.meshgrid(m1, m2, m3, indexing='ij')
         x = np.divide(x, abs(s1))
         y = np.divide(y, abs(s2))
         z = np.divide(z, max(1, abs(s3)))
-        r = np.sqrt(x**2 + y**2 + z**2)
+        r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     else:
         x, y = np.meshgrid(m1, m2, indexing='ij')
         x = np.divide(x, abs(s1))
         y = np.divide(y, abs(s2))
-        r = np.sqrt(x**2 + y**2)
+        r = np.sqrt(x ** 2 + y ** 2)
 
     r = np.minimum(1, r)
     r = np.fft.ifftshift(r)
@@ -306,11 +306,102 @@ def updateCtFXMLFile(xmlPath, ctfTomoSeries, ts):
     tree.write(xmlPath, encoding='utf-8', xml_declaration=True)
 
 
+def writeCtfXml(xmlPath, ctfTomoSeries, ts, apix, voltage, cs, amplitude,
+                imageDimPix, areAnglesInverted=False):
+    """Build a Warp per-series CTF XML directly from Scipion's (already estimated)
+    CTF metadata, replacing the WarpTools ts_ctf estimation step.
+
+    Only the elements that ts_export_particles / ts_import_alignments / M actually
+    read are written: the AreAnglesInverted flag, the <CTF> parameter block and the
+    four per-tilt CTF grids (defocus mean, delta, angle, phase). Everything else Warp
+    default-initialises, reads from the .tomostar, or fills in during
+    ts_import_alignments (which re-serialises this file to the full schema).
+
+    Conventions (must stay in lockstep with the rest of the plugin):
+      * Defocus is stored in MICRONS (Scipion keeps Angstrom -> /1e4), split into the
+        symmetric mean (GridCTF) and the astigmatism half-difference (GridCTFDefocusDelta),
+        matching updateCtFXMLFile.
+      * Grid Z-nodes follow the ascending-tilt-angle order used by writeTsStar when it
+        writes the .tomostar, so grid index z lines up with Warp's internal tilt index.
+      * CTFs are matched to tilts by acquisition order, like updateCtFXMLFile.
+    """
+    ctfByAcqOrder = {
+        ctf.getAcquisitionOrder(): ctf
+        for ctf in ctfTomoSeries.iterItems(iterate=False)
+        if ctf.isEnabled()
+    }
+
+    tiltImages = sorted(
+        (ti for ti in ts.iterItems(iterate=False) if ti.isEnabled()),
+        key=lambda ti: ti.getTiltAngle()
+    )
+
+    defocusValues = []
+    defocusDeltaValues = []
+    defocusAngleValues = []
+    for ti in tiltImages:
+        # Intersect the ts and the ctf via the acquisition order, as there may
+        # be excluded views
+        acqOrder = ti.getAcquisitionOrder()
+        ctf = ctfByAcqOrder.get(acqOrder)
+        if ctf is None:
+            logger.warning(f'No CTF found for acquisition order {acqOrder} '
+                           f'in tilt-series {ts.getTsId()}')
+            continue
+        defocusU = ctf.getDefocusU() / 1e4
+        defocusV = ctf.getDefocusV() / 1e4
+        defocusValues.append((defocusU + defocusV) / 2)
+        defocusDeltaValues.append((defocusU - defocusV) / 2)
+        defocusAngleValues.append(ctf.getDefocusAngle())
+
+    nTilts = len(tiltImages)
+    if nTilts == 0:
+        raise ValueError(f'No enabled tilt images in tilt-series {ts.getTsId()}')
+    phaseValues = [0.0] * nTilts
+    nx, ny = imageDimPix
+
+    root = eTree.Element('TiltSeries', {
+        'AreAnglesInverted': 'True' if areAnglesInverted else 'False',
+        'ImageDimensionsAngstrom': f'{nx * apix}, {ny * apix}',
+    })
+    ctfEl = eTree.SubElement(root, 'CTF')
+
+    def _param(name, value):
+        eTree.SubElement(ctfEl, 'Param', {'Name': name, 'Value': str(value)})
+
+    _param('PixelSize', apix)
+    _param('Voltage', voltage)
+    _param('Cs', cs)
+    _param('Amplitude', amplitude)
+    # Global Defocus/DefocusDelta are fallbacks; Warp drives CTF from the grids below.
+    _param('Defocus', np.mean(defocusValues))
+    _param('DefocusDelta', np.mean(defocusDeltaValues))
+    _param('DefocusAngle', defocusAngleValues[nTilts // 2])
+    _param('PhaseShift', 0)
+
+    def _grid(name, values):
+        grid = eTree.SubElement(root, name, {
+            'Width': '1', 'Height': '1', 'Depth': str(nTilts),
+            'MarginX': '0', 'MarginY': '0', 'MarginZ': '0',
+        })
+        for z, value in enumerate(values):
+            eTree.SubElement(grid, 'Node',
+                             {'X': '0', 'Y': '0', 'Z': str(z), 'Value': str(value)})
+
+    # Element name is GridCTF (its property name in Warp is GridCTFDefocus).
+    _grid('GridCTF', defocusValues)
+    _grid('GridCTFDefocusDelta', defocusDeltaValues)
+    _grid('GridCTFDefocusAngle', defocusAngleValues)
+    _grid('GridCTFPhase', phaseValues)
+
+    eTree.ElementTree(root).write(xmlPath, encoding='utf-8', xml_declaration=True)
+
+
 def tomoStarGenerate(tsId, tiValues, otputFolder, isTiltSeries, perTs=False):
-        """Generate the .tomostar files from TS"""
-        _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
-        _file = open(_fileName, 'a+')
-        header = """
+    """Generate the .tomostar files from TS"""
+    _fileName = os.path.abspath(otputFolder) + '/%s.tomostar' % tsId
+    _file = open(_fileName, 'a+')
+    header = """
 data_
 
 loop_
@@ -321,23 +412,23 @@ _wrpDose #4
 _wrpAverageIntensity #5  
 _wrpMaskedFraction #6
 """
-        _file.write(header)
-        sortedTiValues = sorted(tiValues)
-        imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
-        for acqOrder in sortedTiValues:
-            value = tiValues[acqOrder]
-            tiPath = '../%s/' % imagesFolder + value[0] if not perTs else '../../%s/' % imagesFolder + value[0]
-            angleTilt = value[1]
-            axisAngle = value[2]
-            shiftX = f"{value[3]:.6f}"
-            shiftY = f"{value[4]:.6f}"
-            dose = value[5]
-            averageIntensity = 3.721
-            maskedFraction = value[7]
-            _file.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                tiPath, angleTilt, axisAngle, dose, averageIntensity, maskedFraction))
+    _file.write(header)
+    sortedTiValues = sorted(tiValues)
+    imagesFolder = TILTIMAGES_FOLDER if isTiltSeries else FRAMESERIES_FOLDER
+    for acqOrder in sortedTiValues:
+        value = tiValues[acqOrder]
+        tiPath = '../%s/' % imagesFolder + value[0] if not perTs else '../../%s/' % imagesFolder + value[0]
+        angleTilt = value[1]
+        axisAngle = value[2]
+        shiftX = f"{value[3]:.6f}"
+        shiftY = f"{value[4]:.6f}"
+        dose = value[5]
+        averageIntensity = 3.721
+        maskedFraction = value[7]
+        _file.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (
+            tiPath, angleTilt, axisAngle, dose, averageIntensity, maskedFraction))
 
-        _file.close()
+    _file.close()
 
 
 def genTransformMatrix(rot, tilt, psi):

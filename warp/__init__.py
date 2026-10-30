@@ -84,10 +84,19 @@ class Plugin(pwem.Plugin):
         FLAG = f"warp_{version}_installed"
 
         # try to get CONDA activation command
+        # NOTE on the pytorch pin: warp only requires "pytorch=*=cuda129*" (any
+        # version with a CUDA 12.9 build string). conda-forge ships cuda129 builds
+        # up to >=2.13, but libtorch 2.13 renamed the internal symbol
+        # c10::impl::cow::materialize_cow_storage(StorageImpl&) -> materialize_cow(StorageImpl*).
+        # warp's bundled libLibTorchSharp.so is linked against the pre-2.13 name, so
+        # with >=2.13 every neural-network path (M denoiser, MCore refinement
+        # regularisation, BoxNet, Noise2*) aborts with an undefined-symbol error.
+        # Pin <2.13 so the loose dependency resolves to a compatible libtorch (2.12.x).
         installCmds = [
             cls.getCondaActivationCmd(),
-            f'conda create -y -n {ENV_NAME} warp=2.0.0dev41 -c warpem '
-            f'-c nvidia/label/cuda-12.9.0 -c pytorch -c conda-forge &&',
+            f'conda create -y -n {ENV_NAME} warp=2.0.0dev41 '
+            f"\"pytorch[version='<2.13',build='*cuda129*']\" "
+            f'-c warpem -c nvidia/label/cuda-12.9.0 -c pytorch -c conda-forge &&',
             f'touch {FLAG}'  # Flag installation finished
         ]
 

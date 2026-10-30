@@ -26,13 +26,13 @@ import logging
 import math
 import traceback
 from abc import ABC, abstractmethod
-from os.path import abspath, join
+from os.path import abspath, join, exists, normpath
 from typing import Tuple, Union
 from pwem.protocols import EMProtocol
 from pyworkflow.utils import cyanStr, makePath, redStr
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries
 from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TOMOSTAR_EXT, TILTSERIES_SETTINGS, FRAMESERIES_FOLDER, \
-    TILTSERIES_FOLDER, TOMOSTAR_FOLDER
+    TILTSERIES_FOLDER, TOMOSTAR_FOLDER, MATCHING_FOLDER, RELION_FOLDER, TILTSTACK_FOLDER
 from warp.convert import writeTsStar
 
 logger = logging.getLogger(__name__)
@@ -107,6 +107,18 @@ class ProtWarpTomoBase(EMProtocol, ABC):
     def _getOutTsStarFile(self, tsId: str) -> str:
         return join(self.tsStarDir, f'{tsId}{TOMOSTAR_EXT}')
 
+    def _getTiltStackDir(self) -> str:
+        return join(self._getTiltSeriesDir(), TILTSTACK_FOLDER)
+
+    def _getTsTiltStackDir(self, tsId: str) -> str:
+        return join(self._getTiltStackDir(), tsId)
+
+    def _getParticlesFolder(self) -> str:
+        return self._getExtraPath(MATCHING_FOLDER)
+
+    def _getRelionFolder(self) -> str:
+        return self._getExtraPath(RELION_FOLDER)
+
     def _genCreateSettingsTsArgs(self) -> str:
         x, y, z = self._getTomoDims()
         args = [
@@ -133,3 +145,19 @@ class ProtWarpTomoBase(EMProtocol, ABC):
         tomoY = math.ceil(x * s + y * c)
         tomoZ = int(max(tomoX, tomoY) / 3)
         return tomoX, tomoY, tomoZ
+
+    def normalizeParticlesPath(self, particleFile: str) -> str:
+        if not exists(particleFile):
+            particleFile = normpath(join(self._getTiltSeriesDir(), particleFile))
+        return particleFile
+    
+    def normalizeTomogramsPath(self, tomogramFile: str) -> str:
+        if not exists(tomogramFile):
+            tomogramFile = join(self._getRelionFolder(), tomogramFile)
+        return tomogramFile
+
+    def normalizeOptimizationPath(self, optimizationValue:str) -> str:
+        optimizationFile = optimizationValue
+        if not exists(optimizationFile):
+            optimizationFile = join(self._getExtraPath(RELION_FOLDER), optimizationValue)
+        return optimizationFile

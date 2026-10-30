@@ -24,26 +24,23 @@
 # *
 # ******************************************************************************
 import logging
-import os
 import traceback
 from enum import Enum
 from os.path import join
-
 from emtable import Table
 from pyworkflow import BETA
 import pyworkflow.protocol.params as params
-import pyworkflow.utils as pwutils
-from pyworkflow.object import Integer
-from pyworkflow.utils import Message, redStr, makePath
+from pyworkflow.utils import Message, redStr, cyanStr, makePath, cleanPath
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
 from tomo.constants import BOTTOM_LEFT_CORNER
 from tomo.objects import SetOfTiltSeries
-from warp import MATCHING_FOLDER, TILTSERIES_SETTINGS, RELION_FOLDER, WARP_TOOLS, TS_EXPORT_PARTICLES, \
-    OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, TS_CTF, TILTSERIES_FOLDER, TS_DEFOCUS_HAND, \
-    TS_IMPORT_ALIGNMENTS, TILTIMAGES_FOLDER, tomoStarFields, TILTSTACK_FOLDER
+from tomo.utils import getTsIdsIntersection, getTsIdsDicts
+from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
+    OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, TS_DEFOCUS_HAND, \
+    TS_IMPORT_ALIGNMENTS, TILTIMAGES_FOLDER, tomoStarFields, Plugin
 from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
-from warp.utils import updateCtFXMLFile, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
+from warp.utils import writeCtfXml, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +61,8 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.ctfDict = None
+        self.tomoDict = None
 
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
@@ -164,29 +163,65 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
     # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self._initialize()
-        pId = self._insertFunctionStep(self.createTsSettingsStep,
-                                       prerequisites=[],
-                                       needsGPU=False)
+        settingsId = self._insertFunctionStep(self.createTsSettingsStep,
+                                              prerequisites=[],
+                                              needsGPU=False)
 
-        for tsId, tsM in self.seriesDict.items():
-            pId = self._insertFunctionStep(self.createTsMStarStep, tsId,
-                                           prerequisites=pId,
+        # Per tilt-series: tomostar -> IMOD alignment files -> CTF XML.
+        ctfSteps = []
+        for tsId in self.seriesDict:
+            sId = self._insertFunctionStep(self.createTsMStarStep, tsId,
+                                           prerequisites=settingsId,
                                            needsGPU=False)
-            pId = self._insertFunctionStep(self.createTsAliFilesStep, tsId,
-                                           prerequisites=pId,
+
+            sId = self._insertFunctionStep(self.createTsAliFilesStep, tsId,
+                                           prerequisites=sId,
                                            needsGPU=False)
 
+            sId = self._insertFunctionStep(self.createCtfXmlStep, tsId,
+                                           prerequisites=sId,
+                                           needsGPU=False)
+            ctfSteps.append(sId)
 
+        # Particle .star files only depend on the input coordinates / tomoDict
+        # (prepared in _initialize), not on any prior step.
+        partId = self._insertFunctionStep(self.createParticlesStarStep,
+                                          prerequisites=[],
+                                          needsGPU=False)
 
-        # self._insertFunctionStep(self.prepareDataStep, needsGPU=False)
-        self._insertFunctionStep(self.exportParticlesStep, needsGPU=True)
-        self._insertFunctionStep(self.createOutputStep, needsGPU=False)
-        self._insertFunctionStep(self.cleanIntermediateResults, needsGPU=False)
+        # Import alignments needs every per-series .tomostar + CTF XML in place.
+        prereq = self._insertFunctionStep(self.tsImportAligmentsStep,
+                                          prerequisites=ctfSteps,
+                                          needsGPU=False)
+        if self.invertDefocusHand.get():
+            prereq = self._insertFunctionStep(self.tsDefocusHandStep,
+                                              prerequisites=prereq,
+                                              needsGPU=False)
+
+        expId = self._insertFunctionStep(self.exportParticlesStep,
+                                         prerequisites=[partId, prereq],
+                                         needsGPU=True)
+
+        outId = self._insertFunctionStep(self.createOutputStep,
+                                         prerequisites=expId,
+                                         needsGPU=False)
+
+        self._insertFunctionStep(self.cleanIntermediateResults,
+                                 prerequisites=outId,
+                                 needsGPU=False)
 
     # --------------------------- STEPS functions -----------------------------
     def _initialize(self):
         super()._initialize()
-        makePath(self._getTiltStackDir())
+        # Get the intersection of tsIds
+        tsSet = self._getInSet()
+        ctfSet = self.inputSetOfCtfTomoSeries.get()
+        coordSet = self.coordinates.get()
+        tomoSet = coordSet.getPrecedents()
+        commonTsIds = getTsIdsIntersection(coordSet, tsSet, ctfSet)
+        self.seriesDict, self.ctfDict, self.tomoDict = getTsIdsDicts(tsSet, ctfSet, tomoSet,
+                                                                     present_ts_ids=commonTsIds)
+        makePath(*[self._getTiltStackDir(), self._getParticlesFolder()])
 
     def createTsAliFilesStep(self, tsId: str):
         """Take advantage of Scipion's method to generate IMOD files (compatible with Warp)."""
@@ -201,136 +236,154 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             logger.error(traceback.format_exc())
             self.failedTsIds.append(tsId)
 
-    def prepareDataStep(self):
-        inputTs = self.inputSet.get()
+    def createCtfXmlStep(self, tsId: str):
+        """Build the Warp per-series CTF XML directly from Scipion's
+        previously estimated CTF metadata. ts_import_alignments later
+        re-serialises this file to the full schema."""
+        if tsId in self.failedTsIds:
+            return
+        try:
+            logger.info(cyanStr(f">>> {tsId} - Writing CTF XML from Scipion CTF..."))
+            ts = self.seriesDict[tsId]
+            # Use the intersected, pre-cloned CTF dict (tsId -> CTFTomoSeries clone)
+            # rather than querying the whole input set, which may have been subsetted.
+            ctfTomoSeries = self.ctfDict.get(tsId)
+            if ctfTomoSeries is None:
+                raise ValueError(f'No input CTF estimation found for tilt-series {tsId}')
+            acq = ts.getAcquisition()
+            x, y, _ = ts.getDim()
+            xmlPath = join(self._getTiltSeriesDir(), f'{tsId}.xml')
+            writeCtfXml(xmlPath, ctfTomoSeries, ts,
+                        apix=ts.getSamplingRate(),
+                        voltage=acq.getVoltage(),
+                        cs=acq.getSphericalAberration(),
+                        amplitude=acq.getAmplitudeContrast(),
+                        imageDimPix=(x, y))
+        except Exception as e:
+            logger.error(redStr(f'tsId = {tsId} -> Unable to write the CTF XML '
+                                f'with exception {e}. Skipping... '))
+            logger.error(traceback.format_exc())
+            self.failedTsIds.append(tsId)
+
+    def createParticlesStarStep(self):
+        logger.info(cyanStr(">>> Generating the particles .star file per tomogram..."))
         coordSet = self.coordinates.get()
-        tsSr = inputTs.getSamplingRate()
-        tomoSr = coordSet.getSamplingRate()
-        tomoDim = coordSet.getPrecedents().getDim()
-        scaleFactor = tomoSr / tsSr
-        self.tomo_thickness = Integer(round(tomoDim[2] * scaleFactor))
-        self.x_dimension = Integer(round(tomoDim[0] * scaleFactor))
-        self.y_dimension = Integer(round(tomoDim[1] * scaleFactor))
+        outPath = self._getParticlesFolder()
+        
+        # Iterate only the intersected, pre-cloned tomograms (the input sets may have
+        # been subsetted); iterCoordinates(volume=tomo) then yields just that
+        # tomogram's coordinates, so no .star references a missing .tomostar / CTF XML.
+        for tomoId, tomo in self.tomoDict.items():
+            if tomoId in self.failedTsIds:
+                continue
 
-        # Create the warp settings file and retrieve ctf and alignments values
-        self.info(">>> Creating the warp settings file and retrieve ctf and alignments values...")
-        self.createTiltSeriesSetting(None)
-        for ts in inputTs.iterItems(iterate=False):
-            self.tsDataPrepare(ts)
-            self.createImodFiles(ts)
-        self.tsCtfEstimation(tsSr)
-        self.updateCTFValues()
-        self.tsImportAligments()
-        if self.invertDefocusHand.get():
-            self.tsDefocusHand()
+            # Dimensions and sampling rate from the tomogram element: the set may be
+            # heterogeneous, so these are read per tomogram, not from the set.
+            tomoDim = tomo.getDim()
+            sRate = tomo.getSamplingRate()
+            particlesTable = Table(columns=tomoStarFields)
 
-        sRate = coordSet.getSamplingRate()
-        outPath = self._getExtraPath(MATCHING_FOLDER)
-        pwutils.makePath(outPath)
+            for coord in coordSet.iterCoordinates(volume=tomo):
+                # Orientations: use the coordinate's transform when present; otherwise (pure picks
+                # with no orientation, e.g. a de-novo STA start) write zeroed Euler angles so Warp
+                # gets valid rlnAngleRot/Tilt/Psi instead of choking on a missing transform.
+                if coord.hasTransform():
+                    angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
+                else:
+                    angles = (0., 0., 0.)
+                zCoord = coord.getZ(BOTTOM_LEFT_CORNER)
+                if self.flipZHand.get():
+                    # Mirror Z through the tomogram mid-plane (corner origin, 0-indexed
+                    # voxels) to reconcile Warp/M handedness with the picking tomogram.
+                    # Improper transform: only valid for identity-orientation coordinates
+                    # (see the 'Invert Z coordinate' help). Normalisation by tomoDim[2]
+                    # below is kept identical to X/Y to preserve the existing convention.
+                    zCoord = (tomoDim[2] - 1) - zCoord
+                particlesTable.addRow(
+                    coord.getX(BOTTOM_LEFT_CORNER) / tomoDim[0],
+                    coord.getY(BOTTOM_LEFT_CORNER) / tomoDim[1],
+                    zCoord / tomoDim[2],
+                    angles[0],
+                    angles[1],
+                    angles[2],
+                    f'{tomoId}.tomostar',
+                    coord.getScore()
+                )
 
-        currentTomoId = None
-        particlesTable = None
-        f = None
-
-        # Generate .star file per tomogram
-        self.info(">>> Generate .star file per tomogram...")
-        for coord in coordSet.iterCoordinates(orderBy='_tomoId'):
-            tomoId = coord.getTomoId()
-
-            if tomoId != currentTomoId:
-                if f is not None:
+            # Only write a .star for tomograms that actually have coordinates.
+            if len(particlesTable):
+                with open(join(outPath, f'{tomoId}.star'), 'w') as f:
                     particlesTable.writeStar(f, tableName='')
-                    f.close()
 
-                currentTomoId = tomoId
-                tomoDim = coord.getVolume().getDim()
-                filePath = os.path.join(outPath, f'{currentTomoId}.star')
-                f = open(filePath, 'w')
-                particlesTable = Table(columns=tomoStarFields)
+    def tsImportAligmentsStep(self):
+        logger.info(cyanStr(">>> Starting import alignments..."))
+        # ts_import_alignments runs once over every series and takes a single global
+        # --alignment_angpix, so it is read from the set.
+        args = [
+            f"--settings {self._getTiltSeriesSettingsFn()}",
+            f"--alignments {self._getTiltStackDir()}",
+            f"--alignment_angpix {self._getInSet().getSamplingRate()}",
+        ]
+        args = ' '.join(args)
+        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), args, executable='/bin/bash')
 
-            # Orientations: use the coordinate's transform when present; otherwise (pure picks
-            # with no orientation, e.g. a de-novo STA start) write zeroed Euler angles so Warp
-            # gets valid rlnAngleRot/Tilt/Psi instead of choking on a missing transform.
-            if coord.hasTransform():
-                angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
-            else:
-                angles = (0., 0., 0.)
-            zCoord = coord.getZ(BOTTOM_LEFT_CORNER)
-            if self.flipZHand.get():
-                # Mirror Z through the tomogram mid-plane (corner origin, 0-indexed
-                # voxels) to reconcile Warp/M handedness with the picking tomogram.
-                # Improper transform: only valid for identity-orientation coordinates
-                # (see the 'Invert Z coordinate' help). Normalisation by tomoDim[2]
-                # below is kept identical to X/Y to preserve the existing convention.
-                zCoord = (tomoDim[2] - 1) - zCoord
-            particlesTable.addRow(
-                coord.getX(BOTTOM_LEFT_CORNER) / tomoDim[0],
-                coord.getY(BOTTOM_LEFT_CORNER) / tomoDim[1],
-                zCoord / tomoDim[2],
-                angles[0],
-                angles[1],
-                angles[2],
-                f'{currentTomoId}.tomostar',
-                coord.getScore()
-            )
-        # Close the last open file
-        if f is not None:
-            particlesTable.writeStar(f, tableName='')
-            f.close()
+    def tsDefocusHandStep(self):
+        """Flip the per-tilt-series defocus/geometric handedness (Warp's
+        AreAnglesInverted flag), which ts_export_particles writes out as the RELION
+        tomogram hand (rlnTomoHand) for M. '--set_flip' is a pure metadata setter and
+        does not require the per-movie 2x2x1 defocus grid that '--check'/'--set_auto'
+        need."""
+        logger.info(cyanStr(">>> Flipping defocus handedness (ts_defocus_hand --set_flip)..."))
+        args = f"--settings {self._getTiltSeriesSettingsFn()} --set_flip"
+        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), args, executable='/bin/bash')
 
     def exportParticlesStep(self):
-        self.info(">>> Exporting particles...")
-        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
-        matchinFolder = self._getExtraPath(MATCHING_FOLDER)
-        output = self._getExtraPath(RELION_FOLDER)
-        pwutils.makePath(output)
-        argsDict = {
-            "--settings": os.path.abspath(settingFile),
-            "--input_directory": matchinFolder,
-            "--input_pattern": "*.star",
-            "--output_star": os.path.join(output, 'matching.star'),
-            "--output_angpix": self.output_angpix.get(),
-            "--box": self.box.get(),
-            "--diameter": self.diameter.get(),
-        }
-        cmd = '--relative_output_paths --normalized_coords --2d'
-        # Tilt-sampling controls
-        if self.nTilts.get() is not None:
-            cmd += f' --n_tilts {self.nTilts.get()}'
-        cmd += f' --max_missing_tilts {self.maxMissingTilts.get()}'
-        # Normalization / premultiply flags
+        logger.info(cyanStr(">>> Exporting particles..."))
+        settingsFile = self._getTiltSeriesSettingsFn()
+        particlesDir = self._getParticlesFolder()
+        output = self._getRelionFolder()
+        # 1. Initialize the list directly with the base arguments
+        cmd_parts = [
+            f"--settings {settingsFile}",
+            f"--input_directory {particlesDir}",
+            "--input_pattern *.star",
+            f"--output_star {join(output, 'matching.star')}",
+            f"--output_angpix {self.output_angpix.get()}",
+            f"--box {self.box.get()}",
+            f"--diameter {self.diameter.get()}",
+            # Split base flags into individual list items for cleaner structure
+            "--relative_output_paths",
+            "--normalized_coords",
+            "--2d",
+        ]
+
+        # 2. Conditionally append tilt-sampling controls
+        nTilts = self.nTilts.get()
+        if nTilts is not None:
+            cmd_parts.append(f"--n_tilts {nTilts}")
+
+        cmd_parts.append(f"--max_missing_tilts {self.maxMissingTilts.get()}")
+
+        # 3. Conditionally append normalization flags
         if self.dontNormalizeInput.get():
-            cmd += ' --dont_normalize_input'
+            cmd_parts.append("--dont_normalize_input")
+
         if self.dontPremultiply.get():
-            cmd += ' --dont_premultiply'
-        self.runProgram(argsDict, WARP_TOOLS, TS_EXPORT_PARTICLES, othersCmds=cmd)
+            cmd_parts.append("--dont_premultiply")
 
-    def writeOptimisationSetStar(self, relionFolder):
-        optFile = os.path.join(relionFolder, OPTIMISATION_SET_STAR)
-
-        particlesFile = self.normalizeOptimizationPath(
-            os.path.join(relionFolder, MATCHING_PARTICLES_STAR)
-        )
-        tomogramsFile = self.normalizeOptimizationPath(
-            os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR)
-        )
-
-        self.info(">>> Rewriting optimisation set STAR file...")
-
-        with open(optFile, 'w') as f:
-            f.write('data_\n\n')
-            f.write(f'_rlnTomoParticlesFile {particlesFile}\n')
-            f.write(f'_rlnTomoTomogramsFile {tomogramsFile}\n')
-
-        return optFile
+        # 4. Perform an O(N) join
+        args =  " ".join(cmd_parts)
+        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_EXPORT_PARTICLES), args, executable='/bin/bash')
 
     def createOutputStep(self):
         coordSet = self.coordinates.get()
-        tsSet = self.inputSet.get()
+        # The output is a single RelionSetOfPseudoSubtomograms carrying one sampling
+        # rate and one acquisition, so these global values are read from the set.
+        tsSet = self._getInSet()
         tsSRate = tsSet.getSamplingRate()
         boxSize = self.box.get()
         acq = tsSet.getAcquisition()
-        relionFolder = self._getExtraPath(RELION_FOLDER)
+        relionFolder = self._getRelionFolder()
         are2dStacks = True
 
         optFile = self.writeOptimisationSetStar(relionFolder)
@@ -344,9 +397,9 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
 
-        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
+        modifyStarFileMultiTable(join(relionFolder, MATCHING_PARTICLES_STAR),
                                  '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
-        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
+        modifyStarFileMultiTable(join(relionFolder, MATCHING_TOMOGRAMS_STAR),
                                  '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
 
         readSetOfPseudoSubtomograms(psubtomoSet)
@@ -356,52 +409,39 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         self._defineSourceRelation(self.inputSetOfCtfTomoSeries, psubtomoSet)
         self._defineSourceRelation(self.inputSet, psubtomoSet)
 
-    def tsCtfEstimation(self, tsSr):
-        """CTF estimation"""
+    # --------------------------- UTILS functions -----------------------------
+    def _getInSet(self) -> SetOfTiltSeries:
+        return self.inputSet.get()
 
-        self.info(">>> Generating ctf estimation...")
-        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
-        argsDict = {
-            "--settings": os.path.abspath(settingFile),
-            "--range_high": tsSr * 3,
-            "--range_low": tsSr * 4,
-        }
-        try:
-            self.runProgram(argsDict, WARP_TOOLS, TS_CTF)
-        except Exception:
-            self.info(">>> Error generating ctf estimation file...")
+    def createImodFiles(self, ts):
+        tsId = ts.getTsId()
+        tiltstackFolder = makePath(self._getTsTiltStackDir(tsId))
+        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
+        tltPath = join(tiltstackFolder, f'{ts.getTsId()}.tlt')
+        # The .tomostar is generated with NEGATED tilt angles (convert method writeTsStar use -tiltAngle).
+        # ts_import_alignments must receive the alignment
+        # in the SAME sign convention, so the native IMOD .tlt angles are inverted here.
+        # If the tomostar negation ever changes, this inversion must change in lockstep.
+        self._invertTiltAngles(tltPath)
 
-    def updateCTFValues(self):
-        for ts in self.inputSet.get().iterItems():
-            ctfTomoSeries = self.inputSetOfCtfTomoSeries.get().getItem('_tsId', ts.getTsId())
-            processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-            defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
-            updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
+    def writeOptimisationSetStar(self, relionFolder):
+        optFile = join(relionFolder, OPTIMISATION_SET_STAR)
 
-    def tsDefocusHand(self):
-        """Flip the per-tilt-series defocus/geometric handedness (Warp's
-        AreAnglesInverted flag), which ts_export_particles writes out as the RELION
-        tomogram hand (rlnTomoHand) for M. '--set_flip' is a pure metadata setter and
-        does not require the per-movie 2x2x1 defocus grid that '--check'/'--set_auto'
-        need."""
-        self.info(">>> Flipping defocus handedness (ts_defocus_hand --set_flip)...")
-        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
-        argsDict = {"--settings": os.path.abspath(settingFile)}
-        self.runProgram(argsDict, WARP_TOOLS, TS_DEFOCUS_HAND, othersCmds='--set_flip')
+        particlesFile = self.normalizeOptimizationPath(
+            join(relionFolder, MATCHING_PARTICLES_STAR)
+        )
+        tomogramsFile = self.normalizeOptimizationPath(
+            join(relionFolder, MATCHING_TOMOGRAMS_STAR)
+        )
 
-    def tsImportAligments(self):
-        self.info(">>> Starting import alignments...")
-        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        tiltstackFolder = os.path.join(processingFolder, 'tiltstack')
-        angpix = self.inputSet.get().getSamplingRate()
-        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
-        argsDict = {
-            "--settings": os.path.abspath(settingFile),
-            '--alignments': os.path.abspath(tiltstackFolder),
-            "--alignment_angpix": angpix,
-        }
-        cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
-        self.runJob(self.getPlugin().getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), cmd, executable='/bin/bash')
+        logger.info(cyanStr(">>> Rewriting optimisation set STAR file..."))
+
+        with open(optFile, 'w') as f:
+            f.write('data_\n\n')
+            f.write(f'_rlnTomoParticlesFile {particlesFile}\n')
+            f.write(f'_rlnTomoTomogramsFile {tomogramsFile}\n')
+
+        return optFile
 
     @staticmethod
     def _invertTiltAngles(tltPath):
@@ -417,31 +457,6 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                 f.write(f'{-angle}\n')
 
     def cleanIntermediateResults(self):
-        self.info(">>> Cleaning intermediate results...")
+        logger.info(cyanStr(">>> Cleaning intermediate results..."))
         imagesFolder = self._getExtraPath(TILTIMAGES_FOLDER)
-        pwutils.cleanPath(imagesFolder)
-
-    # --------------------------- UTILS functions -----------------------------
-    def _getInSet(self) -> SetOfTiltSeries:
-        return self.inputSet.get()
-
-    def _getTiltStackDir(self) -> str:
-        return join(self._getTiltSeriesDir(), TILTSTACK_FOLDER)
-
-    def _getTsTiltStackDir(self, tsId: str) -> str:
-        return join(self._getTiltStackDir(), tsId)
-
-    def createImodFiles(self, ts):
-        tsId = ts.getTsId()
-        tiltstackFolder = makePath(self._getTsTiltStackDir(tsId))
-        ts.writeImodFiles(tiltstackFolder, delimiter=' ', factor=1)
-        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
-        # The .tomostar is generated with NEGATED tilt angles (convert method writeTsStar use -tiltAngle).
-        # ts_import_alignments must receive the alignment
-        # in the SAME sign convention, so the native IMOD .tlt angles are inverted here.
-        # If the tomostar negation ever changes, this inversion must change in lockstep.
-        self._invertTiltAngles(tltPath)
-
-
-
-
+        cleanPath(imagesFolder)
