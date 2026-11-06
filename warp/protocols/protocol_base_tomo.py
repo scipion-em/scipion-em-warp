@@ -28,6 +28,9 @@ import traceback
 from abc import ABC, abstractmethod
 from os.path import abspath, join, exists, normpath
 from typing import Tuple, Union
+
+from numpy import deg2rad
+
 from pwem.protocols import EMProtocol
 from pyworkflow.utils import cyanStr, makePath, redStr
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries
@@ -139,7 +142,7 @@ class ProtWarpTomoBase(EMProtocol, ABC):
         # The binary swap is exact only near φ∈{0,90}. Near 45°, the detector rectangle rotated into
         # the tomogram frame needs a box larger than either W×H or H×W. The exact axis-aligned bounding
         # box of the rotated rectangle covers every imaged pixel at any angle and self-pads near 45°I
-        tiltAxisAngle = inSet.getAcquisition().getTiltAxisAngle()
+        tiltAxisAngle = deg2rad(inSet.getAcquisition().getTiltAxisAngle())
         c, s = abs(math.cos(tiltAxisAngle)), abs(math.sin(tiltAxisAngle))
         tomoX = math.ceil(x * c + y * s)
         tomoY = math.ceil(x * s + y * c)
