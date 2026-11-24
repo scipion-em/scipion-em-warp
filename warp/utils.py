@@ -25,6 +25,7 @@
 # *
 # **************************************************************************
 import os
+from typing import Tuple, Set, List
 
 import numpy as np
 import math
@@ -35,6 +36,7 @@ from pwem import logger
 from pwem.convert import transformations
 from pwem.convert.transformations import translation_from_matrix, euler_from_matrix
 from tomo.constants import TR_RELION
+from tomo.objects import CTFTomoSeries, TiltSeries
 from warp import TILTIMAGES_FOLDER, FRAMESERIES_FOLDER
 
 """ This code is adapted from https://github.com/dtegunov/tom_deconv
@@ -306,8 +308,30 @@ def updateCtFXMLFile(xmlPath, ctfTomoSeries, ts):
     tree.write(xmlPath, encoding='utf-8', xml_declaration=True)
 
 
-def writeCtfXml(xmlPath, ctfTomoSeries, ts, apix, voltage, cs, amplitude,
-                imageDimPix, areAnglesInverted=False):
+def getWarpTiltImages(ts: TiltSeries, presentAcqOrders: List[int]):
+    """Tilt images of ``ts`` in the order Warp indexes them, sorted by ascending tilt
+    angle. Only tilts that are enabled and whose acquisition order is in
+    ``presentAcqOrders`` are kept. That list is meant to come from
+    tomo.utils.getPresentAcqOrdersTsAndCtf, so each kept tilt is also enabled in the
+    CTF series and has a CTF to write. Every per-series file Warp matches by tilt index
+    (.tomostar rows, CTF XML grid nodes, IMOD .xf/.tlt lines) must be written from
+    this same list."""
+    return sorted(
+        (ti for ti in ts.iterItems(iterate=False) if ti.isEnabled() and ti.getAcquisitionOrder() in presentAcqOrders),
+        key=lambda ti: ti.getTiltAngle()
+    )
+
+
+def writeCtfXml(xmlPath: str,
+                ctfTomoSeries: CTFTomoSeries,
+                ts: TiltSeries,
+                presentAcqOrders: List[int],
+                apix: float,
+                voltage: int,
+                cs: float,
+                amplitude: float,
+                imageDimPix: Tuple[int, int],
+                areAnglesInverted: bool= False) -> None:
     """Build a Warp per-series CTF XML directly from Scipion's (already estimated)
     CTF metadata, replacing the WarpTools ts_ctf estimation step.
 
@@ -321,20 +345,18 @@ def writeCtfXml(xmlPath, ctfTomoSeries, ts, apix, voltage, cs, amplitude,
       * Defocus is stored in MICRONS (Scipion keeps Angstrom -> /1e4), split into the
         symmetric mean (GridCTF) and the astigmatism half-difference (GridCTFDefocusDelta),
         matching updateCtFXMLFile.
-      * Grid Z-nodes follow the ascending-tilt-angle order used by writeTsStar when it
-        writes the .tomostar, so grid index z lines up with Warp's internal tilt index.
+      * Grid Z-nodes follow getWarpTiltImages (enabled tilts, ascending tilt angle), the
+        same list used to write the .tomostar, so grid index z lines up with Warp's
+        internal tilt index.
       * CTFs are matched to tilts by acquisition order, like updateCtFXMLFile.
     """
     ctfByAcqOrder = {
-        ctf.getAcquisitionOrder(): ctf
+        ctfAcqOrder: ctf
         for ctf in ctfTomoSeries.iterItems(iterate=False)
-        if ctf.isEnabled()
+        if ctf.isEnabled() and (ctfAcqOrder := ctf.getAcquisitionOrder()) in presentAcqOrders
     }
 
-    tiltImages = sorted(
-        (ti for ti in ts.iterItems(iterate=False) if ti.isEnabled()),
-        key=lambda ti: ti.getTiltAngle()
-    )
+    tiltImages = getWarpTiltImages(ts, presentAcqOrders)
 
     defocusValues = []
     defocusDeltaValues = []
@@ -343,11 +365,7 @@ def writeCtfXml(xmlPath, ctfTomoSeries, ts, apix, voltage, cs, amplitude,
         # Intersect the ts and the ctf via the acquisition order, as there may
         # be excluded views
         acqOrder = ti.getAcquisitionOrder()
-        ctf = ctfByAcqOrder.get(acqOrder)
-        if ctf is None:
-            logger.warning(f'No CTF found for acquisition order {acqOrder} '
-                           f'in tilt-series {ts.getTsId()}')
-            continue
+        ctf = ctfByAcqOrder[acqOrder]
         defocusU = ctf.getDefocusU() / 1e4
         defocusV = ctf.getDefocusV() / 1e4
         defocusValues.append((defocusU + defocusV) / 2)
@@ -355,8 +373,6 @@ def writeCtfXml(xmlPath, ctfTomoSeries, ts, apix, voltage, cs, amplitude,
         defocusAngleValues.append(ctf.getDefocusAngle())
 
     nTilts = len(tiltImages)
-    if nTilts == 0:
-        raise ValueError(f'No enabled tilt images in tilt-series {ts.getTsId()}')
     phaseValues = [0.0] * nTilts
     nx, ny = imageDimPix
 

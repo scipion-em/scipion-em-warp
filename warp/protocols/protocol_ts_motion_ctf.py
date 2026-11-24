@@ -526,7 +526,7 @@ class ProtWarpTSMotionCorr(ProtWarpTomoBase):
             raise Exception('No outputs were generated. Please check the logs run.stdout and run.stderr.')
 
     # --------------------------- UTILS functions -----------------------------
-    def _getInSet(self) -> SetOfTiltSeriesM:
+    def _getInTsSet(self) -> SetOfTiltSeriesM:
         return self.getInputTSMovies()
 
     def getInputTSMovies(self, asPointer: bool = False) -> Union[SetOfTiltSeriesM, Pointer]:

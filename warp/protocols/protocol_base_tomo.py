@@ -33,6 +33,7 @@ from pyworkflow.utils import cyanStr, makePath, redStr
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries
 from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TOMOSTAR_EXT, TILTSERIES_SETTINGS, FRAMESERIES_FOLDER, \
     TILTSERIES_FOLDER, TOMOSTAR_FOLDER, MATCHING_FOLDER, RELION_FOLDER, TILTSTACK_FOLDER
+from warp.constants import AVERAGE_FOLDER, TILTIMAGES_FOLDER
 from warp.convert import writeTsStar
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ProtWarpTomoBase(EMProtocol, ABC):
 
     # --------------------------- STEPS functions -----------------------------
     def _initialize(self):
-        inSet = self._getInSet()
+        inSet = self._getInTsSet()
         self.samplingRate = inSet.getSamplingRate()
         # self.outSamplingRate = self._getOutputSamplingRate()
         self.exposure = inSet.getAcquisition().getDosePerFrame()
@@ -89,7 +90,7 @@ class ProtWarpTomoBase(EMProtocol, ABC):
 
     # --------------------------- UTILS functions -----------------------------
     @abstractmethod
-    def _getInSet(self) -> Union[SetOfTiltSeriesM, SetOfTiltSeries]:
+    def _getInTsSet(self) -> Union[SetOfTiltSeriesM, SetOfTiltSeries]:
         pass
 
     def _getTiltSeriesSettingsFn(self) -> str:
@@ -103,6 +104,13 @@ class ProtWarpTomoBase(EMProtocol, ABC):
 
     def _getTsStarDir(self) -> str:
         return abspath(self._getExtraPath(TOMOSTAR_FOLDER))
+
+    def _getTiltImagesDir(self) -> str:
+        # Sibling of the tomostar folder: the .tomostar rows are ../tiltimages/<name>.
+        return self._getExtraPath(TILTIMAGES_FOLDER)
+
+    def _getAveragesDir(self) -> str:
+        return join(self._getTiltImagesDir(), AVERAGE_FOLDER)
 
     def _getOutTsStarFile(self, tsId: str) -> str:
         return join(self.tsStarDir, f'{tsId}{TOMOSTAR_EXT}')
@@ -133,7 +141,7 @@ class ProtWarpTomoBase(EMProtocol, ABC):
         return ' '.join(args)
 
     def _getTomoDims(self) -> Tuple[int, int, int]:
-        inSet = self._getInSet()
+        inSet = self._getInTsSet()
         x = int(inSet.getDimensions()[0])
         y = int(inSet.getDimensions()[1])
         # The binary swap is exact only near φ∈{0,90}. Near 45°, the detector rectangle rotated into
