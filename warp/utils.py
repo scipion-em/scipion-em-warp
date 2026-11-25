@@ -461,8 +461,22 @@ def genTransformMatrix(rot, tilt, psi):
     return M
 
 
-def getTransformInfoFromCoordOrSubtomo(coord, samplingRate):
+def getTransformInfoFromCoordOrSubtomo(coord, samplingRate, mirrorZ=False):
+    """RELION Euler angles (rot, tilt, psi; degrees) and shifts (Å) of a coordinate or
+    subtomogram.
+
+    :param mirrorZ: express the orientation in the Z-mirrored tomogram frame (z -> -z),
+        to go with Z-mirrored positions. A mirror can't be applied to a rotation alone,
+        so the pose is conjugated by the mirror F = diag(1, 1, -1): R' = F R F. That is
+        the same particle pose seen in the mirrored tomogram, provided the reference is
+        mirrored too (the map refined from these particles is the enantiomer of the
+        one in the original frame). In Euler terms the tilt changes sign, which is
+        (rot + 180, tilt, psi + 180) in the usual range; the Z shift changes sign too.
+    """
     M = coord.getMatrix(convention=TR_RELION)
+    if mirrorZ:
+        F = np.diag([1., 1., -1., 1.])
+        M = F @ M @ F
     shifts = translation_from_matrix(M)
     # These 2 lines below were done when inverting, which is now what we always do.
     shifts = -shifts

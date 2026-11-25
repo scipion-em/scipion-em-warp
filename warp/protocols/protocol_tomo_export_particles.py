@@ -24,11 +24,12 @@
 # *
 # ******************************************************************************
 import logging
+import math
 import traceback
 from enum import Enum
 from glob import glob
 from os.path import join
-from typing import Set, List, Optional
+from typing import Set, List, Optional, Tuple
 from emtable import Table
 from pyworkflow import BETA
 from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam, EnumParam
@@ -36,7 +37,7 @@ from pyworkflow.utils import Message, redStr, cyanStr, yellowStr, makePath, clea
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
-from tomo.constants import BOTTOM_LEFT_CORNER
+from tomo.constants import CENTER_GRAVITY
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfCoordinates3D, TiltSeries
 from tomo.utils import getTsIdsIntersection, getTsIdsDicts, getPresentAcqOrdersTsAndCtf
 from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
@@ -149,14 +150,18 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         form.addSection(label='Geometry / handedness')
         form.addParam('flipZHand', BooleanParam, default=False,
                       label='Invert Z coordinate (handedness)',
-                      help="Mirror particle Z coordinates through the tomogram mid-plane "
-                           "(z -> Nz-1-z) to reconcile the geometric handedness between the "
-                           "picking tomogram and Warp/M.\n\n"
-                           "NOTE: this is an improper (chirality-inverting) transform. It is "
-                           "correct for picking-stage coordinates whose orientations are the "
-                           "identity (the common case). If the input coordinates carry refined "
-                           "orientations, those Euler angles must be mirror-transformed "
-                           "consistently, which this option does NOT do.")
+                      help="Mirror the particles through the tomogram mid-plane (z -> -z, "
+                           "relative to the tomogram centre). Use it only if the picking "
+                           "tomograms are mirrored in Z relative to Warp's reconstruction of the "
+                           "same tilt series, e.g. reconstructed with the opposite tilt-angle "
+                           "convention. Tomograms reconstructed with IMOD from the same alignment "
+                           "already match Warp: leave it off.\n\n"
+                           "Particle orientations are mirrored consistently with the positions "
+                           "(the rotation is conjugated by the mirror, which flips the sign of "
+                           "the Euler tilt). A mirror inverts chirality, so a map refined from "
+                           "the exported particles is the mirror image of one refined in the "
+                           "picking frame: mirror any reference taken from that frame as well.\n\n"
+                           "Independent of the defocus handedness below.")
 
         form.addParam('setHandManually', BooleanParam, default=False,
                       label='Set defocus handedness manually?',
@@ -172,6 +177,7 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                            "value, or to flip it if M/RELION refinement converges to a mirror-image "
                            "map.\n\n"
                            "Independent of the Z-coordinate option above.")
+
         form.addParam('defocusHand', EnumParam,
                       condition='setHandManually',
                       choices=[f'{HAND_NEGATIVE} (Warp default, no flip)', f'+{HAND_POSITIVE} (flipped)'],
@@ -345,6 +351,9 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         logger.info(cyanStr(">>> Generating the particles .star file per tomogram..."))
         coordSet = self._getInCoords()
         outPath = self._getParticlesFolder()
+        # Same volume size as written to the settings (createTsSettingsStep), which
+        # Warp uses to place the particles.
+        warpDims = self._getTomoDims()
         # Iterate only the intersected, pre-cloned tomograms (the input sets may have
         # been subsetted); iterCoordinates(volume=tomo) then yields just that
         # tomogram's coordinates, so no .star references a missing .tomostar / CTF XML.
@@ -353,7 +362,7 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                 continue
             starFile = join(outPath, f'{tomoId}.star')
             try:
-                self._writeTomoParticlesStar(coordSet, tomoId, tomo, starFile)
+                self._writeTomoParticlesStar(coordSet, tomoId, tomo, starFile, warpDims)
             except Exception as e:
                 # Drop the possibly half-written .star, and the .tomostar (_markFailed) so
                 # Warp doesn't process the series without its particles either.
@@ -395,9 +404,10 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             f"--output_angpix {self.output_angpix.get()}",
             f"--box {self.box.get()}",
             f"--diameter {self.diameter.get()}",
+            # Coordinates are in tilt-series pixels (createParticlesStarStep)
+            f"--coords_angpix {self._getInTsSet().getSamplingRate()}",
             # Split base flags into individual list items for cleaner structure
             "--relative_output_paths",
-            "--normalized_coords",
             "--2d",
         ]
 
@@ -460,11 +470,60 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
     # --------------------------- INFO functions ------------------------------
     def _validate(self):
         errors = []
+        tsSet = self._getInTsSet()
+        if tsSet is None:
+            return errors  # Already reported by Scipion's input validation
+        tsSRate = tsSet.getSamplingRate()
+
+        # Export geometry. Scipion doesn't reject empty numeric fields by itself, and
+        # WarpTools would only fail at the GPU step.
+        outAngpix = self.output_angpix.get()
+        if outAngpix is None or outAngpix <= 0:
+            errors.append('Output pixel size must be a positive number.')
+        elif outAngpix < tsSRate:
+            errors.append(f'Output pixel size ({outAngpix} Å) cannot be smaller than the '
+                          f'tilt-series pixel size ({tsSRate} Å).')
+        box = self.box.get()
+        if box is None or box < 2 or box % 2 != 0:
+            errors.append('Output box size must be an even number of at least 2 pixels.')
+        diameter = self.diameter.get()
+        if diameter is None or diameter < 1:
+            errors.append('Particle diameter must be a positive number of Å.')
+        nTilts = self.nTilts.get()
+        if nTilts is not None and nTilts < 1:
+            errors.append('Number of tilts per particle must be at least 1 (or empty for all).')
+        maxMissing = self.maxMissingTilts.get()
+        if maxMissing is None or maxMissing < 0:
+            errors.append('Max. missing tilts must be 0 or more.')
+
+        # Warp settings need the dose per tilt (create_settings --exposure).
+        if tsSet.getAcquisition().getDosePerFrame() is None:
+            errors.append('The input tilt series have no dose per tilt in their acquisition, '
+                          'which Warp requires.')
+
         if not self.setHandManually.get() and self._getStoredDefocusHand() is None:
             errors.append('The input tilt series have no defocus handedness stored. It is '
                           'estimated by the Warp motion correction and CTF estimation protocol; '
                           'otherwise, set it manually (see "Set defocus handedness manually?").')
         return errors
+
+    def _warnings(self):
+        warnings = []
+        box, outAngpix, diameter = self.box.get(), self.output_angpix.get(), self.diameter.get()
+        if box and outAngpix and diameter and diameter > box * outAngpix:
+            warnings.append(f'The particle diameter ({diameter} Å) is larger than the box '
+                            f'({box} px x {outAngpix} Å = {box * outAngpix:.1f} Å).')
+        # Warp weights each tilt by the dose accumulated before it (wrpDose); with no dose
+        # information every tilt counts as unexposed and no dose weighting is applied.
+        tsSet = self._getInTsSet()
+        ts = tsSet.getFirstItem() if tsSet is not None else None
+        if ts is not None:
+            doses = [ti.getAcquisition().getDoseInitial() for ti in ts.iterItems()]
+            if not any(doses):
+                warnings.append(f'The tilt images of {ts.getTsId()} carry no accumulated dose, '
+                                f'so Warp will not apply dose weighting. Check the tilt-series '
+                                f'acquisition (dose) if that is not intended.')
+        return warnings
 
     def _summary(self):
         hand = self._getDefocusHand()
@@ -501,36 +560,64 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         self.failedTsIds.append(tsId)
         cleanPath(self._getOutTsStarFile(tsId))
 
+    def _getTomoDims(self) -> Tuple[int, int, int]:
+        """Warp volume size (--tomo_dimensions), in tilt-series pixels.
+
+        Warp places every particle relative to the centre of this volume
+        (TiltSeries.VolumeDimensionsPhysical / 2), and it is exported as the RELION
+        tomogram size. X and Y are the base footprint of the tilt images, grown if a
+        picking tomogram is larger; Z is the thickest picking tomogram, since the
+        footprint carries no thickness. All are converted to tilt-series pixels."""
+        x, y, _ = super()._getTomoDims()
+        tsSRate = self._getInTsSet().getSamplingRate()
+        z = 0
+        for tomo in self.tomoDict.values():
+            scale = tomo.getSamplingRate() / tsSRate
+            tx, ty, tz = tomo.getDim()
+            x = max(x, math.ceil(tx * scale))
+            y = max(y, math.ceil(ty * scale))
+            z = max(z, math.ceil(tz * scale))
+        return x, y, z
+
     def _writeTomoParticlesStar(self, coordSet: SetOfCoordinates3D, tomoId: str, tomo,
-                                starFile: str):
-        """Write the Warp particles .star of one tomogram (normalized coordinates).
-        Nothing is written if the tomogram has no coordinates."""
-        # Dimensions and sampling rate from the tomogram element: the set may be
-        # heterogeneous, so these are read per tomogram, not from the set.
-        tomoDim = tomo.getDim()
+                                starFile: str, warpDims: Tuple[int, int, int]):
+        """Write the Warp particles .star of one tomogram. Nothing is written if the
+        tomogram has no coordinates.
+
+        Coordinates are written in tilt-series pixels from the corner of Warp's volume
+        (read with --coords_angpix <tilt-series pixel size>). Each one is taken relative
+        to its tomogram's centre (CENTER_GRAVITY, with the tomogram origin applied),
+        rescaled from tomogram to tilt-series pixels, and offset by half of Warp's volume
+        (warpDims, the --tomo_dimensions of the settings). So it lands on the same
+        physical point whatever the tomogram's size, binning or thickness, as both
+        volumes are centred on the tilt axis."""
+        # Sampling rate from the tomogram element: the set may be heterogeneous.
         sRate = tomo.getSamplingRate()
+        scale = sRate / self._getInTsSet().getSamplingRate()
+        halfX, halfY, halfZ = (d / 2 for d in warpDims)
         particlesTable = Table(columns=tomoStarFields)
 
         for coord in coordSet.iterCoordinates(volume=tomo):
             # Orientations: use the coordinate's transform when present; otherwise (pure picks
             # with no orientation, e.g. a de-novo STA start) write zeroed Euler angles so Warp
             # gets valid rlnAngleRot/Tilt/Psi instead of choking on a missing transform.
+            # Mirror Z through the tomogram mid-plane to reconcile Warp/M handedness with
+            # the picking tomogram. Positions and orientations are mirrored together, so
+            # each particle keeps its pose relative to its neighbours and the membrane etc.
+            # (the orientation as the same pose in the mirrored frame: R' = F R F).
+            flipZ = self.flipZHand.get()
             if coord.hasTransform():
-                angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate)
+                angles, _ = getTransformInfoFromCoordOrSubtomo(coord, sRate, mirrorZ=flipZ)
             else:
+                # The identity is unchanged by the mirror (F I F = I).
                 angles = (0., 0., 0.)
-            zCoord = coord.getZ(BOTTOM_LEFT_CORNER)
-            if self.flipZHand.get():
-                # Mirror Z through the tomogram mid-plane (corner origin, 0-indexed
-                # voxels) to reconcile Warp/M handedness with the picking tomogram.
-                # Improper transform: only valid for identity-orientation coordinates
-                # (see the 'Invert Z coordinate' help). Normalisation by tomoDim[2]
-                # below is kept identical to X/Y to preserve the existing convention.
-                zCoord = (tomoDim[2] - 1) - zCoord
+            x, y, z = coord.getPosition(CENTER_GRAVITY)
+            if flipZ:
+                z = -z
             particlesTable.addRow(
-                coord.getX(BOTTOM_LEFT_CORNER) / tomoDim[0],
-                coord.getY(BOTTOM_LEFT_CORNER) / tomoDim[1],
-                zCoord / tomoDim[2],
+                x * scale + halfX,
+                y * scale + halfY,
+                z * scale + halfZ,
                 angles[0],
                 angles[1],
                 angles[2],
