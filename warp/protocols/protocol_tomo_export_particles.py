@@ -28,10 +28,10 @@ import traceback
 from enum import Enum
 from glob import glob
 from os.path import join
-from typing import Set, List
+from typing import Set, List, Optional
 from emtable import Table
 from pyworkflow import BETA
-from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam
+from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam, EnumParam
 from pyworkflow.utils import Message, redStr, cyanStr, yellowStr, makePath, cleanPath, createLink
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from reliontomo.convert import readSetOfPseudoSubtomograms
@@ -40,7 +40,7 @@ from tomo.constants import BOTTOM_LEFT_CORNER
 from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfCoordinates3D, TiltSeries
 from tomo.utils import getTsIdsIntersection, getTsIdsDicts, getPresentAcqOrdersTsAndCtf
 from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
-    OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, TS_DEFOCUS_HAND, \
+    OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, \
     TS_IMPORT_ALIGNMENTS, TOMOSTAR_EXT, tomoStarFields, Plugin
 from warp.convert import writeTiltImagesTsStar
 from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
@@ -48,6 +48,13 @@ from warp.utils import writeCtfXml, getTransformInfoFromCoordOrSubtomo, modifySt
     getWarpTiltImages
 
 logger = logging.getLogger(__name__)
+
+# Defocus handedness values, as stored by SetOfTiltSeries.setHandedness (ProtWarpTSMotionCorr)
+# and returned by warp.utils._getDefocusHand: +1 <-> AreAnglesInverted = True.
+HAND_POSITIVE = 1
+HAND_NEGATIVE = -1
+# defocusHand EnumParam index -> handedness value
+HAND_CHOICES = (HAND_NEGATIVE, HAND_POSITIVE)
 
 
 class outputObjects(Enum):
@@ -151,13 +158,28 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                            "orientations, those Euler angles must be mirror-transformed "
                            "consistently, which this option does NOT do.")
 
-        form.addParam('invertDefocusHand', BooleanParam, default=False,
-                      label='Invert defocus handedness',
-                      help="Run 'WarpTools ts_defocus_hand --set_flip' before export so the "
-                           "exported RELION tomogram hand (rlnTomoHand, derived from Warp's "
-                           "AreAnglesInverted flag) is flipped. Use this if M/RELION refinement "
-                           "converges to a mirror-image map. Independent of the Z-coordinate "
-                           "option above. Unchecked leaves Warp's default handedness untouched.")
+        form.addParam('setHandManually', BooleanParam, default=False,
+                      label='Set defocus handedness manually?',
+                      help="Defocus handedness: whether defocus increases (+1) or decreases (-1) "
+                           "along the tomogram Z axis. It sets Warp's AreAnglesInverted flag "
+                           "(+1 = True) and is exported as the RELION tomogram hand "
+                           "(rlnTomoHand).\n\n"
+                           "No: use the value stored in the input tilt series, which Warp's "
+                           "motion correction and CTF estimation protocol estimates "
+                           "(ts_defocus_hand, majority vote over the tilt series). The protocol "
+                           "won't run if the input tilt series carry no stored value.\n"
+                           "Yes: choose the value below. Use this when the input has no stored "
+                           "value, or to flip it if M/RELION refinement converges to a mirror-image "
+                           "map.\n\n"
+                           "Independent of the Z-coordinate option above.")
+        form.addParam('defocusHand', EnumParam,
+                      condition='setHandManually',
+                      choices=[f'{HAND_NEGATIVE} (Warp default, no flip)', f'+{HAND_POSITIVE} (flipped)'],
+                      default=0,
+                      display=EnumParam.DISPLAY_HLIST,
+                      label='Defocus handedness',
+                      help='-1: AreAnglesInverted = False (Warp\'s default).\n'
+                           '+1: AreAnglesInverted = True.')
 
         # form.addParam('writeStacks', EnumParam,
         #               label='Export type',
@@ -214,18 +236,15 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                                           prerequisites=ctfSteps,
                                           needsGPU=False)
 
-        # Import alignments needs every per-series .tomostar + CTF XML in place.
-        prereq = self._insertFunctionStep(self.tsImportAligmentsStep,
-                                          prerequisites=partId,
-                                          needsGPU=False)
-
-        if self.invertDefocusHand.get():
-            prereq = self._insertFunctionStep(self.tsDefocusHandStep,
-                                              prerequisites=prereq,
-                                              needsGPU=False)
+        # Import alignments needs every per-series .tomostar + CTF XML in place. The
+        # defocus handedness is already in the CTF XML (createCtfXmlStep), and
+        # ts_import_alignments keeps it when it re-serialises the file.
+        importId = self._insertFunctionStep(self.tsImportAligmentsStep,
+                                            prerequisites=partId,
+                                            needsGPU=False)
 
         expId = self._insertFunctionStep(self.exportParticlesStep,
-                                         prerequisites=[partId, prereq],
+                                         prerequisites=importId,
                                          needsGPU=True)
 
         outId = self._insertFunctionStep(self.createOutputStep,
@@ -300,8 +319,9 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
 
     def createCtfXmlStep(self, tsId: str, presentAcqOrders: List[int]):
         """Build the Warp per-series CTF XML directly from Scipion's
-        previously estimated CTF metadata. ts_import_alignments later
-        re-serialises this file to the full schema."""
+        previously estimated CTF metadata, including the defocus handedness
+        (AreAnglesInverted). ts_import_alignments later re-serialises this file to
+        the full schema, keeping that flag."""
         if tsId in self.failedTsIds:
             return
         try:
@@ -316,7 +336,8 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                         voltage=acq.getVoltage(),
                         cs=acq.getSphericalAberration(),
                         amplitude=acq.getAmplitudeContrast(),
-                        imageDimPix=(x, y))
+                        imageDimPix=(x, y),
+                        areAnglesInverted=self._getDefocusHand() == HAND_POSITIVE)
         except Exception as e:
             self._markFailed(tsId, f'Unable to write the CTF XML with exception {e}')
 
@@ -359,16 +380,6 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         ]
         args = ' '.join(args)
         self.runJob(Plugin.getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), args, executable='/bin/bash')
-
-    def tsDefocusHandStep(self):
-        """Flip the per-tilt-series defocus/geometric handedness (Warp's
-        AreAnglesInverted flag), which ts_export_particles writes out as the RELION
-        tomogram hand (rlnTomoHand) for M. '--set_flip' is a pure metadata setter and
-        does not require the per-movie 2x2x1 defocus grid that '--check'/'--set_auto'
-        need."""
-        logger.info(cyanStr(">>> Flipping defocus handedness (ts_defocus_hand --set_flip)..."))
-        args = f"--settings {self._getTiltSeriesSettingsFn()} --set_flip"
-        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_DEFOCUS_HAND), args, executable='/bin/bash')
 
     def exportParticlesStep(self):
         logger.info(cyanStr(">>> Exporting particles..."))
@@ -446,7 +457,40 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         self._defineSourceRelation(self.inCtfSet, psubtomoSet)
         self._defineSourceRelation(self.inTsSet, psubtomoSet)
 
+    # --------------------------- INFO functions ------------------------------
+    def _validate(self):
+        errors = []
+        if not self.setHandManually.get() and self._getStoredDefocusHand() is None:
+            errors.append('The input tilt series have no defocus handedness stored. It is '
+                          'estimated by the Warp motion correction and CTF estimation protocol; '
+                          'otherwise, set it manually (see "Set defocus handedness manually?").')
+        return errors
+
+    def _summary(self):
+        hand = self._getDefocusHand()
+        if hand is None:
+            return []
+        source = 'set manually' if self.setHandManually.get() else 'read from the input tilt series'
+        return [f'Defocus handedness: {hand:+d} ({source}).']
+
     # --------------------------- UTILS functions -----------------------------
+    def _getStoredDefocusHand(self) -> Optional[int]:
+        """Defocus handedness stored in the input set of tilt series (+1/-1), or None.
+        None also covers a scipion-em-tomo without SetOfTiltSeries.getHandedness."""
+        tsSet = self._getInTsSet()
+        getHandedness = getattr(tsSet, 'getHandedness', None)
+        if getHandedness is None:
+            return None
+        hand = getHandedness()
+        return hand if hand in HAND_CHOICES else None
+
+    def _getDefocusHand(self) -> Optional[int]:
+        """Defocus handedness to export (+1/-1): the manual choice, or else the value
+        stored in the input tilt series."""
+        if self.setHandManually.get():
+            return HAND_CHOICES[self.defocusHand.get()]
+        return self._getStoredDefocusHand()
+
     def _markFailed(self, tsId: str, msg: str):
         """Exclude a tilt-series from the rest of the run. Recording it in failedTsIds
         only stops the next Scipion steps: WarpTools loads every .tomostar in the
