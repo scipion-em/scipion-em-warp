@@ -571,3 +571,85 @@ def modifyStarFileMultiTable(filePath, columnToModify, modifierFunc):
             fout.write(line)
 
     os.replace(tempPath, filePath)
+
+
+# --------------------------- Warp tilt-series geometry ---------------------------------------
+# Python port of the image-position part of Warp's TiltSeries.GetPositionInAllTilts
+# (WarpLib/TiltSeries/TiltSeries.cs), for the geometry stored in a <tsId>.xml after
+# ts_import_alignments. Warp's deformation models (GridVolumeWarpX/Y/Z, GridMovementX/Y)
+# are not ported: they stay at zero until Warp refines the tilt series (e.g. in M), and
+# readWarpTsGeometry reports whether they are set.
+WARP_DEFORMATION_GRIDS = ('GridVolumeWarpX', 'GridVolumeWarpY', 'GridVolumeWarpZ',
+                          'GridMovementX', 'GridMovementY')
+
+
+def readWarpTsGeometry(xmlPath: str) -> dict:
+    """Read the per-tilt geometry of a Warp tilt-series XML, in Warp's tilt order
+    (the .tomostar rows). Angles in degrees, offsets and dimensions in Å.
+    'hasDeformation' is True if any deformation grid has a non-zero node."""
+    root = eTree.parse(xmlPath).getroot()
+
+    def _floats(tag):
+        el = root.find(tag)
+        if el is None or not (el.text or '').strip():
+            return np.array([])
+        return np.array([float(v) for v in el.text.split()])
+
+    hasDeformation = any(
+        float(node.get('Value', 0)) != 0
+        for gridName in WARP_DEFORMATION_GRIDS
+        for grid in root.findall(gridName)
+        for node in grid.findall('Node')
+    )
+    imageDims = np.array([float(v) for v in root.get('ImageDimensionsAngstrom').split(',')])
+    return {
+        'angles': _floats('Angles'),
+        'axisAngles': _floats('AxisAngle'),
+        'offsetX': _floats('AxisOffsetX'),
+        'offsetY': _floats('AxisOffsetY'),
+        'levelAngleX': float(root.get('LevelAngleX', 0)),
+        'levelAngleY': float(root.get('LevelAngleY', 0)),
+        'imageDimsAngst': imageDims,
+        'hasDeformation': hasDeformation,
+    }
+
+
+def _warpEuler(rot: float, tilt: float, psi: float) -> np.ndarray:
+    """Warp's Matrix3.Euler (angles in radians), WarpLib/Tools/Matrix3.cs."""
+    ca, cb, cg = math.cos(rot), math.cos(tilt), math.cos(psi)
+    sa, sb, sg = math.sin(rot), math.sin(tilt), math.sin(psi)
+    cc, cs, sc, ss = cb * ca, cb * sa, sb * ca, sb * sa
+    return np.array([[cg * cc - sg * sa, cg * cs + sg * ca, -cg * sb],
+                     [-sg * cc - cg * sa, -sg * cs + cg * ca, sg * sb],
+                     [sc, ss, cb]])
+
+
+def _warpRotateX(angle: float) -> np.ndarray:
+    """Warp's Matrix3.RotateX (radians). Its constructor takes the elements column by
+    column: (1, 0, 0, 0, c, s, 0, -s, c) is [[1, 0, 0], [0, c, -s], [0, s, c]]."""
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[1., 0., 0.], [0., c, -s], [0., s, c]])
+
+
+def projectWarpPositions(geom: dict, coordsAngst: np.ndarray,
+                         volumeDimsAngst: np.ndarray) -> np.ndarray:
+    """Image positions (Å, from the corner of each tilt image) of 3D positions given
+    in Å from the corner of Warp's volume, as Warp extracts them. Returns an array of
+    shape (nParticles, nTilts, 2). Same model as TiltSeries.GetPositionInAllTilts:
+    centre on the volume, rotate by Euler(0, angle + LevelAngleY, -axisAngle) *
+    RotateX(LevelAngleX), add the per-tilt axis offset and the image centre. The
+    defocus handedness (AreAnglesInverted) only changes the depth (defocus), not X/Y."""
+    coords = np.atleast_2d(np.asarray(coordsAngst, dtype=float))
+    centered = coords - np.asarray(volumeDimsAngst, dtype=float) / 2
+    imageCenter = geom['imageDimsAngst'] / 2
+    rotX = _warpRotateX(math.radians(geom['levelAngleX']))
+    nTilts = len(geom['angles'])
+    result = np.empty((len(coords), nTilts, 2))
+    for t in range(nTilts):
+        rotation = _warpEuler(0.,
+                              math.radians(geom['angles'][t] + geom['levelAngleY']),
+                              math.radians(-geom['axisAngles'][t])) @ rotX
+        transformed = centered @ rotation.T
+        result[:, t, 0] = transformed[:, 0] + geom['offsetX'][t] + imageCenter[0]
+        result[:, t, 1] = transformed[:, 1] + geom['offsetY'][t] + imageCenter[1]
+    return result

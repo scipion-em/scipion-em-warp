@@ -28,17 +28,20 @@ import math
 import traceback
 from enum import Enum
 from glob import glob
-from os.path import join
+from os.path import join, exists
 from typing import Set, List, Optional, Tuple
+import numpy as np
 from emtable import Table
 from pyworkflow import BETA
-from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam, EnumParam
+from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam, EnumParam, \
+    StringParam, GPU_LIST
 from pyworkflow.utils import Message, redStr, cyanStr, yellowStr, makePath, cleanPath, createLink
 from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
 from tomo.constants import CENTER_GRAVITY
-from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfCoordinates3D, TiltSeries
+from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfCoordinates3D, TiltSeries, \
+    SetOfLandmarkModels, LandmarkModel
 from tomo.utils import getTsIdsIntersection, getTsIdsDicts, getPresentAcqOrdersTsAndCtf
 from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
     OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, \
@@ -46,7 +49,7 @@ from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
 from warp.convert import writeTiltImagesTsStar
 from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import writeCtfXml, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable, \
-    getWarpTiltImages
+    getWarpTiltImages, readWarpTsGeometry, projectWarpPositions
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ HAND_CHOICES = (HAND_NEGATIVE, HAND_POSITIVE)
 
 class outputObjects(Enum):
     relionParticles = RelionSetOfPseudoSubtomograms
+    projected2DCoordinates = SetOfLandmarkModels
 
 
 class ProtWarpExportParticles(ProtWarpTomoBase):
@@ -71,6 +75,7 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
 
     _label = 'Export particles'
     _devStatus = BETA
+    _possibleOutputs = outputObjects
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -146,6 +151,18 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                       help="Don't premultiply the 2D particle series by CTFs or RELION weights "
                            '(WarpTools --dont_premultiply). Set this if your downstream STA tool '
                            'expects un-weighted particles.')
+        form.addParam('genProjCoords', BooleanParam,
+                      default=False,
+                      label='Generate projected 2D coordinates?',
+                      expertLevel=LEVEL_ADVANCED,
+                      help='If set to Yes, it generates the projection of the particles on each '
+                           'tilt image, as if it was an IMOD fiducial model, so they can be checked '
+                           'directly on the tilt series using the IMOD viewer. The projections '
+                           "follow Warp's own geometry after importing the alignment (the same "
+                           'positions Warp extracts the particles from), so they show whether the '
+                           'coordinates, tilt angles and alignment were specified and resolved '
+                           'correctly. They do not show the defocus handedness, which only changes '
+                           'the defocus, not the positions.')
 
         form.addSection(label='Geometry / handedness')
         form.addParam('flipZHand', BooleanParam, default=False,
@@ -186,6 +203,17 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
                       label='Defocus handedness',
                       help='-1: AreAnglesInverted = False (Warp\'s default).\n'
                            '+1: AreAnglesInverted = True.')
+
+        # Threads = WarpTools --perdevice (export worker processes per GPU), as in
+        # ProtWarpTSMotionCorr. Above 1, Scipion also runs the per-series preparation
+        # steps in parallel; they write separate files per tilt-series.
+        form.addParallelSection(threads=1, mpi=0)
+        form.addHidden(GPU_LIST, StringParam, default='0',
+                       expertLevel=LEVEL_ADVANCED,
+                       label="Choose GPU IDs",
+                       help="Space-separated list of GPU IDs used by the particle export "
+                            "(WarpTools --device_list), e.g. *0 1 2*. The number of threads is the "
+                            "number of export processes per GPU (WarpTools --perdevice).")
 
         # form.addParam('writeStacks', EnumParam,
         #               label='Export type',
@@ -425,7 +453,14 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         if self.dontPremultiply.get():
             cmd_parts.append("--dont_premultiply")
 
-        # 4. Perform an O(N) join
+        # 4. GPU workers. Without --device_list WarpTools spawns workers on every GPU of
+        # the machine, ignoring the GPUs assigned in Scipion.
+        cmd_parts.append(f"--perdevice {self.numberOfThreads.get()}")
+        gpuList = self.getGpuList()
+        if gpuList:
+            cmd_parts.append(f"--device_list {' '.join(map(str, gpuList))}")
+
+        # 5. Perform an O(N) join
         args = " ".join(cmd_parts)
         self.runJob(Plugin.getProgram(WARP_TOOLS, TS_EXPORT_PARTICLES), args, executable='/bin/bash')
 
@@ -462,10 +497,17 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             raise Exception('Warp exported no particles. Please check the logs run.stdout '
                             'and run.stderr.')
         outDict = {outputObjects.relionParticles.name: psubtomoSet}
+        landmarkModels = self._createProjected2DCoordinates() if self.genProjCoords.get() else None
+        if landmarkModels is not None:
+            outDict[outputObjects.projected2DCoordinates.name] = landmarkModels
         self._defineOutputs(**outDict)
+        # The relations must be defined after the outputs, once they are stored in the mapper
         self._defineSourceRelation(self.coordinates, psubtomoSet)
         self._defineSourceRelation(self.inCtfSet, psubtomoSet)
         self._defineSourceRelation(self.inTsSet, psubtomoSet)
+        if landmarkModels is not None:
+            self._defineSourceRelation(self.inTsSet, landmarkModels)
+            self._defineSourceRelation(self.coordinates, landmarkModels)
 
     # --------------------------- INFO functions ------------------------------
     def _validate(self):
@@ -629,6 +671,68 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         if len(particlesTable):
             with open(starFile, 'w') as f:
                 particlesTable.writeStar(f, tableName='')
+
+    def _createProjected2DCoordinates(self) -> Optional[SetOfLandmarkModels]:
+        """Project the exported particles onto each tilt image of the input tilt series,
+        as landmark models (one chain per particle), with Warp's own geometry: the
+        per-series XML after ts_import_alignments and the export. They are the positions
+        Warp extracts the particles from, in pixels of the original (non-aligned) tilt
+        images. Returns None if no tilt series could be projected."""
+        logger.info(cyanStr(">>> Generating the projected 2D coordinates..."))
+        coordSet = self._getInCoords()
+        tsSRate = self._getInTsSet().getSamplingRate()
+        # Same volume Warp places the particles in (createParticlesStarStep)
+        volumeDimsAngst = np.array(self._getTomoDims(), dtype=float) * tsSRate
+        fiducialSize = int((coordSet.getBoxSize() * coordSet.getSamplingRate()) / 2)  # Radius in Å
+        landmarkModels = SetOfLandmarkModels.create(self.getPath(),
+                                                    template='setOfLandmarks%s.sqlite',
+                                                    suffix='Projected')
+        landmarkModels.copyInfo(self._getInTsSet())
+        landmarkModels.setSetOfTiltSeries(self.inTsSet)  # Use the pointer better when scheduling
+        particleCounter = 1
+        for tsId, ts in self.seriesDict.items():
+            xmlPath = join(self._getTiltSeriesDir(), f'{tsId}.xml')
+            starFile = join(self._getParticlesFolder(), f'{tsId}.star')
+            # Failed, skipped and particle-less series have no particles .star (or no XML)
+            if tsId in self.failedTsIds or not exists(xmlPath) or not exists(starFile):
+                continue
+            geom = readWarpTsGeometry(xmlPath)
+            # Same tilts and order as the .tomostar Warp read (prepareTsDataStep)
+            presentAcqOrders = getPresentAcqOrdersTsAndCtf(ts, self.ctfDict[tsId])
+            tiltImages = getWarpTiltImages(ts, presentAcqOrders)
+            if len(tiltImages) != len(geom['angles']):
+                logger.warning(yellowStr(f'{tsId}: {len(tiltImages)} tilt images but '
+                                         f'{len(geom["angles"])} tilts in {xmlPath}. Its projected '
+                                         f'2D coordinates are skipped.'))
+                continue
+            if geom['hasDeformation']:
+                logger.warning(yellowStr(f'{tsId}: the Warp XML has deformation grids set, which '
+                                         f'the projected 2D coordinates ignore.'))
+            # The particles .star holds the positions in tilt-series pixels from the corner
+            # of Warp's volume (read by Warp with --coords_angpix = tilt-series pixel size)
+            particles = Table(fileName=starFile)
+            coordsAngst = np.array([[row.rlnCoordinateX, row.rlnCoordinateY, row.rlnCoordinateZ]
+                                    for row in particles]) * tsSRate
+            positions = projectWarpPositions(geom, coordsAngst, volumeDimsAngst) / tsSRate
+
+            landmarkModel = LandmarkModel(tsId=tsId,
+                                          fileName=self._getExtraPath(f'{tsId}_projected.sfid'),
+                                          modelName=None,
+                                          size=fiducialSize,
+                                          applyTSTransformation=False)
+            landmarkModel.setTiltSeries(ts)
+            for particlePositions in positions:
+                for ti, (x, y) in zip(tiltImages, particlePositions):
+                    # tiltIm is the 1-based index of the image in the tilt-series stack
+                    landmarkModel.addLandmark(x, y, ti.getIndex(), particleCounter, 0, 0)
+                particleCounter += 1
+            landmarkModels.append(landmarkModel)
+
+        if not len(landmarkModels):
+            logger.warning(yellowStr('No projected 2D coordinates could be generated.'))
+            return None
+        landmarkModels.write()
+        return landmarkModels
 
     def _getInCoords(self) -> SetOfCoordinates3D:
         return self.coordinates.get()
