@@ -35,8 +35,7 @@ from emtable import Table
 from pyworkflow import BETA
 from pyworkflow.protocol import PointerParam, FloatParam, IntParam, LEVEL_ADVANCED, BooleanParam, EnumParam, \
     StringParam, GPU_LIST
-from pyworkflow.utils import Message, redStr, cyanStr, yellowStr, makePath, cleanPath, createLink
-from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
+from pyworkflow.utils import Message, redStr, cyanStr, yellowStr, makePath, cleanPath
 from reliontomo.convert import readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms, RelionSetOfPseudoSubtomograms
 from tomo.constants import CENTER_GRAVITY
@@ -45,11 +44,11 @@ from tomo.objects import SetOfTiltSeries, SetOfCTFTomoSeries, SetOfCoordinates3D
 from tomo.utils import getTsIdsIntersection, getTsIdsDicts, getPresentAcqOrdersTsAndCtf
 from warp import WARP_TOOLS, TS_EXPORT_PARTICLES, \
     OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, MATCHING_TOMOGRAMS_STAR, \
-    TS_IMPORT_ALIGNMENTS, TOMOSTAR_EXT, tomoStarFields, Plugin
+    TS_IMPORT_ALIGNMENTS, TOMOSTAR_EXT, tomoStarFields
 from warp.convert import writeTiltImagesTsStar
 from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import writeCtfXml, getTransformInfoFromCoordOrSubtomo, modifyStarFileMultiTable, \
-    getWarpTiltImages, readWarpTsGeometry, projectWarpPositions
+    getWarpTiltImages, readWarpTsGeometry, projectWarpPositions, writeWarpTiltImages
 
 logger = logging.getLogger(__name__)
 
@@ -319,22 +318,8 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             logger.info(cyanStr(f">>> {tsId} - Extracting tilt images and writing the tomostar file..."))
             ts = self.seriesDict[tsId]
             tiltImages = getWarpTiltImages(ts, presentAcqOrders)
-            imagesDir = self._getTiltImagesDir()
-            averagesDir = self._getAveragesDir()
-            # The pixel size goes to the MRC header: Warp takes the physical image size from it.
-            properties = {'sr': ts.getSamplingRate()}
-            imageNames = []
-            for ti in tiltImages:
-                imageName = f'{tsId}_{ti.getIndex():03d}.mrc'
-                tiltImage = ImageStack(properties=properties)
-                tiltImage.append(ImageReadersRegistry.open(f'{ti.getIndex()}@{ti.getFileName()}'))
-                ImageReadersRegistry.write(tiltImage, join(imagesDir, imageName))
-                linkedFile = join(averagesDir, imageName)
-                # createLink resolves the source against the current directory, not
-                # against the link's folder, so it must get the image's real path; it
-                # then writes the link as relative (../<imageName>).
-                createLink(join(imagesDir, imageName), linkedFile)
-                imageNames.append(imageName)
+            imageNames = writeWarpTiltImages(ts, tiltImages, self._getTiltImagesDir(),
+                                             self._getAveragesDir())
             writeTiltImagesTsStar(ts, tiltImages, imageNames, self._getOutTsStarFile(tsId))
         except Exception as e:
             self._markFailed(tsId, f'Unable to prepare the tilt images and TS star file '
@@ -415,8 +400,8 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
             f"--alignments {self._getTiltStackDir()}",
             f"--alignment_angpix {self._getInTsSet().getSamplingRate()}",
         ]
-        args = ' '.join(args)
-        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS), args, executable='/bin/bash')
+
+        self.runProgram(WARP_TOOLS, TS_IMPORT_ALIGNMENTS, args)
 
     def exportParticlesStep(self):
         logger.info(cyanStr(">>> Exporting particles..."))
@@ -453,16 +438,8 @@ class ProtWarpExportParticles(ProtWarpTomoBase):
         if self.dontPremultiply.get():
             cmd_parts.append("--dont_premultiply")
 
-        # 4. GPU workers. Without --device_list WarpTools spawns workers on every GPU of
-        # the machine, ignoring the GPUs assigned in Scipion.
         cmd_parts.append(f"--perdevice {self.numberOfThreads.get()}")
-        gpuList = self.getGpuList()
-        if gpuList:
-            cmd_parts.append(f"--device_list {' '.join(map(str, gpuList))}")
-
-        # 5. Perform an O(N) join
-        args = " ".join(cmd_parts)
-        self.runJob(Plugin.getProgram(WARP_TOOLS, TS_EXPORT_PARTICLES), args, executable='/bin/bash')
+        self.runProgram(WARP_TOOLS, TS_EXPORT_PARTICLES, cmd_parts, useGpu=True)
 
     def createOutputStep(self):
         logger.info(cyanStr(">>> Creating the outputs..."))

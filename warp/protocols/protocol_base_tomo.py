@@ -27,7 +27,7 @@ import math
 import traceback
 from abc import ABC, abstractmethod
 from os.path import abspath, join, exists, normpath
-from typing import Tuple, Union
+from typing import Tuple, Union, List, Optional
 
 from numpy import deg2rad
 
@@ -36,7 +36,7 @@ from pyworkflow.utils import cyanStr, makePath, redStr
 from tomo.objects import SetOfTiltSeriesM, SetOfTiltSeries
 from warp import Plugin, WARP_TOOLS, CREATE_SETTINGS, TOMOSTAR_EXT, TILTSERIES_SETTINGS, FRAMESERIES_FOLDER, \
     TILTSERIES_FOLDER, TOMOSTAR_FOLDER, MATCHING_FOLDER, RELION_FOLDER, TILTSTACK_FOLDER
-from warp.constants import AVERAGE_FOLDER, TILTIMAGES_FOLDER
+from warp.constants import AVERAGE_FOLDER, TILTIMAGES_FOLDER, WARP_TOOLS_GPU_ALGORITHMS, MCORE, MTOOLS
 from warp.convert import writeTsStar
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,33 @@ class ProtWarpTomoBase(EMProtocol, ABC):
 
     def _getRelionFolder(self) -> str:
         return self._getExtraPath(RELION_FOLDER)
+
+    def runProgram(self,
+                   program: str,
+                   algorithm: Optional[str],
+                   args: List[str],
+                   useGpu: bool = False,
+                   othersCmds: Optional[str] = '') -> None:
+        """Run a Warp/M program. args holds the arguments, either as whole options
+        ("--name value") or as separate tokens; they are joined with spaces. With
+        useGpu, the GPUs chosen in Scipion are passed to the program: WarpTools
+        distributed commands get --device_list and MCore --devicelist. MTools has no
+        such option, so it gets them as CUDA_VISIBLE_DEVICES (it runs on the first
+        one). Only MTools gets the variable: it renumbers the GPUs from 0, which would
+        make the explicit device IDs of the other programs wrong."""
+        args = list(args)  # Don't modify the caller's list
+        programCmd = Plugin.getProgram(program, algorithm)
+        gpuList = self.getGpuList()
+        if useGpu and gpuList:
+            if program == MCORE:
+                args.append(f"--devicelist {' '.join(map(str, gpuList))}")
+            elif program == MTOOLS:
+                programCmd = f"export CUDA_VISIBLE_DEVICES={','.join(map(str, gpuList))} && {programCmd}"
+            elif algorithm in WARP_TOOLS_GPU_ALGORITHMS:
+                args.append(f"--device_list {' '.join(map(str, gpuList))}")
+        if othersCmds:
+            args.append(othersCmds)
+        self.runJob(programCmd, ' '.join(map(str, args)), executable='/bin/bash')
 
     def _genCreateSettingsTsArgs(self) -> str:
         x, y, z = self._getTomoDims()

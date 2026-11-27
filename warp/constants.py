@@ -79,7 +79,7 @@ WARP_TOOLS_GPU_ALGORITHMS = [FS_MOTION, TS_CTF, FS_MOTION, FS_MOTION_AND_CTF, TS
 # ---------[MTOOLS PROGRAMS]-------------------
 MTOOLS = 'MTools'
 CREATE_POPULATION = 'create_population'
-CREATE_SOURCES = 'create_source'
+CREATE_SOURCE = 'create_source'
 CREATE_SPECIES = 'create_species'
 MCORE = 'MCore'
 

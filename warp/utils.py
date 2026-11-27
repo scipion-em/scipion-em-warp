@@ -653,3 +653,89 @@ def projectWarpPositions(geom: dict, coordsAngst: np.ndarray,
         result[:, t, 0] = transformed[:, 0] + geom['offsetX'][t] + imageCenter[0]
         result[:, t, 1] = transformed[:, 1] + geom['offsetY'][t] + imageCenter[1]
     return result
+
+
+def writeWarpTiltImages(ts: TiltSeries, tiltImages: List, imagesDir: str, averagesDir: str) -> List[str]:
+    """Write each tilt of ``tiltImages`` (getWarpTiltImages) as a single-image .mrc in
+    ``imagesDir`` and link it from ``averagesDir``, and return the file names, in the
+    same order.
+
+    Warp opens each tilt as a "movie" at <tomostar dir>/<wrpMovieName>: it reads the
+    header of that file (size, data hash), then the image itself from the sibling
+    average/ folder (TiltSeries.LoadMovieData / LoadMovieSizes), which must hold a
+    single layer. The names are <tsId>_<stack index>.mrc, so the same tilt list
+    always gives the same names."""
+    # Imported here: pwem's image readers aren't needed by the rest of the module
+    from pwem.emlib.image.image_readers import ImageStack, ImageReadersRegistry
+    from pyworkflow.utils import createLink
+    tsId = ts.getTsId()
+    # The pixel size goes to the MRC header: Warp takes the physical image size from it.
+    properties = {'sr': ts.getSamplingRate()}
+    imageNames = []
+    for ti in tiltImages:
+        imageName = getWarpTiltImageName(tsId, ti)
+        tiltImage = ImageStack(properties=properties)
+        tiltImage.append(ImageReadersRegistry.open(f'{ti.getIndex()}@{ti.getFileName()}'))
+        ImageReadersRegistry.write(tiltImage, os.path.join(imagesDir, imageName))
+        # createLink resolves the source against the current directory, not against
+        # the link's folder, so it must get the image's real path; it then writes the
+        # link as relative (../<imageName>).
+        createLink(os.path.join(imagesDir, imageName), os.path.join(averagesDir, imageName))
+        imageNames.append(imageName)
+    return imageNames
+
+
+def getWarpTiltImageName(tsId: str, ti) -> str:
+    """File name of a tilt image written by writeWarpTiltImages."""
+    return f'{tsId}_{ti.getIndex():03d}.mrc'
+
+
+def readWarpTsMoviePaths(xmlPath: str) -> List[str]:
+    """Per-tilt image paths (MoviePath) of a Warp tilt-series XML, in Warp's tilt order."""
+    node = eTree.parse(xmlPath).getroot().find('MoviePath')
+    if node is None or not node.text:
+        return []
+    return [line.strip() for line in node.text.split('\n') if line.strip()]
+
+
+def copyWarpTsXml(srcXml: str, dstXml: str, dataDirectory: str):
+    """Copy a Warp tilt-series XML, pointing it to another data (.tomostar) folder.
+
+    DataDirectory is an absolute path, and the per-tilt image paths (MoviePath) are
+    relative to it, so this is the only change needed to move a series to another
+    project with the same layout (<dataDirectory>/../tiltimages)."""
+    tree = eTree.parse(srcXml)
+    tree.getroot().set('DataDirectory', os.path.abspath(dataDirectory))
+    tree.write(dstXml, encoding='utf-8', xml_declaration=True)
+
+
+def _getWarpSettingsImportParam(root, name: str):
+    node = root.find(f"./Import/Param[@Name='{name}']")
+    if node is None:
+        raise ValueError(f'Warp settings have no Import parameter {name}')
+    return node
+
+
+def copyWarpSettings(srcSettings: str, dstSettings: str, dataFolder: str, processingFolder: str):
+    """Copy a Warp .settings file, pointing it to other data (.tomostar) and processing
+    (per-series XML) folders. Every other value is kept, in particular the pixel size
+    and the volume size (Tomo/Dimensions*), which must stay those the particles were
+    placed with."""
+    tree = eTree.parse(srcSettings)
+    root = tree.getroot()
+    _getWarpSettingsImportParam(root, 'DataFolder').set('Value', os.path.abspath(dataFolder))
+    _getWarpSettingsImportParam(root, 'ProcessingFolder').set('Value', os.path.abspath(processingFolder))
+    tree.write(dstSettings, encoding='utf-8', xml_declaration=True)
+
+
+def readWarpSettingsTomoDims(settingsFile: str) -> Tuple[int, int, int]:
+    """Volume size (Tomo/DimensionsX, Y, Z) of a Warp .settings file, in pixels of the
+    settings' pixel size."""
+    root = eTree.parse(settingsFile).getroot()
+    dims = []
+    for axis in 'XYZ':
+        node = root.find(f"./Tomo/Param[@Name='Dimensions{axis}']")
+        if node is None:
+            raise ValueError(f'Warp settings {settingsFile} have no Tomo Dimensions{axis}')
+        dims.append(int(float(node.get('Value'))))
+    return tuple(dims)
