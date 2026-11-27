@@ -192,6 +192,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
                       label='Refine Zernike polynomials of 5th order',
                       help="Refine Zernike polynomials of 5th order (fast)")
 
+        # Threads = MCore --perdevice (worker processes per GPU), as in ProtWarpTSMotionCorr.
+        # It replaces the --perdevice_refine option of older Warp versions, which MCore no
+        # longer accepts. The steps run serially, so the threads aren't used for anything else.
+        form.addParallelSection(threads=1, mpi=0)
         form.addHidden(GPU_LIST, params.StringParam, default='0',
                        label='Choose GPU IDs:', validators=[params.NonEmpty],
                        help='Space-separated list of GPU IDs to use for processing. '
@@ -318,7 +322,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
         logger.info(cyanStr(">>> Checking setup..."))
         args = [
             f"--population {self._getProcessingPopulation()}",
-            "--iter 0"
+            "--iter 0",
+            f"--perdevice {self.numberOfThreads.get()}"
         ]
         self.runProgram(MCORE, None, args, useGpu=True)
 
@@ -517,6 +522,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
             msg += "* Refine Zernike polynomials of 5th order (fast)\n"
             cmd.append("--ctf_zernike5")
 
+        cmd.append(f"--perdevice {self.numberOfThreads.get()}")
         logger.info(cyanStr(msg))
         self.runProgram(MCORE, None, cmd, useGpu=True)
 
