@@ -134,6 +134,16 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
         form.addParam('lowpass', params.FloatParam, default=None,
                       label='Gaussian low-pass filter',
                       help="Optional low-pass filter (in Å), applied to both half-maps")
+        form.addParam('useDenoiser', params.BooleanParam, default=False,
+                      label='Use the denoiser?',
+                      help="Regularize the species maps with M's neural-network denoiser, trained "
+                           "on the half-maps when the species is created and after each "
+                           "refinement. If No (MTools create_species --dont_use_denoiser), the maps "
+                           "are low-pass filtered to the best local resolution instead. The choice "
+                           "is stored in the species, so it also applies to the refinements.\n\n"
+                           "Warp 2.0.0dev41 with libtorch 2.12.1 (conda-forge) crashes when training "
+                           "the denoiser (CUDA error: invalid argument in THSNN_UNet3D_forward); "
+                           "keep No with that installation.")
 
         form.addSection("Refinement")
         form.addParam('iter', params.IntParam, default=None,
@@ -289,6 +299,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
 
     def createSpeciesStep(self):
         logger.info(cyanStr(">>> Creating species..."))
+        # A failed attempt leaves its species folder behind without adding it to the
+        # population; getProcessingFolder takes the first one it finds, so remove them.
+        cleanPath(*glob.glob(join(self._getPopulationPath(), SPECIES_FOLDER,
+                                  MATCHING_PROCESSING_SPECIES_PATTERN)))
         averageSubTomoHalfMaps = self.averageSubtomogram.get().getHalfMaps(asList=True)
         mask = self.refMask.get().getFileName()
         voxelSize = self.averageSubtomogram.get().getSamplingRate()
@@ -307,6 +321,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
         ]
         if self.lowpass.get() is not None:
             args.append(f"--lowpass {self.lowpass.get()}")
+        if not self.useDenoiser.get():
+            args.append("--dont_use_denoiser")
         if self.angpix_resample.get() is not None:
             args.append(f"--angpix_resample {self.angpix_resample.get()}")
         failedTsIds = sorted(set(self._getExportTsIds()) - set(self._getProjectTsIds()))
