@@ -58,14 +58,8 @@ class ProtWarpTomoBase(EMProtocol, ABC):
     def _initialize(self):
         inSet = self._getInTsSet()
         self.samplingRate = inSet.getSamplingRate()
-        # self.outSamplingRate = self._getOutputSamplingRate()
         self.exposure = inSet.getAcquisition().getDosePerFrame()
         self.seriesDict = {series.getTsId(): series.clone() for series in inSet.iterItems()}
-        # # Gain and defects
-        # gainFile = tsMSet.getGain()
-        # darkFile = tsMSet.getDark()
-        # self.gainFile = abspath(gainFile) if gainFile else None
-        # self.darkFile = abspath(darkFile) if darkFile else None
         # Make paths
         self.tsmDir = self._getFrameSeriesDir()
         self.tsDir = self._getTiltSeriesDir()

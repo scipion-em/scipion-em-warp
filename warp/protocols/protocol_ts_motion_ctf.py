@@ -545,7 +545,6 @@ class ProtWarpTSMotionCorr(ProtWarpTomoBase):
     def _getAvgDir(self) -> str:
         return join(self._getExtraPath(FRAMESERIES_FOLDER), AVERAGE_FOLDER)
 
-
     def _genBinningArgs(self):
         binMode = self.binFactorMode.get()
         binTarget = self.binTarget.get()
@@ -1002,5 +1001,3 @@ class ProtWarpTSMotionCorr(ProtWarpTomoBase):
                             f"{rawX}x{rawY} px at {movieSampling:.4f} A/px).\n")
 
         return errorMsg
-
-

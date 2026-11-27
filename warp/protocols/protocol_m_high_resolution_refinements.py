@@ -24,11 +24,10 @@
 # *
 # ******************************************************************************
 import glob
-import os
 from collections import defaultdict
+from os.path import join, abspath, exists
 
 import emtools.metadata
-
 from pwem.convert.headers import fixVolume
 from pwem.objects import VolumeMask
 from pyworkflow import BETA
@@ -36,17 +35,26 @@ import pyworkflow.protocol.params as params
 import pyworkflow.utils as pwutils
 from pyworkflow.object import Integer, Set, Float
 from pyworkflow.protocol import GPU_LIST
-
+from pyworkflow.utils import Message, removeBaseExt
 from reliontomo.convert import convert50_tomo, readSetOfPseudoSubtomograms
 from reliontomo.objects import createSetOfRelionPSubtomograms
-from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries,  AverageSubTomogram
-
-from warp.constants import *
-from warp.protocols.protocol_base import ProtWarpBase
+from tomo.objects import CTFTomoSeries, CTFTomo, SetOfCTFTomoSeries, AverageSubTomogram
+from warp import Plugin
+from warp.constants import MTOOLS, CREATE_POPULATION, TILTSERIES_SETTINGS, CREATE_SOURCES, M_RESULT_FOLDER, \
+    CREATE_SPECIES, MCORE, WARP_TOOLS, TS_CTF, TILTSERIES_FOLDER, TS_IMPORT_ALIGNMENTS, \
+    MATCHING_PROCESSING_SPECIES_PATTERN, PROCESSING_SPECIES_PARTICLES, MATCHING_FOLDER, RLN_COORDINATE_X, \
+    RLN_COORDINATE_Y, RLN_COORDINATE_Z, RLN_ANGLE_ROT, RLN_ANGLE_TILT, RLN_ANGLE_PSI, RLN_RAMDOM_SUBSET, \
+    RLN_MICROGRAPH_NAME, RLN_SOURCE_HASH, RELION_FOLDER, OPTIMISATION_SET_STAR, MATCHING_PARTICLES_STAR, \
+    MATCHING_TOMOGRAMS_STAR, OUTPUT_RELION_PARTICLES, TS_EXPORT_PARTICLES, PROCESSING_SPECIES_AVERAGE, \
+    PROCESSING_SPECIES_HALF1, PROCESSING_SPECIES_HALF2, OUPUT_AVERAGE_SUBTOMOGRAM, PROCESSING_SPECIES_SPECIES, \
+    PROCESSING_SPECIES_MASK, OUTPUT_MASK_SUBTOMOGRAM, SPECIES_FOLDER, POWERSPECTRUM_FOLDER, OUTPUT_CTF_SERIES
+from warp.protocols.protocol_base_tomo import ProtWarpTomoBase
 from warp.utils import updateCtFXMLFile, parseCtfXMLFile, extractGlobalResolution, modifyStarFileMultiTable
 
+PROCESSING_POPULATION = 'processing.population'
 
-class ProtWarpMHigResolutionRefinement(ProtWarpBase):
+
+class ProtWarpMHigResolutionRefinement(ProtWarpTomoBase):
     """
     High Resolution Refinements in M
     More info:
@@ -57,24 +65,27 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     _devStatus = BETA
 
     def __init__(self, **kwargs):
-        ProtWarpBase.__init__(self, **kwargs)
+        super().__init__(**kwargs)
 
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
-        form.addSection("Input")
+        form.addSection(Message.LABEL_INPUT)
         form.addParam("inputFromMProtocol", params.BooleanParam, default=False,
                       label="Input from M protocol ?",
                       help='Select a M high resolution refinement protocol or an input data')
+
         form.addParam("inputToMProtocol", params.PointerParam, default=None,
                       pointerClass="ProtWarpMHigResolutionRefinement",
                       label="M protocol",
                       help='M high resolution refinement protocol',
                       condition='inputFromMProtocol')
+
         form.addParam('inputSet',
                       params.PointerParam,
                       pointerClass='SetOfTiltSeries',
                       label='Input set of tilt-series',
                       help='Input set of tilt-series')
+
         form.addParam('inputSetOfCtfTomoSeries',
                       params.PointerParam,
                       condition='not inputFromMProtocol',
@@ -82,17 +93,20 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                       pointerClass='SetOfCTFTomoSeries',
                       help='Select the CTF estimation for the set '
                            'of tilt-series.')
+
         form.addParam('inReParticles', params.PointerParam,
                       condition='not inputFromMProtocol',
                       pointerClass='RelionSetOfPseudoSubtomograms',
                       label='Relion pseudosubtomograms',
                       help='Relion set of pseudoSubtomograms')
+
         form.addParam('averageSubtomogram', params.PointerParam, pointerClass='Volume',
                       pointerCondition='hasHalfMaps',
                       condition='not inputFromMProtocol',
                       default=None,
                       label='Reference volume',
                       help='Average subtomogram with half maps')
+
         form.addParam('refMask', params.PointerParam, pointerClass='VolumeMask, Volume',
                       condition='not inputFromMProtocol',
                       default=None,
@@ -181,6 +195,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                        help='Space-separated list of GPU IDs to use for processing. '
                             'Default: all GPUs in the system For example: "0 1 5"')
 
+    # --------------------------- INSERT steps functions ----------------------
     def _insertAllSteps(self):
         self.globalResolution = Float()
         inReParticles = self.getInputSetOfReParticles()
@@ -199,14 +214,114 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             self._insertFunctionStep(self.createPopulationStep, needsGPU=False)
             self._insertFunctionStep(self.createSourcesStep, needsGPU=False)
             self._insertFunctionStep(self.createSpeciesStep, needsGPU=True)
-            self._insertFunctionStep(self.checkSetup, needsGPU=True)
+            self._insertFunctionStep(self.checkSetupStep, needsGPU=True)
         else:
             self._insertFunctionStep(self.prepareMDataStep, needsGPU=False)
         self._insertFunctionStep(self.refinementStep, needsGPU=True)
         self._insertFunctionStep(self.createOutputStep, needsGPU=False)
         self._insertFunctionStep(self.closeOutputStep, needsGPU=False)
 
-    def getInputSetTS(self):
+    # --------------------------- STEPS functions -----------------------------
+    def _init(self):
+        super()._initialize()
+
+    def prepareDataStep(self):
+        inReParticles = self.getInputSetOfReParticles()
+        writer = convert50_tomo.Writer()
+        writer.pseudoSubtomograms2Star(inReParticles, self._getExtraPath(), isWarp=True)
+
+        inTsSet = self._getInTsSet()
+        tsSr = inTsSet.getSamplingRate()
+
+        self.createTiltSeriesSetting(None)
+        for ts in inTsSet.iterItems(iterate=False):
+            self.tsDataPrepare(ts)
+            self.createImodFiles(ts)
+        self.tsCtfEstimation(tsSr)
+        self.updateCTFValues()
+        self.tsImportAligments()
+
+    def createPopulationStep(self):
+        self.info(">>> Creating population...")
+        cmd = [
+            f"--directory {self._getPopulationPath()}",
+            "--name processing"
+        ]
+        self.runJob(Plugin.getProgram(MTOOLS, CREATE_POPULATION), cmd, executable='/bin/bash')
+
+    def createSourcesStep(self):
+        self.info(">>> Creating sources...")
+        populationPath = join(self._getExtraPath('m'))
+        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
+        argsDict = {
+            "--name": 'processing',
+            "--population": join(populationPath, 'processing.population'),
+            "--processing_settings": abspath(settingFile)
+        }
+        self.runProgram(argsDict, MTOOLS, CREATE_SOURCES)
+
+    def createSpeciesStep(self):
+        extraPath = self._getExtraPath()
+        averageSubTomoHalfMaps = self.averageSubtomogram.get().getHalfMaps(asList=True)
+        populationPath = join(self._getExtraPath(M_RESULT_FOLDER))
+        mask = self.refMask.get().getFileName()
+        voxelSize = self.averageSubtomogram.get().getSamplingRate()
+
+        argsDict = {
+            "--population": join(populationPath, 'processing.population'),
+            "--name": 'processing_species',
+            "--diameter": self.diameter.get(),
+            "--sym": self.symmetry.get(),
+            "--temporal_samples": self.temporal_samples.get(),
+            "--half1": averageSubTomoHalfMaps[0],
+            "--half2": averageSubTomoHalfMaps[1],
+            "--mask": mask,
+            "--particles_relion": join(extraPath, 'inParticles.star'),
+            "--lowpass": self.lowpass.get(),
+            "--angpix": voxelSize
+
+        }
+        if self.angpix_resample.get() is not None:
+            argsDict["--angpix_resample"] = self.angpix_resample.get()
+
+        self.runProgram(argsDict, MTOOLS, CREATE_SPECIES)
+
+    def checkSetupStep(self):
+        populationPath = join(self._getExtraPath('m'))
+        argsDict = {
+            "--population": join(populationPath, 'processing.population'),
+            "--iter": 0
+        }
+        self.runProgram(argsDict, MCORE, None)
+
+    def prepareMDataStep(self):
+        mPrevProt = self.inputToMProtocol.get()
+        mPrevProtExtraPath = mPrevProt._getExtraPath()
+        pwutils.cleanPath(self._getExtraPath())
+        pwutils.createLink(mPrevProtExtraPath, self.getPath('extra'))
+
+    def refinementStep(self):
+        populationPath = join(self._getExtraPath('m'))
+        self.info(">>> Running M to check setup...")
+        self.refinement(populationPath)
+
+    def createOutputStep(self):
+        self.info(">>> Creating outputs...")
+        inputTs = self.getInputSetTS()
+        for ts in inputTs.iterItems(iterate=False):
+            self.createOutputCTF(ts)
+        self.createOutputAverage()
+        self.createOutputMask()
+        self.createOutputParticles()
+
+    # --------------------------- UTILS functions -----------------------------
+    def _getPopulationPath(self)-> str:
+        return join(self._getExtraPath('m'))
+
+    def _getProcessingPopulation(self) -> str:
+        return join(self._getPopulationPath(), PROCESSING_POPULATION)
+
+    def _getInTsSet(self):
         inputSet = self.inputSet.get()
         if self.inputFromMProtocol.get():
             mPrevProt = self.inputToMProtocol.get()
@@ -243,92 +358,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             refMask = mPrevProt.MaskSubTomogram
         return refMask
 
-    def prepareMDataStep(self):
-        mPrevProt = self.inputToMProtocol.get()
-        mPrevProtExtraPath = mPrevProt._getExtraPath()
-        pwutils.cleanPath(self._getExtraPath())
-        pwutils.createLink(mPrevProtExtraPath, self.getPath('extra'))
-
-    def prepareDataStep(self):
-        inReParticles = self.getInputSetOfReParticles()
-        outPath = self._getExtraPath()
-        writer = convert50_tomo.Writer()
-        writer.pseudoSubtomograms2Star(inReParticles, outPath, isWarp=True)
-
-        inputTs = self.getInputSetTS()
-        tsSr = inputTs.getSamplingRate()
-
-        self.createTiltSeriesSetting(None)
-        for ts in inputTs.iterItems(iterate=False):
-            self.tsDataPrepare(ts)
-            self.createImodFiles(ts)
-        self.tsCtfEstimation(tsSr)
-        self.updateCTFValues()
-        self.tsImportAligments()
-
-    def createPopulationStep(self):
-        self.info(">>> Creating population...")
-        tsResults = os.path.join(self._getExtraPath(), 'm')
-        argsDict = {
-            "--directory": tsResults,
-            "--name": 'processing'
-        }
-        self.runProgram(argsDict, MTOOLS, CREATE_POPULATION)
-
-    def createSourcesStep(self):
-        self.info(">>> Creating sources...")
-        populationPath = os.path.join(self._getExtraPath('m'))
-        settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
-        argsDict = {
-            "--name": 'processing',
-            "--population": os.path.join(populationPath, 'processing.population'),
-            "--processing_settings": os.path.abspath(settingFile)
-        }
-        self.runProgram(argsDict, MTOOLS, CREATE_SOURCES)
-
-    def createSpeciesStep(self):
-        extraPath = self._getExtraPath()
-        averageSubTomoHalfMaps = self.averageSubtomogram.get().getHalfMaps(asList=True)
-        populationPath = os.path.join(self._getExtraPath(M_RESULT_FOLDER))
-        mask = self.refMask.get().getFileName()
-        voxelSize = self.averageSubtomogram.get().getSamplingRate()
-
-        argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
-            "--name": 'processing_species',
-            "--diameter": self.diameter.get(),
-            "--sym": self.symmetry.get(),
-            "--temporal_samples": self.temporal_samples.get(),
-            "--half1": averageSubTomoHalfMaps[0],
-            "--half2": averageSubTomoHalfMaps[1],
-            "--mask": mask,
-            "--particles_relion": os.path.join(extraPath, 'inParticles.star'),
-            "--lowpass": self.lowpass.get(),
-            "--angpix": voxelSize
-
-        }
-        if self.angpix_resample.get() is not None:
-            argsDict["--angpix_resample"] = self.angpix_resample.get()
-
-        self.runProgram(argsDict, MTOOLS, CREATE_SPECIES)
-
-    def refinementStep(self):
-        populationPath = os.path.join(self._getExtraPath('m'))
-        self.info(">>> Running M to check setup...")
-        self.refinement(populationPath)
-
-    def checkSetup(self):
-        populationPath = os.path.join(self._getExtraPath('m'))
-        argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
-            "--iter": 0
-        }
-        self.runProgram(argsDict, MCORE, None)
-
     def refinement(self, populationPath):
         msg = ">>>Refinement with 2D Image Warp: \n"
         argsDict = {
-            "--population": os.path.join(populationPath, 'processing.population'),
+            "--population": join(populationPath, 'processing.population'),
         }
 
         cmd = ''
@@ -394,7 +427,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         self.info(">>> Generating ctf estimation...")
         settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(settingFile),
+            "--settings": abspath(settingFile),
             "--range_high": tsSr * 3,
             "--range_low": tsSr * 4,
         }
@@ -407,19 +440,19 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         inputTs = self.getInputSetTS()
         for ts in inputTs.iterItems():
             ctfTomoSeries = self.getInputSetOfCtfTomoSeries().getItem('_tsId', ts.getTsId())
-            processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-            defocusFilePath = os.path.join(processingFolder, ts.getTsId() + '.xml')
+            processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+            defocusFilePath = join(processingFolder, ts.getTsId() + '.xml')
             updateCtFXMLFile(defocusFilePath, ctfTomoSeries, ts)
 
     def tsImportAligments(self):
         self.info(">>> Starting import aligments...")
-        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        tiltstackFolder = os.path.join(processingFolder, 'tiltstack')
+        processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        tiltstackFolder = join(processingFolder, 'tiltstack')
         angpix = self.inputSet.get().getSamplingRate()
         settingFile = self._getExtraPath(TILTSERIES_SETTINGS)
         argsDict = {
-            "--settings": os.path.abspath(settingFile),
-            '--alignments': os.path.abspath(tiltstackFolder),
+            "--settings": abspath(settingFile),
+            '--alignments': abspath(tiltstackFolder),
             "--alignment_angpix": angpix
         }
         cmd = ' '.join(['%s %s' % (k, v) for k, v in argsDict.items()])
@@ -439,23 +472,14 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                 f.write(f'{-angle}\n')
 
     def createImodFiles(self, ts):
-        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        tiltstackFolder = os.path.join(processingFolder, 'tiltstack', ts.getTsId())
+        processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        tiltstackFolder = join(processingFolder, 'tiltstack', ts.getTsId())
         pwutils.makePath(tiltstackFolder)
 
         ts.writeImodFiles(tiltstackFolder, delimiter=' ')
 
-        tltPath = os.path.join(tiltstackFolder, f'{ts.getTsId()}.tlt')
+        tltPath = join(tiltstackFolder, f'{ts.getTsId()}.tlt')
         self._invertTiltAngles(tltPath)
-
-    def createOutputStep(self):
-        self.info(">>> Creating outputs...")
-        inputTs = self.getInputSetTS()
-        for ts in inputTs.iterItems(iterate=False):
-            self.createOutputCTF(ts)
-        self.createOutputAverage()
-        self.createOutputMask()
-        self.createOutputParticles()
 
     @staticmethod
     def _getTemporalMean(rowData, prefix):
@@ -478,7 +502,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
             # Use the first matching folder (you can modify this logic if needed)
 
-        particlesPath = os.path.join(processingFolder, PROCESSING_SPECIES_PARTICLES)
+        particlesPath = join(processingFolder, PROCESSING_SPECIES_PARTICLES)
         sourceTable = emtools.metadata.StarFile(particlesPath).getTable('')
         outputFolder = self._getExtraPath(MATCHING_FOLDER)
         pwutils.makePath(outputFolder)
@@ -489,8 +513,8 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             groupedRows[micrographName].append(row)
 
         for micrographName, rows in groupedRows.items():
-            cleanName = os.path.splitext(os.path.basename(micrographName))[0]
-            outputFilePath = os.path.join(outputFolder, f"{cleanName}.star")
+            cleanName = removeBaseExt(micrographName)
+            outputFilePath = join(outputFolder, f"{cleanName}.star")
 
             columnNames = [
                 RLN_COORDINATE_X,
@@ -548,7 +572,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         are2dStacks = True
 
         psubtomoSet = createSetOfRelionPSubtomograms(self._getPath(),
-                                                     os.path.join(relionFolder, OPTIMISATION_SET_STAR),
+                                                     join(relionFolder, OPTIMISATION_SET_STAR),
                                                      coordSet,
                                                      template='pseudosubtomograms%s.sqlite',
                                                      tsSamplingRate=angpix,
@@ -557,9 +581,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
                                                      are2dStacks=are2dStacks,
                                                      acquisition=acq)
 
-        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_PARTICLES_STAR),
+        modifyStarFileMultiTable(join(relionFolder, MATCHING_PARTICLES_STAR),
                                  '_rlnImageName', lambda v: self.normalizeParticlesPath(v))
-        modifyStarFileMultiTable(os.path.join(relionFolder, MATCHING_TOMOGRAMS_STAR),
+        modifyStarFileMultiTable(join(relionFolder, MATCHING_TOMOGRAMS_STAR),
                                  '_rlnTomoTiltSeriesName', lambda v: self.normalizeTomogramsPath(v))
         # Fill the set with the generated particles
         readSetOfPseudoSubtomograms(psubtomoSet)
@@ -574,10 +598,10 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         pwutils.makePath(output)
         boxSixe = self.AverageSubTomogram.getDim()[0]
         argsDict = {
-            "--settings": os.path.abspath(settingFile),
+            "--settings": abspath(settingFile),
             "--input_directory": matchinFolder,
             "--input_pattern": "*.star",
-            "--output_star": os.path.join(output, 'matching.star'),
+            "--output_star": join(output, 'matching.star'),
             "--output_angpix": self.angpix_resample.get(),
             "--box": boxSixe,
             "--diameter": self.diameter.get(),
@@ -593,9 +617,9 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
 
         # Output volume
         vol = AverageSubTomogram()
-        sourceVolName = os.path.join(processingFolder, PROCESSING_SPECIES_AVERAGE)
-        sourceHalf1 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF1)
-        sourceHalf2 = os.path.join(processingFolder, PROCESSING_SPECIES_HALF2)
+        sourceVolName = join(processingFolder, PROCESSING_SPECIES_AVERAGE)
+        sourceHalf1 = join(processingFolder, PROCESSING_SPECIES_HALF1)
+        sourceHalf2 = join(processingFolder, PROCESSING_SPECIES_HALF2)
         volName = self._getPath(PROCESSING_SPECIES_AVERAGE)
         half1 = self._getPath(PROCESSING_SPECIES_HALF1)
         half2 = self._getPath(PROCESSING_SPECIES_HALF2)
@@ -613,7 +637,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         vol.setHalfMaps([half1, half2])
         self._defineOutputs(**{OUPUT_AVERAGE_SUBTOMOGRAM: vol})
         processingFolder = self.getProcessingFolder()
-        speciesFile = os.path.join(processingFolder, PROCESSING_SPECIES_SPECIES)
+        speciesFile = join(processingFolder, PROCESSING_SPECIES_SPECIES)
         self.globalResolution.set(extractGlobalResolution(speciesFile))
 
     def createOutputMask(self):
@@ -622,7 +646,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             raise FileNotFoundError(f"No folder found matching the pattern: {MATCHING_PROCESSING_SPECIES_PATTERN}")
 
         volMask = VolumeMask()
-        sourceMaskFilePath = os.path.join(processingFolder, PROCESSING_SPECIES_MASK)
+        sourceMaskFilePath = join(processingFolder, PROCESSING_SPECIES_MASK)
         maskFilePath = self._getPath(PROCESSING_SPECIES_MASK)
         pwutils.copyFile(sourceMaskFilePath, maskFilePath)
         fixVolume(maskFilePath)
@@ -635,18 +659,18 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
         # Return the first matching folder (you can modify this logic if needed)
         matchingFolder = ''
         mFolder = self._getExtraPath(M_RESULT_FOLDER)
-        speciesFolder = os.path.join(mFolder, SPECIES_FOLDER)
-        if os.path.exists(speciesFolder):
+        speciesFolder = join(mFolder, SPECIES_FOLDER)
+        if exists(speciesFolder):
             # Search for folder matching the pattern "processing_especies_*"
-            folderPattern = os.path.join(speciesFolder, MATCHING_PROCESSING_SPECIES_PATTERN)
+            folderPattern = join(speciesFolder, MATCHING_PROCESSING_SPECIES_PATTERN)
             matchingFolder = glob.glob(folderPattern)
             matchingFolder = matchingFolder[0]
         return matchingFolder
 
     def createOutputCTF(self, ts):
         tsId = ts.getTsId()
-        processingFolder = os.path.abspath(self._getExtraPath(TILTSERIES_FOLDER))
-        psdStack = os.path.join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
+        processingFolder = abspath(self._getExtraPath(TILTSERIES_FOLDER))
+        psdStack = join(processingFolder, POWERSPECTRUM_FOLDER, tsId + '.mrc')
 
         if ts.isEnabled():
             outputSetOfCTFTomoSeries = self.getOutputSetOfCTFTomoSeries(OUTPUT_CTF_SERIES)
@@ -656,7 +680,7 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
             newCTFTomoSeries.setTiltSeries(ts)
             outputSetOfCTFTomoSeries.append(newCTFTomoSeries)
 
-            defocusFilePath = os.path.join(processingFolder, tsId + '.xml')
+            defocusFilePath = join(processingFolder, tsId + '.xml')
             ctfData, gridCtfData = parseCtfXMLFile(defocusFilePath)
 
             defaultDefocusDelta = float(ctfData['DefocusDelta']) * 1e4
@@ -727,12 +751,15 @@ class ProtWarpMHigResolutionRefinement(ProtWarpBase):
     def allowsDelete(self, obj):
         return True
 
+    def _cleanExtraFiles(self):
+        versionsFolder = join(self.getProcessingFolder(), 'versions')
+        pwutils.cleanPath(versionsFolder)
+
+    # --------------------------- INFO functions ------------------------------
     def _summary(self):
         summary = []
         if hasattr(self, 'globalResolution') and self.globalResolution.get() is not None:
             summary.append("* Global Resolution: %s Å" % self.globalResolution.get())
         return summary
 
-    def _cleanExtraFiles(self):
-        versionsFolder = os.path.join(self.getProcessingFolder(), 'versions')
-        pwutils.cleanPath(versionsFolder)
+
